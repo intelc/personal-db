@@ -82,3 +82,14 @@ def test_format_bundled_choice_includes_plus_and_description():
     assert "habits" in label
     assert "not installed" in label
     assert "Manually-logged daily habits" in label  # from the bundled manifest
+
+
+def test_format_choice_marks_outdated_with_arrow_icon(tmp_root):
+    cfg = Config(root=tmp_root)
+    init_db(cfg.db_path)
+    _install(tmp_root, "habits", setup_steps=[])
+    # The _install helper creates a manifest different from the bundled one (empty
+    # setup_steps, different structure), so is_outdated returns True.
+    label = _format_choice(cfg, "habits")
+    assert "⟳" in label
+    assert "update available" in label

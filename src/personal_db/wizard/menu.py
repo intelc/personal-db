@@ -8,7 +8,7 @@ import questionary
 import yaml
 
 from personal_db.config import Config
-from personal_db.installer import install_template, list_bundled
+from personal_db.installer import install_template, is_outdated, list_bundled, update_template
 from personal_db.manifest import load_manifest
 from personal_db.wizard.mcp_setup import run_mcp_setup_menu
 from personal_db.wizard.runner import run_tracker
@@ -33,6 +33,9 @@ def _list_bundled_not_installed(cfg: Config) -> list[str]:
 
 
 def _format_choice(cfg: Config, name: str) -> str:
+    if is_outdated(cfg, name):
+        manifest = load_manifest(cfg.trackers_dir / name / "manifest.yaml")
+        return f"⟳ {name:18s} update available — {manifest.description}"
     icon = compute_icon(cfg, name)
     manifest = load_manifest(cfg.trackers_dir / name / "manifest.yaml")
     status = read_status(cfg).get(name)
@@ -103,4 +106,7 @@ def run_menu(cfg: Config) -> None:
                 continue
             run_tracker(cfg, name)
         else:
+            if is_outdated(cfg, selection):
+                update_template(cfg, selection)
+                print(f"  ⟳ Updated {selection} from bundle")
             run_tracker(cfg, selection)
