@@ -8,6 +8,7 @@ from collections import Counter
 from datetime import datetime, timedelta
 
 from personal_db.config import Config
+from personal_db.handle_norm import normalize_handle
 from personal_db.ui.charts import horizontal_bars, word_cloud
 
 # A pragmatic English stopword list — short enough that the word cloud doesn't
@@ -47,27 +48,73 @@ def _connect(cfg: Config) -> sqlite3.Connection | None:
         return None
 
 
+def _load_contact_lookup(con: sqlite3.Connection) -> dict[str, str]:
+    """Build {normalized_handle → contact display_name} from the contacts tracker.
+
+    Returns empty dict if contacts isn't installed/synced — the viz then falls
+    back to raw handles. This is what makes the contacts dependency *optional*.
+    """
+    try:
+        rows = con.execute(
+            "SELECT ch.normalized, c.display_name "
+            "FROM contact_handles ch "
+            "JOIN contacts c ON c.contact_id = ch.contact_id"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    return {normalized: name for normalized, name in rows if normalized and name}
+
+
 def render_top_contacts(cfg: Config) -> str:
     con = _connect(cfg)
     if not con:
         return '<p class="meta">no data</p>'
     cutoff = (datetime.now() - timedelta(days=30)).isoformat()
     try:
+        contact_lookup = _load_contact_lookup(con)
+        # Group by raw handle first; we re-aggregate by display_name in Python so
+        # multiple handles for the same person collapse into one row.
         rows = con.execute(
-            "SELECT coalesce(p.display_name, m.handle, '?') AS who, count(*) AS n "
+            "SELECT m.handle, count(*) AS n "
             "FROM imessage_messages m "
-            "LEFT JOIN people p ON p.person_id = m.person_id "
-            "WHERE m.sent_at >= ? AND m.is_from_me = 0 "
-            "GROUP BY who ORDER BY n DESC LIMIT 20",
+            "WHERE m.sent_at >= ? AND m.is_from_me = 0 AND m.handle IS NOT NULL "
+            "GROUP BY m.handle",
             (cutoff,),
         ).fetchall()
     except sqlite3.OperationalError:
         return '<p class="meta">imessage_messages not synced yet</p>'
     finally:
         con.close()
-    items = [(who, n) for who, n in rows if n]
+
+    counts: Counter[str] = Counter()
+    resolved_count = 0
+    for handle, n in rows:
+        norm = normalize_handle(handle)
+        name = contact_lookup.get(norm)
+        if name:
+            counts[name] += n
+            resolved_count += n
+        else:
+            counts[handle or "(unknown)"] += n
+
+    if not counts:
+        return '<p class="meta">no inbound messages in the last 30 days</p>'
+
+    items = counts.most_common(20)
+    total = sum(counts.values())
+    if contact_lookup:
+        coverage = f"{(resolved_count / total) * 100:.0f}%" if total else "0%"
+        meta = (
+            f"last 30 days · top 20 contacts by inbound message count · "
+            f"{coverage} of messages resolved to a contact name"
+        )
+    else:
+        meta = (
+            "last 30 days · top 20 contacts by inbound message count · "
+            "showing raw handles (install <code>contacts</code> tracker for names)"
+        )
     return (
-        '<p class="meta">last 30 days · top 20 contacts by inbound message count</p>'
+        f'<p class="meta">{meta}</p>'
         + horizontal_bars(items, value_fmt=lambda v: f"{int(v)}")
     )
 

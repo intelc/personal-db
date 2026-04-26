@@ -1,0 +1,69 @@
+name: contacts
+description: macOS Contacts (AddressBook) — names + phones + emails. Reference table for joining against imessage handles, calendar attendees, etc.
+permission_type: manual
+
+setup_steps:
+  - type: instructions
+    text: |
+      The contacts tracker reads macOS AddressBook SQLite DBs at:
+        ~/Library/Application Support/AddressBook/AddressBook-v22.abcddb
+        ~/Library/Application Support/AddressBook/Sources/*/AddressBook-v22.abcddb
+
+      macOS gates this with TWO separate permissions:
+
+        1. Full Disk Access  — usually already granted (same as imessage).
+           System Settings → Privacy & Security → Full Disk Access.
+
+        2. Contacts          — separate; Apple split AddressBook out of FDA.
+           System Settings → Privacy & Security → Contacts.
+           Add the same python interpreter you granted FDA to. Find the path
+           with: python3 -c 'import sys; print(sys.executable)'
+
+      Without (2) the sync will silently see zero contacts. After granting,
+      restart your terminal so TCC re-evaluates the permission, then run
+      `personal-db sync contacts`.
+
+schedule:
+  every: 24h
+
+time_column: updated_at
+granularity: event
+local_only: true
+
+schema:
+  tables:
+    contacts:
+      columns:
+        contact_id:
+          type: TEXT
+          semantic: stable id "<source>:<source_pk>" — unique across AddressBook source DBs
+        full_name:
+          type: TEXT
+          semantic: '"first last" — empty if both missing'
+        display_name:
+          type: TEXT
+          semantic: best human-readable label (full_name → nickname → organization → "(unnamed)")
+        organization:
+          type: TEXT
+          semantic: organization / company name if any
+        source:
+          type: TEXT
+          semantic: AddressBook source identifier (UUID for sub-source DBs, or "main")
+        updated_at:
+          type: TEXT
+          semantic: ISO-8601 of last modification in the source DB (or sync time if unknown)
+    contact_handles:
+      columns:
+        contact_id:
+          type: TEXT
+          semantic: FK to contacts.contact_id
+        kind:
+          type: TEXT
+          semantic: '"phone" or "email"'
+        normalized:
+          type: TEXT
+          semantic: normalized for matching — lowercased email, or last-10-digits of phone
+        raw:
+          type: TEXT
+          semantic: original handle as stored in AddressBook
+related_entities: []
