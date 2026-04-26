@@ -4,7 +4,7 @@
 
 **Goal:** Ship a Python-based personal data layer that (a) ingests data from 5 sources via per-tracker scripts, (b) exposes the data to Claude Code via an MCP server, (c) runs scheduled syncs via launchd, and (d) supports manual entry through an MCP tool — without a long-running daemon and without a UI.
 
-**Architecture:** Single-process. Components are CLI invocations (`pdb …`) or MCP requests (Claude Code spawns `pdb mcp` over stdio per session). The "scheduler" is one launchd plist firing `pdb sync --due` every 10 minutes. All persistent state lives under a user-configurable root (default `~/personal_db/`): `db.sqlite` is the single source of truth for data; per-tracker folders own their schemas and ingest scripts; entity registry mirrors from YAML files.
+**Architecture:** Single-process. Components are CLI invocations (`personal-db …`) or MCP requests (Claude Code spawns `personal-db mcp` over stdio per session). The "scheduler" is one launchd plist firing `personal-db sync --due` every 10 minutes. All persistent state lives under a user-configurable root (default `~/personal_db/`): `db.sqlite` is the single source of truth for data; per-tracker folders own their schemas and ingest scripts; entity registry mirrors from YAML files.
 
 **Tech Stack:** Python 3.11+, `uv` (env + packaging), `typer` (CLI), `pydantic` v2 (validation), `pytest` (tests), `ruff` (lint+format), official `mcp` Python SDK (stdio server), `requests` (HTTP), `pyyaml` (YAML), `keyring` (encrypted token storage), stdlib `sqlite3`.
 
@@ -14,7 +14,7 @@
 
 ## File structure (lock-in)
 
-The package is one importable module with three sub-namespaces. Trackers ship as templates that `pdb tracker install` copies into the user's data root.
+The package is one importable module with three sub-namespaces. Trackers ship as templates that `personal-db tracker install` copies into the user's data root.
 
 ```
 personal_db/                              # repo root (cwd)
@@ -32,18 +32,18 @@ personal_db/                              # repo root (cwd)
     permissions.py                        # FDA probe + open-system-settings helper
     scheduler.py                          # launchd plist gen + install/uninstall/status
     sync.py                               # sync_one(name), sync_due() dispatcher, backfill_one
-    log_event.py                          # shared write path used by `pdb log` and MCP `log_event`
+    log_event.py                          # shared write path used by `personal-db log` and MCP `log_event`
     notes.py                              # write/list/read notes (used by MCP)
     cli/
       __init__.py
-      main.py                             # typer app `pdb`; wires sub-apps
-      init_cmd.py                         # `pdb init`
-      tracker_cmd.py                      # `pdb tracker new|list|install|setup`
-      sync_cmd.py                         # `pdb sync`, `pdb backfill`
-      log_cmd.py                          # `pdb log`
-      permission_cmd.py                   # `pdb permission check`
-      scheduler_cmd.py                    # `pdb scheduler install|uninstall|status`
-      mcp_cmd.py                          # `pdb mcp`
+      main.py                             # typer app `personal-db`; wires sub-apps
+      init_cmd.py                         # `personal-db init`
+      tracker_cmd.py                      # `personal-db tracker new|list|install|setup`
+      sync_cmd.py                         # `personal-db sync`, `personal-db backfill`
+      log_cmd.py                          # `personal-db log`
+      permission_cmd.py                   # `personal-db permission check`
+      scheduler_cmd.py                    # `personal-db scheduler install|uninstall|status`
+      mcp_cmd.py                          # `personal-db mcp`
     mcp_server/
       __init__.py
       server.py                           # MCP stdio bootstrap
@@ -127,7 +127,7 @@ dependencies = [
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.4", "pyright>=1.1"]
 
 [project.scripts]
-pdb = "personal_db.cli.main:app"
+personal-db = "personal_db.cli.main:app"
 
 [build-system]
 requires = ["hatchling"]
@@ -1103,14 +1103,14 @@ git commit -m "feat(sync): sync_one, backfill_one, sync_due dispatcher with isol
 
 ---
 
-### Task 10: CLI scaffold + `pdb init`
+### Task 10: CLI scaffold + `personal-db init`
 
 **Files:**
 - Create: `src/personal_db/cli/__init__.py`, `src/personal_db/cli/main.py`, `src/personal_db/cli/init_cmd.py`, `tests/integration/test_cli_init.py`
 
 **Note on CLI argument order:** `--root` is a *global* option defined on the parent app's callback, so it must always appear **before** the subcommand:
-- ✅ `pdb --root /tmp/foo init`
-- ❌ `pdb init --root /tmp/foo` (typer will reject this)
+- ✅ `personal-db --root /tmp/foo init`
+- ❌ `personal-db init --root /tmp/foo` (typer will reject this)
 
 Every test in this plan and every example in the README follows the global-first convention. Document this in the README's quick-start.
 
@@ -1181,7 +1181,7 @@ from personal_db.db import init_db
 def run() -> None:
     """Initialize a personal_db root directory.
 
-    The root is taken from the global `--root` option (see `pdb --help`),
+    The root is taken from the global `--root` option (see `personal-db --help`),
     falling back to `~/personal_db`.
     """
     root_p = cli_main.get_root()
@@ -1202,12 +1202,12 @@ def run() -> None:
 
 ```bash
 git add -A
-git commit -m "feat(cli): pdb init creates root + config + entity skeletons"
+git commit -m "feat(cli): personal-db init creates root + config + entity skeletons"
 ```
 
 ---
 
-### Task 11: `pdb tracker new|list|install`
+### Task 11: `personal-db tracker new|list|install`
 
 **Files:**
 - Create: `src/personal_db/cli/tracker_cmd.py`, `tests/integration/test_cli_tracker.py`
@@ -1336,7 +1336,7 @@ def list_cmd() -> None:
     root = cli_main.get_root()
     trackers_dir = root / "trackers"
     if not trackers_dir.exists() or not any(trackers_dir.iterdir()):
-        typer.echo("No trackers installed. Use `pdb tracker new <name>` or `pdb tracker install <builtin>`.")
+        typer.echo("No trackers installed. Use `personal-db tracker new <name>` or `personal-db tracker install <builtin>`.")
         return
     for d in sorted(trackers_dir.iterdir()):
         if d.is_dir() and (d / "manifest.yaml").exists():
@@ -1378,7 +1378,7 @@ git commit -m "feat(cli): tracker new/list/install commands + template resources
 
 ---
 
-### Task 12: `pdb sync`, `pdb backfill`, `pdb log`
+### Task 12: `personal-db sync`, `personal-db backfill`, `personal-db log`
 
 **Files:**
 - Create: `src/personal_db/cli/sync_cmd.py`, `src/personal_db/cli/log_cmd.py`, `src/personal_db/log_event.py`, `tests/integration/test_cli_sync.py`, `tests/unit/test_log_event.py`
@@ -1576,12 +1576,12 @@ app.command("log")(log_cmd.log)
 
 ```bash
 git add -A
-git commit -m "feat(cli): pdb sync/backfill/log + log_event write path"
+git commit -m "feat(cli): personal-db sync/backfill/log + log_event write path"
 ```
 
 ---
 
-### Task 13: Permissions helper + `pdb permission check`
+### Task 13: Permissions helper + `personal-db permission check`
 
 **Files:**
 - Create: `src/personal_db/permissions.py`, `src/personal_db/cli/permission_cmd.py`, `tests/unit/test_permissions.py`
@@ -1697,12 +1697,12 @@ app.add_typer(permission_app, name="permission")
 
 ```bash
 git add -A
-git commit -m "feat(permissions): probe + System Settings opener + pdb permission check"
+git commit -m "feat(permissions): probe + System Settings opener + personal-db permission check"
 ```
 
 ---
 
-### Task 14: Scheduler — launchd plist + `pdb scheduler install/uninstall/status`
+### Task 14: Scheduler — launchd plist + `personal-db scheduler install/uninstall/status`
 
 **Files:**
 - Create: `src/personal_db/scheduler.py`, `src/personal_db/cli/scheduler_cmd.py`, `tests/unit/test_scheduler.py`
@@ -1716,13 +1716,13 @@ from pathlib import Path
 from personal_db.scheduler import build_plist, LABEL
 
 def test_build_plist_contains_label_and_interval():
-    body = build_plist(pdb_path="/usr/local/bin/pdb",
+    body = build_plist(pdb_path="/usr/local/bin/personal-db",
                        root=Path("/Users/me/personal_db"),
                        interval_seconds=600,
                        log_path=Path("/Users/me/personal_db/state/scheduler.log"))
     assert f"<string>{LABEL}</string>" in body
     assert "<integer>600</integer>" in body
-    assert "/usr/local/bin/pdb" in body
+    assert "/usr/local/bin/personal-db" in body
     assert "/Users/me/personal_db/state/scheduler.log" in body
     assert "<string>sync</string>" in body
     assert "<string>--due</string>" in body
@@ -1766,7 +1766,7 @@ def build_plist(pdb_path: str, root: Path, interval_seconds: int, log_path: Path
 """
 
 def install(root: Path, interval_seconds: int = 600) -> Path:
-    pdb_path = shutil.which("pdb") or "pdb"
+    pdb_path = shutil.which("personal-db") or "personal-db"
     log_path = root / "state" / "scheduler.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     p = plist_path()
@@ -1802,7 +1802,7 @@ from personal_db.cli import main as cli_main
 from personal_db import scheduler
 
 def install(interval_seconds: int = typer.Option(600, "--interval-seconds")) -> None:
-    """Write a launchd plist and load it. Runs `pdb sync --due` every interval."""
+    """Write a launchd plist and load it. Runs `personal-db sync --due` every interval."""
     p = scheduler.install(cli_main.get_root(), interval_seconds)
     typer.echo(f"installed: {p}")
 
@@ -2243,7 +2243,7 @@ git commit -m "feat(mcp): tool functions — list/describe/query/get_series/enti
 
 ---
 
-### Task 18: MCP server bootstrap + `pdb mcp`
+### Task 18: MCP server bootstrap + `personal-db mcp`
 
 **Files:**
 - Create: `src/personal_db/mcp_server/server.py`, `src/personal_db/cli/mcp_cmd.py`, `tests/integration/test_mcp_server.py`
@@ -2432,7 +2432,7 @@ app.command("mcp")(mcp_cmd.mcp)
 ```bash
 pytest tests/integration/test_mcp_server.py -v
 git add -A
-git commit -m "feat(mcp): stdio server bootstrap + 8 tools wired + pdb mcp"
+git commit -m "feat(mcp): stdio server bootstrap + 8 tools wired + personal-db mcp"
 ```
 
 ---
@@ -2645,7 +2645,7 @@ name: whoop
 description: Whoop daily cycles (strain, recovery, average HR)
 permission_type: oauth
 setup_steps:
-  - "Run `pdb tracker setup whoop` to launch OAuth flow"
+  - "Run `personal-db tracker setup whoop` to launch OAuth flow"
   - "Set WHOOP_CLIENT_ID and WHOOP_CLIENT_SECRET env vars first"
 schedule:
   every: 6h
@@ -2784,7 +2784,7 @@ def test_screen_time_sync_reads_fixture_db(tmp_path, monkeypatch):
                     "--root", str(root), "tracker", "install", "screen_time"],
                    check=True, capture_output=True)
     fixture = Path("tests/fixtures/screen_time/knowledgeC_mini.sqlite")
-    monkeypatch.setenv("PDB_SCREEN_TIME_DB", str(fixture))
+    monkeypatch.setenv("PERSONAL_DB_SCREEN_TIME_DB", str(fixture))
     r = subprocess.run([sys.executable, "-m", "personal_db.cli.main",
                         "--root", str(root), "sync", "screen_time"],
                        capture_output=True, text=True)
@@ -2803,7 +2803,7 @@ name: screen_time
 description: macOS app usage from ~/Library/Application Support/Knowledge/knowledgeC.db
 permission_type: full_disk_access
 setup_steps:
-  - "Run `pdb permission check screen_time` to verify FDA"
+  - "Run `personal-db permission check screen_time` to verify FDA"
   - "If denied, grant Full Disk Access to your terminal binary in System Settings"
 schedule:
   every: 1h
@@ -2849,7 +2849,7 @@ def _cocoa_to_iso(seconds: float) -> str:
     return (COCOA_EPOCH + timedelta(seconds=seconds)).isoformat()
 
 def _resolve_db_path() -> Path:
-    return Path(os.environ.get("PDB_SCREEN_TIME_DB", str(DEFAULT_DB)))
+    return Path(os.environ.get("PERSONAL_DB_SCREEN_TIME_DB", str(DEFAULT_DB)))
 
 def backfill(t: Tracker, start, end) -> None:
     sync(t)  # full read; UNIQUE constraint handles dedup
@@ -2947,7 +2947,7 @@ def test_imessage_sync_resolves_people(tmp_path, monkeypatch):
     subprocess.run([sys.executable, "-m", "personal_db.cli.main",
                     "--root", str(root), "tracker", "install", "imessage"],
                    check=True, capture_output=True)
-    monkeypatch.setenv("PDB_IMESSAGE_DB", "tests/fixtures/imessage/chat_mini.sqlite")
+    monkeypatch.setenv("PERSONAL_DB_IMESSAGE_DB", "tests/fixtures/imessage/chat_mini.sqlite")
     r = subprocess.run([sys.executable, "-m", "personal_db.cli.main",
                         "--root", str(root), "sync", "imessage"],
                        capture_output=True, text=True)
@@ -2970,7 +2970,7 @@ name: imessage
 description: iMessage messages from ~/Library/Messages/chat.db
 permission_type: full_disk_access
 setup_steps:
-  - "Run `pdb permission check imessage`"
+  - "Run `personal-db permission check imessage`"
   - "Add aliases (emails/phones) for known people in entities/people.yaml"
 schedule:
   every: 30m
@@ -3023,7 +3023,7 @@ def _ns_to_iso(ns: int) -> str:
     return (COCOA_EPOCH + timedelta(seconds=seconds)).isoformat()
 
 def _resolve_db() -> Path:
-    return Path(os.environ.get("PDB_IMESSAGE_DB", str(DEFAULT_DB)))
+    return Path(os.environ.get("PERSONAL_DB_IMESSAGE_DB", str(DEFAULT_DB)))
 
 def backfill(t: Tracker, start, end) -> None:
     sync(t)
@@ -3111,7 +3111,7 @@ name: habits
 description: Manually-logged daily habits (meditate, gym, read, etc.)
 permission_type: manual
 setup_steps:
-  - "Log via the MCP tool log_event or `pdb log habits name=… value=… ts=…`"
+  - "Log via the MCP tool log_event or `personal-db log habits name=… value=… ts=…`"
 schedule: null  # never auto-syncs
 time_column: ts
 granularity: event
@@ -3352,30 +3352,30 @@ source .venv/bin/activate
 
 ```bash
 # Initialize the data root (default ~/personal_db)
-pdb init
+personal-db init
 
 # Install some built-in trackers
-pdb tracker install github_commits
-pdb tracker install whoop
-pdb tracker install screen_time
-pdb tracker install imessage
-pdb tracker install habits
+personal-db tracker install github_commits
+personal-db tracker install whoop
+personal-db tracker install screen_time
+personal-db tracker install imessage
+personal-db tracker install habits
 
 # For each, run setup
 export GITHUB_TOKEN=…  GITHUB_USER=…
 export WHOOP_CLIENT_ID=…  WHOOP_CLIENT_SECRET=…
-pdb permission check screen_time   # opens System Settings if FDA missing
-pdb permission check imessage      # same
+personal-db permission check screen_time   # opens System Settings if FDA missing
+personal-db permission check imessage      # same
 
 # First run: backfill what's available
-pdb backfill github_commits
-pdb backfill whoop
+personal-db backfill github_commits
+personal-db backfill whoop
 
-# Install the launchd scheduler (runs `pdb sync --due` every 10 min)
-pdb scheduler install
+# Install the launchd scheduler (runs `personal-db sync --due` every 10 min)
+personal-db scheduler install
 
 # Add the MCP server to Claude Code
-claude mcp add personal_db -- pdb mcp
+claude mcp add personal_db -- personal-db mcp
 
 # Install the /insights skill
 mkdir -p ~/.claude/skills/personal-db
@@ -3435,10 +3435,10 @@ pytest -v
 Expected: all green except `live`-marked tests (which are opt-in).
 
 **Manual smoke (10 minutes):**
-1. `pdb init` (in a fresh tmp dir)
-2. `pdb tracker install habits && pdb sync habits`
-3. `pdb log habits name=meditate value=1 ts=2026-04-25T08:00`
-4. `pdb scheduler install && pdb scheduler status`
+1. `personal-db init` (in a fresh tmp dir)
+2. `personal-db tracker install habits && personal-db sync habits`
+3. `personal-db log habits name=meditate value=1 ts=2026-04-25T08:00`
+4. `personal-db scheduler install && personal-db scheduler status`
 5. Add MCP server to Claude Code; ask Claude to list trackers and log a habit. Verify it appears in `db.sqlite`.
 
 **Open items deferred from the spec (do NOT block v0 sign-off):**

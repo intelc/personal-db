@@ -16,7 +16,7 @@ dependencies = [
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.4", "pyright>=1.1"]
 
 [project.scripts]
-pdb = "personal_db.cli.main:app"
+personal-db = "personal_db.cli.main:app"
 
 [build-system]
 requires = ["hatchling"]
