@@ -24,16 +24,21 @@ Contract:
 from __future__ import annotations
 
 import importlib.util
+import sqlite3
 import sys
 from dataclasses import dataclass
+from html import escape
 from pathlib import Path
 from typing import Callable
 
 import yaml
 
 from personal_db.config import Config
+from personal_db.manifest import Manifest, ManifestError, load_manifest
 
 _BUILTIN_TRACKER = "_builtin"
+_RECENT_LIMIT = 20
+_CELL_TRUNCATE = 100
 
 
 @dataclass(frozen=True)
@@ -44,6 +49,7 @@ class Visualization:
     name: str
     description: str
     render: Callable[[Config], str]
+    auto: bool = False  # synthesized by the framework; off by default on dashboard
 
 
 def _load_module(path: Path, modname: str):
@@ -66,28 +72,121 @@ def _from_dict(tracker: str, raw: dict) -> Visualization:
         name=raw.get("name", short),
         description=raw.get("description", ""),
         render=raw["render"],
+        auto=bool(raw.get("auto", False)),
+    )
+
+
+def _truncate(value, n: int = _CELL_TRUNCATE) -> str:
+    if value is None:
+        return ""
+    s = str(value)
+    return s if len(s) <= n else s[: n - 1] + "…"
+
+
+def _synthesize_recent_viz(name: str, manifest: Manifest) -> Visualization:
+    """Default 'recent rows' viz for trackers that don't ship their own viz file.
+
+    Pulls SELECT * FROM <primary_table> ORDER BY <time_column> DESC LIMIT 20
+    and renders as an HTML table. Cells truncated; HTML-escaped throughout.
+    """
+    primary_table = next(iter(manifest.schema.tables))
+    time_col = manifest.time_column
+
+    def render(cfg: Config) -> str:
+        try:
+            con = sqlite3.connect(cfg.db_path)
+        except sqlite3.OperationalError:
+            return '<p class="meta">database not initialized yet</p>'
+        try:
+            try:
+                count = con.execute(f'SELECT count(*) FROM "{primary_table}"').fetchone()[0]
+            except sqlite3.OperationalError:
+                return f'<p class="meta">table <code>{escape(primary_table)}</code> not found — run sync</p>'
+            if count == 0:
+                return f'<p class="meta">no rows in <code>{escape(primary_table)}</code> yet</p>'
+            cur = con.execute(
+                f'SELECT * FROM "{primary_table}" '
+                f'ORDER BY "{time_col}" DESC LIMIT {_RECENT_LIMIT}'
+            )
+            cols = [c[0] for c in cur.description] if cur.description else []
+            rows = cur.fetchall()
+            try:
+                tmin, tmax = con.execute(
+                    f'SELECT MIN("{time_col}"), MAX("{time_col}") FROM "{primary_table}"'
+                ).fetchone()
+            except sqlite3.OperationalError:
+                tmin = tmax = None
+        finally:
+            con.close()
+
+        header_cells = "".join(f"<th>{escape(c)}</th>" for c in cols)
+        body_rows = []
+        for r in rows:
+            cells = "".join(f"<td>{escape(_truncate(v))}</td>" for v in r)
+            body_rows.append(f"<tr>{cells}</tr>")
+        meta_bits = [f"{count:,} rows"]
+        if tmin and tmax:
+            meta_bits.append(f"{escape(str(tmin)[:19])} → {escape(str(tmax)[:19])}")
+        meta_line = " · ".join(meta_bits)
+        return (
+            f'<p class="meta">{meta_line}</p>'
+            f'<div class="recent-rows-wrap">'
+            f'<table class="recent-rows">'
+            f"<thead><tr>{header_cells}</tr></thead>"
+            f"<tbody>{''.join(body_rows)}</tbody></table></div>"
+            f'<p class="meta">showing latest {min(len(rows), _RECENT_LIMIT)} '
+            f"by <code>{escape(time_col)}</code></p>"
+        )
+
+    return Visualization(
+        slug=f"{name}:recent",
+        tracker=name,
+        short="recent",
+        name="Recent",
+        description=f"Latest {_RECENT_LIMIT} rows from {primary_table}, sorted by {time_col}.",
+        render=render,
+        auto=True,
     )
 
 
 def _discover_tracker_viz(cfg: Config) -> list[Visualization]:
+    """Discover viz for each installed tracker.
+
+    For trackers that ship visualizations.py, load and use those.
+    For trackers without one, synthesize a default :recent viz from manifest.
+    Either way every installed tracker ends up navigable.
+    """
     out: list[Visualization] = []
     if not cfg.trackers_dir.exists():
         return out
     for d in sorted(cfg.trackers_dir.iterdir()):
         if not d.is_dir():
             continue
+        manifest_path = d / "manifest.yaml"
         viz_path = d / "visualizations.py"
-        if not viz_path.is_file():
+        if not manifest_path.is_file():
             continue
-        try:
-            mod = _load_module(viz_path, f"personal_db_viz_{d.name}")
-            entries = mod.list_visualizations()
-        except Exception:  # noqa: BLE001 — broken viz files shouldn't crash the dashboard
-            continue
-        for raw in entries:
+
+        explicit: list[Visualization] = []
+        if viz_path.is_file():
             try:
-                out.append(_from_dict(d.name, raw))
-            except (KeyError, TypeError):
+                mod = _load_module(viz_path, f"personal_db_viz_{d.name}")
+                entries = mod.list_visualizations()
+                for raw in entries:
+                    try:
+                        explicit.append(_from_dict(d.name, raw))
+                    except (KeyError, TypeError):
+                        continue
+            except Exception:  # noqa: BLE001 — fall through to synthesized
+                explicit = []
+
+        if explicit:
+            out.extend(explicit)
+        else:
+            try:
+                manifest = load_manifest(manifest_path)
+                out.append(_synthesize_recent_viz(d.name, manifest))
+            except ManifestError:
                 continue
     return out
 
@@ -139,4 +238,7 @@ def load_dashboard_slugs(cfg: Config, registry: dict[str, Visualization]) -> lis
                 return [s for s in slugs if s in registry]
         except yaml.YAMLError:
             pass
-    return list(registry.keys())  # registry is already in deterministic order
+    # Default: every curated (non-auto) viz, in registry order. Auto-synthesized
+    # "recent rows" viz are still reachable via /t/<tracker> and /v/<slug> but
+    # don't clutter the default dashboard.
+    return [slug for slug, v in registry.items() if not v.auto]

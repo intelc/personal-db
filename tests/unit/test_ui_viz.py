@@ -141,6 +141,107 @@ def test_broken_viz_does_not_kill_dashboard(tmp_path):
     assert "error rendering" in r.text
 
 
+def test_synthesized_recent_viz_for_trackers_without_viz_file(tmp_path):
+    """github_commits has no visualizations.py → framework synthesizes :recent."""
+    cfg = _setup(tmp_path, "github_commits")
+    reg = discover(cfg)
+    assert "github_commits:recent" in reg
+    assert reg["github_commits:recent"].auto is True
+    # And it appears in the nav
+    assert "github_commits" in list_trackers_with_viz(reg)
+
+
+def test_explicit_viz_suppresses_synthesized(tmp_path):
+    """daily_time_accounting ships its own viz → no synthesized :recent added."""
+    cfg = _setup(tmp_path, "daily_time_accounting")
+    reg = discover(cfg)
+    assert "daily_time_accounting:today_stack" in reg
+    assert "daily_time_accounting:recent" not in reg
+
+
+def test_dashboard_default_excludes_auto_viz(tmp_path):
+    """Synthetic :recent rows shouldn't clutter the dashboard by default."""
+    cfg = _setup(tmp_path, "github_commits", "daily_time_accounting")
+    reg = discover(cfg)
+    slugs = load_dashboard_slugs(cfg, reg)
+    # Curated viz appear
+    assert "daily_time_accounting:today_stack" in slugs
+    assert "_builtin:health" in slugs
+    # Auto-synthesized do NOT appear by default
+    assert "github_commits:recent" not in slugs
+
+
+def test_dashboard_config_can_explicitly_include_auto_viz(tmp_path):
+    """User can add an auto viz to their dashboard if they want it there."""
+    cfg = _setup(tmp_path, "github_commits")
+    config_dir = cfg.root / ".config"
+    config_dir.mkdir()
+    (config_dir / "dashboard.yaml").write_text(
+        yaml.safe_dump({"viz": ["github_commits:recent"]})
+    )
+    reg = discover(cfg)
+    slugs = load_dashboard_slugs(cfg, reg)
+    assert slugs == ["github_commits:recent"]
+
+
+def test_synthesized_viz_renders_recent_rows(tmp_path):
+    cfg = _setup(tmp_path, "github_commits")
+    # Seed a couple of rows
+    con = sqlite3.connect(cfg.db_path)
+    con.execute(
+        "INSERT INTO github_commits(sha, repo, committed_at, message, additions, deletions) "
+        "VALUES ('abc123', 'me/x', '2026-04-26T12:00:00Z', 'fix: thing', 10, 2)"
+    )
+    con.execute(
+        "INSERT INTO github_commits(sha, repo, committed_at, message, additions, deletions) "
+        "VALUES ('def456', 'me/y', '2026-04-25T08:00:00Z', 'feat: stuff', 50, 0)"
+    )
+    con.commit()
+    con.close()
+    reg = discover(cfg)
+    html = reg["github_commits:recent"].render(cfg)
+    # Both rows should appear (newest first)
+    assert "abc123" in html
+    assert "def456" in html
+    # Newest-first ordering: abc (4-26) appears before def (4-25)
+    assert html.index("abc123") < html.index("def456")
+    # Header line shows count and time range
+    assert "2 rows" in html
+
+
+def test_synthesized_viz_handles_empty_table(tmp_path):
+    cfg = _setup(tmp_path, "github_commits")  # installed but no rows
+    reg = discover(cfg)
+    html = reg["github_commits:recent"].render(cfg)
+    assert "no rows" in html.lower()
+
+
+def test_tracker_page_works_for_tracker_without_explicit_viz(tmp_path):
+    """github_commits has no visualizations.py — its /t page should still load."""
+    cfg = _setup(tmp_path, "github_commits")
+    client = TestClient(build_app(cfg))
+    r = client.get("/t/github_commits")
+    assert r.status_code == 200
+    assert "RECENT" in r.text
+    assert "github_commits:recent" in r.text  # slug visible in title
+
+
+def test_health_viz_links_tracker_names(tmp_path):
+    cfg = _setup(tmp_path, "daily_time_accounting")
+    # Need at least one entry in last_run.json so health renders rows
+    state = cfg.state_dir
+    state.mkdir(parents=True, exist_ok=True)
+    from datetime import datetime, timezone
+    (state / "last_run.json").write_text(
+        f'{{"daily_time_accounting": "{datetime.now(timezone.utc).isoformat()}"}}'
+    )
+    client = TestClient(build_app(cfg))
+    r = client.get("/v/_builtin:health")
+    assert r.status_code == 200
+    # Tracker name should be wrapped in a link to /t/<name>
+    assert '<a href="/t/daily_time_accounting">daily_time_accounting</a>' in r.text
+
+
 def test_render_today_stack_returns_html(tmp_path):
     """Direct unit test of a tracker's render function."""
     cfg = _setup(tmp_path, "daily_time_accounting")

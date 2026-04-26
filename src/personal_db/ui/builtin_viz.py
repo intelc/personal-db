@@ -44,8 +44,11 @@ def render_health(cfg: Config) -> str:
             age = "?"
         horizon = horizons.get(tracker)
         horizon_cell = escape(horizon[:10]) if horizon else "—"
+        # Tracker name links to its dedicated page so users can click straight
+        # from "this looks stale" to the tracker's recent rows / viz.
+        name_link = f'<a href="/t/{escape(tracker)}">{escape(tracker)}</a>'
         rows.append(
-            f"<tr><td>{escape(tracker)}</td>"
+            f"<tr><td>{name_link}</td>"
             f"<td>{escape(age)}</td>"
             f'<td class="meta">{horizon_cell}</td></tr>'
         )
