@@ -81,6 +81,25 @@ In Claude Code:
 - "Log that I meditated today" → calls `log_event("habits", …)`
 - "/insights weekly review" → runs the skill, writes `notes/YYYY-MM-DD-weekly-review.md`
 
+## github_commits — capturing local-CLI commits
+
+By default, `github_commits` matches commits via GitHub's standard email-to-user
+linkage. If you commit locally with an email that isn't on your GitHub
+account (`git config user.email`), those commits won't be attributed to you
+on GitHub and won't be captured.
+
+To include them, set `GITHUB_AUTHOR_EMAILS` in `<root>/.env`:
+
+```bash
+echo 'GITHUB_AUTHOR_EMAILS=intel@intelchen.com,me@work.com' >> ~/personal_db/.env
+```
+
+Comma-separated; case-insensitive. Find your local email with:
+
+```bash
+git config user.email
+```
+
 ## Layout
 
 See `docs/superpowers/specs/2026-04-25-personal-db-v0-design.md` for the full design.

@@ -1,3 +1,7 @@
 [
-  {"sha": "bbbb1111", "commit": {"author": {"name": "x", "email": "x@y", "date": "2026-04-19T22:00:00Z"}, "message": "chore: tidy"}}
+  {
+    "sha": "bbbb1111",
+    "author": {"login": "intelc"},
+    "commit": {"author": {"name": "intelc", "email": "32405016+intelc@users.noreply.github.com", "date": "2026-04-19T22:00:00Z"}, "message": "chore: tidy"}
+  }
 ]
