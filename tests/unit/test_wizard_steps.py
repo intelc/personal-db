@@ -2,12 +2,13 @@ import os
 import sqlite3
 
 from personal_db.config import Config
-from personal_db.manifest import EnvVarStep, FdaCheckStep, InstructionsStep
+from personal_db.manifest import CommandTestStep, EnvVarStep, FdaCheckStep, InstructionsStep
 from personal_db.wizard.env_file import read_env
 from personal_db.wizard.steps import (
     Failed,
     Ok,
     WizardContext,
+    handle_command_test,
     handle_env_var,
     handle_fda_check,
     handle_instructions,
@@ -108,3 +109,28 @@ def test_instructions_always_returns_ok(tmp_root, monkeypatch, capsys):
     assert isinstance(r, Ok)
     captured = capsys.readouterr()
     assert "Edit" in captured.out
+
+
+def test_command_test_ok_on_returncode_match(tmp_root):
+    step = CommandTestStep(type="command_test", command=["true"])
+    r = handle_command_test(step, _ctx(tmp_root))
+    assert isinstance(r, Ok)
+
+
+def test_command_test_failed_on_returncode_mismatch(tmp_root):
+    step = CommandTestStep(type="command_test", command=["false"])
+    r = handle_command_test(step, _ctx(tmp_root))
+    assert isinstance(r, Failed)
+
+
+def test_command_test_pattern_match(tmp_root):
+    step = CommandTestStep(type="command_test", command=["echo", "hello"], expect_pattern="ell")
+    r = handle_command_test(step, _ctx(tmp_root))
+    assert isinstance(r, Ok)
+
+
+def test_command_test_pattern_mismatch_returns_failed(tmp_root):
+    step = CommandTestStep(type="command_test", command=["echo", "hello"], expect_pattern="zzz")
+    r = handle_command_test(step, _ctx(tmp_root))
+    assert isinstance(r, Failed)
+    assert "pattern" in r.reason.lower()

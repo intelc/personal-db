@@ -8,13 +8,15 @@ tokens, etc.) and return a structured result the runner can record.
 from __future__ import annotations
 
 import os
+import re
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 import questionary
 
 from personal_db.config import Config
-from personal_db.manifest import EnvVarStep, FdaCheckStep, InstructionsStep
+from personal_db.manifest import CommandTestStep, EnvVarStep, FdaCheckStep, InstructionsStep
 from personal_db.permissions import open_fda_settings_pane, probe_sqlite_access
 from personal_db.wizard.env_file import read_env, upsert_env
 
@@ -96,3 +98,19 @@ def handle_env_var(step: EnvVarStep, ctx: WizardContext) -> StepResult:
     upsert_env(ctx.env_path, step.name, final)
     os.environ[step.name] = final  # propagate so test sync sees it
     return Ok(f"{step.name} configured")
+
+
+def handle_command_test(step: CommandTestStep, ctx: WizardContext) -> StepResult:
+    try:
+        r = subprocess.run(step.command, capture_output=True, text=True, timeout=30)
+    except subprocess.TimeoutExpired:
+        return Failed(f"command timed out: {' '.join(step.command)}")
+    except FileNotFoundError as e:
+        return Failed(f"command not found: {e}")
+    if r.returncode != step.expect_returncode:
+        return Failed(
+            f"exit {r.returncode} (expected {step.expect_returncode}): {r.stderr.strip()}"
+        )
+    if step.expect_pattern and not re.search(step.expect_pattern, r.stdout):
+        return Failed(f"pattern mismatch: {step.expect_pattern!r} not in output")
+    return Ok("command verified")
