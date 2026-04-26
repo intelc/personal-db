@@ -1,0 +1,21 @@
+name: imessage
+description: iMessage messages from ~/Library/Messages/chat.db
+permission_type: full_disk_access
+setup_steps:
+  - "Run `personal-db permission check imessage`"
+  - "Add aliases (emails/phones) for known people in entities/people.yaml"
+schedule:
+  every: 30m
+time_column: sent_at
+granularity: event
+schema:
+  tables:
+    imessage_messages:
+      columns:
+        id:          {type: INTEGER, semantic: "rowid in chat.db"}
+        person_id:   {type: INTEGER, semantic: "FK -> people.person_id (nullable if unresolved)"}
+        handle:      {type: TEXT,    semantic: "raw phone or email"}
+        text:        {type: TEXT,    semantic: "message body"}
+        is_from_me:  {type: INTEGER, semantic: "1 if I sent it"}
+        sent_at:     {type: TEXT,    semantic: "ISO-8601 UTC"}
+related_entities: ["people"]
