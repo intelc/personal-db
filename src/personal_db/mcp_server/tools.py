@@ -136,6 +136,60 @@ def read_note_tool(cfg: Config, path: str) -> str:
     return read_note(cfg, path)
 
 
+def log_life_context(
+    cfg: Config,
+    start_date: str,
+    end_date: str | None = None,
+    state: str | None = None,
+    note: str | None = None,
+) -> dict[str, Any]:
+    """Insert one or more rows into the life_context tracker.
+
+    For ranges (end_date set and >= start_date), fans out one row per day with
+    the same state/note. At least one of state/note must be provided.
+
+    Returns: {"inserted": N, "dates": [...]}.
+    """
+    from datetime import date as date_t
+    from datetime import datetime
+
+    if not state and not note:
+        raise ValueError("at least one of `state` or `note` is required")
+    try:
+        start = date_t.fromisoformat(start_date)
+    except ValueError as e:
+        raise ValueError(f"start_date must be YYYY-MM-DD: {e}") from e
+    if end_date:
+        try:
+            end = date_t.fromisoformat(end_date)
+        except ValueError as e:
+            raise ValueError(f"end_date must be YYYY-MM-DD: {e}") from e
+        if end < start:
+            raise ValueError(f"end_date {end_date} is before start_date {start_date}")
+    else:
+        end = start
+
+    logged_at = datetime.now().astimezone().isoformat()
+    con = connect(cfg.db_path, read_only=False)
+    try:
+        cur = con.cursor()
+        dates: list[str] = []
+        d = start
+        from datetime import timedelta
+
+        while d <= end:
+            cur.execute(
+                "INSERT INTO life_context(date, state, note, logged_at) VALUES (?, ?, ?, ?)",
+                (d.isoformat(), state, note, logged_at),
+            )
+            dates.append(d.isoformat())
+            d += timedelta(days=1)
+        con.commit()
+    finally:
+        con.close()
+    return {"inserted": len(dates), "dates": dates}
+
+
 # ---------- tracker scaffolding tools ----------
 #
 # These let an MCP client (e.g. Claude in the Mac app, sandboxed without

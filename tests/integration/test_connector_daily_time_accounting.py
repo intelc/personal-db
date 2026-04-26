@@ -201,14 +201,12 @@ def test_daily_time_accounting_marks_pre_horizon_days_as_no_data(tmp_path):
     # No data at all on 2026-04-10 — that day predates the horizon, so it should
     # be _no_data not _unaccounted. Screen_time is installed (above) so its
     # manifest's local_only=True is what makes its horizon "matter."
+    # screen_time_app_usage is created by install (schema.sql); just need
+    # the horizons table here.
     con = sqlite3.connect(cfg.db_path)
     con.executescript(
         """
-        CREATE TABLE screen_time_app_usage (
-          id INTEGER PRIMARY KEY, bundle_id TEXT NOT NULL, start_at TEXT NOT NULL,
-          end_at TEXT NOT NULL, seconds INTEGER NOT NULL
-        );
-        CREATE TABLE tracker_horizons (
+        CREATE TABLE IF NOT EXISTS tracker_horizons (
           tracker TEXT PRIMARY KEY, horizon TEXT NOT NULL, computed_at TEXT NOT NULL
         );
         """

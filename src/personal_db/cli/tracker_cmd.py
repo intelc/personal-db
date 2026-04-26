@@ -2,6 +2,7 @@ import typer
 
 from personal_db.cli.state import get_root
 from personal_db.config import Config
+from personal_db.db import apply_tracker_schema, init_db
 from personal_db.installer import install_template
 from personal_db.manifest import load_manifest
 from personal_db.wizard.menu import run_menu
@@ -88,6 +89,10 @@ def install(name: str) -> None:
     except ValueError as e:
         typer.echo(str(e), err=True)
         raise typer.Exit(1) from e
+    # Apply schema eagerly so manual-capture trackers (life_context, habits)
+    # have their tables ready without needing a no-op sync first.
+    init_db(cfg.db_path)
+    apply_tracker_schema(cfg.db_path, (dest / "schema.sql").read_text())
     typer.echo(f"Installed {name} -> {dest}")
 
 

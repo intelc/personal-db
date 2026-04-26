@@ -1,0 +1,53 @@
+name: life_context
+description: |
+  Lightweight diary — structured "state" tags + free-text notes, day-granular.
+  Manual capture only. Use it to annotate days that need explanation when other
+  trackers look weird (sick stretch, travel, system reinstall, vacation, etc.)
+  so future-you (or future-Claude) reads the data correctly.
+
+permission_type: none
+
+setup_steps:
+  - type: instructions
+    text: |
+      life_context is a manual-capture tracker. Log entries via the MCP tool
+      `log_life_context` (in any Claude client connected to personal_db):
+
+        log_life_context(
+          start_date="2026-04-13",
+          end_date="2026-04-18",        # optional — single day if omitted
+          state="sick",                  # optional categorical tag
+          note="flu, low energy",        # at least one of state/note required
+        )
+
+      Suggested states (free-text, not enforced):
+        well | sick | recovering | traveling | holiday | system_event |
+        focused | distracted | other
+
+      Multiple entries per day are fine (autoincrement id). Range entries
+      fan out to one row per day with the same state/note.
+
+# No schedule — purely manual capture, never auto-synced.
+
+time_column: date
+granularity: day
+local_only: true
+schema:
+  tables:
+    life_context:
+      columns:
+        id:
+          type: INTEGER
+          semantic: autoincrement primary key
+        date:
+          type: TEXT
+          semantic: ISO-8601 local date YYYY-MM-DD this entry applies to
+        state:
+          type: TEXT
+          semantic: optional categorical tag (sick, traveling, well, etc.)
+        note:
+          type: TEXT
+          semantic: free-text annotation explaining what was happening that day
+        logged_at:
+          type: TEXT
+          semantic: ISO-8601 timestamp of when the entry was created

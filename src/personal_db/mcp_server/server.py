@@ -142,6 +142,33 @@ def build_server(cfg: Config) -> Server:
                 },
             ),
             Tool(
+                name="log_life_context",
+                description=(
+                    "Log a life_context diary entry — a structured 'state' tag "
+                    "(sick, traveling, well, etc.) and/or free-text note for one "
+                    "day or a range. Range entries fan out to one row per day. "
+                    "At least one of state or note is required. Use this to "
+                    "annotate days that need explanation when other trackers "
+                    "look weird (sick stretch, vacation, system reinstall)."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "start_date": {"type": "string", "description": "YYYY-MM-DD"},
+                        "end_date": {
+                            "type": "string",
+                            "description": "YYYY-MM-DD; omit for single-day entry",
+                        },
+                        "state": {
+                            "type": "string",
+                            "description": "categorical tag (sick/traveling/well/etc.)",
+                        },
+                        "note": {"type": "string", "description": "free-text annotation"},
+                    },
+                    "required": ["start_date"],
+                },
+            ),
+            Tool(
                 name="validate_tracker",
                 description=(
                     "Run lint checks on a tracker dir: YAML parse, Pydantic manifest "
@@ -188,6 +215,14 @@ def build_server(cfg: Config) -> Server:
             result = T.write_tracker_file(cfg, arguments["path"], arguments["content"])
         elif name == "validate_tracker":
             result = T.validate_tracker(cfg, arguments["name"])
+        elif name == "log_life_context":
+            result = T.log_life_context(
+                cfg,
+                start_date=arguments["start_date"],
+                end_date=arguments.get("end_date"),
+                state=arguments.get("state"),
+                note=arguments.get("note"),
+            )
         else:
             raise ValueError(f"unknown tool {name}")
         return [TextContent(type="text", text=json.dumps(result, default=str))]
