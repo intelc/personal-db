@@ -111,6 +111,76 @@ def test_daily_time_accounting_computes_categories(tmp_path):
     assert "_unaccounted" in by_cat
 
 
+def test_daily_time_accounting_redistributes_chrome_via_visits(tmp_path):
+    """Chrome screen-time should split across URL categories using visit dwell ratios."""
+    root = tmp_path / "personal_db"
+    subprocess.run(
+        [sys.executable, "-m", "personal_db.cli.main", "--root", str(root), "init"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "personal_db.cli.main",
+            "--root",
+            str(root),
+            "tracker",
+            "install",
+            "daily_time_accounting",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    cfg = Config(root=root)
+
+    con = sqlite3.connect(cfg.db_path)
+    con.executescript(
+        """
+        CREATE TABLE screen_time_app_usage (
+          id INTEGER PRIMARY KEY, bundle_id TEXT NOT NULL, start_at TEXT NOT NULL,
+          end_at TEXT NOT NULL, seconds INTEGER NOT NULL
+        );
+        CREATE TABLE chrome_visits (
+          visit_id INTEGER, profile TEXT, url TEXT, title TEXT, domain TEXT,
+          visited_at TEXT, duration_seconds REAL, transition INTEGER,
+          PRIMARY KEY (visit_id, profile)
+        );
+        """
+    )
+    # 4h on Chrome on a single local-noon window (avoids tz-day-edge issues)
+    con.execute(
+        "INSERT INTO screen_time_app_usage(bundle_id, start_at, end_at, seconds) "
+        "VALUES (?, ?, ?, ?)",
+        ("com.google.Chrome", "2026-04-26T18:00:00+00:00", "2026-04-26T22:00:00+00:00", 14400),
+    )
+    # Visits that day: 3h github (work), 1h youtube (leisure) → 75/25 split
+    con.execute(
+        "INSERT INTO chrome_visits VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (1, "Default", "https://github.com/x", "x", "github.com",
+         "2026-04-26T19:00:00+00:00", 10800.0, 0),
+    )
+    con.execute(
+        "INSERT INTO chrome_visits VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (2, "Default", "https://youtube.com/x", "x", "youtube.com",
+         "2026-04-26T20:00:00+00:00", 3600.0, 0),
+    )
+    con.commit()
+    con.close()
+
+    sync_one(cfg, "daily_time_accounting")
+
+    con = sqlite3.connect(cfg.db_path)
+    rows = con.execute(
+        "SELECT category, hours FROM daily_time_accounting WHERE date = '2026-04-26'"
+    ).fetchall()
+    by_cat = {r[0]: r[1] for r in rows}
+    # 4h Chrome split 3:1 → 3h work, 1h leisure (within rounding)
+    assert by_cat.get("work", 0) == 3.0
+    assert by_cat.get("leisure", 0) == 1.0
+
+
 def test_daily_time_accounting_handles_missing_source_tables(tmp_path):
     """When source tables don't exist (e.g. fresh install), tracker still runs."""
     root = tmp_path / "personal_db"
