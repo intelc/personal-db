@@ -18,9 +18,19 @@
     <span class="logo">[ personal_db ]</span>
     <nav>
       <a href="/" {% if active=='dashboard' %}class="active"{% endif %}>dashboard</a>
-      {% for t in nav_trackers %}
+      {% for t in nav_visible %}
         <a href="/t/{{ t }}" {% if active==t %}class="active"{% endif %}>{{ t }}</a>
       {% endfor %}
+      {% if nav_overflow %}
+        <details class="nav-more">
+          <summary>more ▾</summary>
+          <div class="nav-more-menu">
+            {% for t in nav_overflow %}
+              <a href="/t/{{ t }}">{{ t }}</a>
+            {% endfor %}
+          </div>
+        </details>
+      {% endif %}
     </nav>
   </header>
   <main>

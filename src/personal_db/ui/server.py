@@ -22,6 +22,30 @@ from personal_db.ui.viz import discover, list_trackers_with_viz, load_dashboard_
 
 _HERE = Path(__file__).parent
 
+_NAV_VISIBLE_LIMIT = 6
+
+
+def _split_nav(trackers: list[str], active: str | None,
+               limit: int = _NAV_VISIBLE_LIMIT) -> tuple[list[str], list[str]]:
+    """Cap inline nav at `limit`; remainder goes into a dropdown.
+
+    If the active tracker would otherwise be hidden in the dropdown, swap it
+    into the last visible slot so the highlighted tab always shows. The
+    displaced tracker bumps into the dropdown (sorted) so behavior stays
+    deterministic across page loads.
+    """
+    if len(trackers) <= limit:
+        return list(trackers), []
+    visible = list(trackers[:limit])
+    overflow = list(trackers[limit:])
+    if active and active in overflow:
+        displaced = visible[-1]
+        visible[-1] = active
+        overflow.remove(active)
+        overflow.append(displaced)
+        overflow.sort()
+    return visible, overflow
+
 
 def build_app(cfg: Config) -> FastAPI:
     app = FastAPI(title="personal_db", openapi_url=None, docs_url=None, redoc_url=None)
@@ -33,10 +57,9 @@ def build_app(cfg: Config) -> FastAPI:
         # take effect without restarting the server.
         return discover(cfg)
 
-    def _nav_context(reg):
-        return {
-            "nav_trackers": list_trackers_with_viz(reg),
-        }
+    def _nav_context(reg, active=None):
+        visible, overflow = _split_nav(list_trackers_with_viz(reg), active)
+        return {"nav_visible": visible, "nav_overflow": overflow}
 
     @app.get("/", response_class=HTMLResponse)
     async def dashboard(request: Request):
@@ -55,7 +78,8 @@ def build_app(cfg: Config) -> FastAPI:
         return templates.TemplateResponse(
             request=request,
             name="dashboard.html",
-            context={"active": "dashboard", "rendered": rendered, **_nav_context(reg)},
+            context={"active": "dashboard", "rendered": rendered,
+                     **_nav_context(reg, active="dashboard")},
         )
 
     @app.get("/v/{slug:path}", response_class=HTMLResponse)
@@ -75,7 +99,7 @@ def build_app(cfg: Config) -> FastAPI:
                 "active": viz.tracker,
                 "viz": viz,
                 "html": html,
-                **_nav_context(reg),
+                **_nav_context(reg, active=viz.tracker),
             },
         )
 
@@ -105,7 +129,7 @@ def build_app(cfg: Config) -> FastAPI:
                 "active": tracker,
                 "tracker": tracker,
                 "rendered": rendered,
-                **_nav_context(reg),
+                **_nav_context(reg, active=tracker),
             },
         )
 

@@ -141,6 +141,55 @@ def test_broken_viz_does_not_kill_dashboard(tmp_path):
     assert "error rendering" in r.text
 
 
+def test_nav_split_under_limit_returns_all_visible():
+    from personal_db.ui.server import _split_nav
+    visible, overflow = _split_nav(["a", "b", "c"], active=None, limit=6)
+    assert visible == ["a", "b", "c"]
+    assert overflow == []
+
+
+def test_nav_split_over_limit_pushes_extras_to_dropdown():
+    from personal_db.ui.server import _split_nav
+    trackers = ["a", "b", "c", "d", "e", "f", "g", "h"]
+    visible, overflow = _split_nav(trackers, active=None, limit=6)
+    assert visible == ["a", "b", "c", "d", "e", "f"]
+    assert overflow == ["g", "h"]
+
+
+def test_nav_split_swaps_active_into_visible():
+    """If the active tracker would be hidden in overflow, swap it into the
+    last visible slot so the highlighted tab stays on screen."""
+    from personal_db.ui.server import _split_nav
+    trackers = ["a", "b", "c", "d", "e", "f", "g", "h"]
+    visible, overflow = _split_nav(trackers, active="h", limit=6)
+    assert "h" in visible
+    assert "h" not in overflow
+    # The displaced tracker (last of original visible) is now in overflow
+    assert "f" in overflow
+
+
+def test_nav_split_active_already_visible_unchanged():
+    from personal_db.ui.server import _split_nav
+    trackers = ["a", "b", "c", "d", "e", "f", "g", "h"]
+    visible, overflow = _split_nav(trackers, active="b", limit=6)
+    assert visible == ["a", "b", "c", "d", "e", "f"]
+    assert overflow == ["g", "h"]
+
+
+def test_nav_overflow_renders_in_dashboard_html(tmp_path):
+    """End-to-end: install enough trackers to exceed the limit; the rendered
+    page should include a 'more' dropdown with the overflow links."""
+    from personal_db.installer import list_bundled
+    cfg = _setup(tmp_path, *list_bundled())
+    client = TestClient(build_app(cfg))
+    r = client.get("/")
+    assert r.status_code == 200
+    # The "more" summary appears
+    assert "more ▾" in r.text
+    # Dropdown menu container is present
+    assert "nav-more-menu" in r.text
+
+
 def test_every_bundled_tracker_viz_renders_without_error(tmp_path):
     """Smoke test: install every bundled tracker, then render every declared viz.
 
