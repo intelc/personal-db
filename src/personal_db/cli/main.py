@@ -2,7 +2,7 @@ from pathlib import Path
 
 import typer
 
-from personal_db.cli import init_cmd
+from personal_db.cli import init_cmd, tracker_cmd
 from personal_db.cli.state import _state, get_root  # noqa: F401 — re-exported for callers
 
 app = typer.Typer(no_args_is_help=True, help="Personal data layer CLI")
@@ -15,6 +15,12 @@ def _global(root: str = typer.Option(None, "--root", help="Override data root"))
 
 
 app.command("init")(init_cmd.run)
+
+tracker_app = typer.Typer(no_args_is_help=True, help="Tracker management")
+tracker_app.command("new")(tracker_cmd.new)
+tracker_app.command("list")(tracker_cmd.list_cmd)
+tracker_app.command("install")(tracker_cmd.install)
+app.add_typer(tracker_app, name="tracker")
 
 if __name__ == "__main__":
     app()
