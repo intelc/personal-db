@@ -1,6 +1,6 @@
 import warnings
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -39,13 +39,54 @@ warnings.filterwarnings(
 )
 
 
+class EnvVarStep(BaseModel):
+    type: Literal["env_var"]
+    name: str
+    prompt: str
+    secret: bool = False
+
+
+class OAuthStep(BaseModel):
+    type: Literal["oauth"]
+    provider: str
+    client_id_env: str
+    client_secret_env: str
+    auth_url: str
+    token_url: str
+    scopes: list[str] = Field(default_factory=list)
+    redirect_path: str = "/callback"
+
+
+class FdaCheckStep(BaseModel):
+    type: Literal["fda_check"]
+    probe_path: str
+
+
+class InstructionsStep(BaseModel):
+    type: Literal["instructions"]
+    text: str
+
+
+class CommandTestStep(BaseModel):
+    type: Literal["command_test"]
+    command: list[str]
+    expect_pattern: str | None = None
+    expect_returncode: int = 0
+
+
+SetupStep = Annotated[
+    EnvVarStep | OAuthStep | FdaCheckStep | InstructionsStep | CommandTestStep,
+    Field(discriminator="type"),
+]
+
+
 class Manifest(BaseModel):
     model_config = ConfigDict(protected_namespaces=())  # silence model_* shadowing warnings
 
     name: str
     description: str
     permission_type: PermissionType
-    setup_steps: list[str] = Field(default_factory=list)
+    setup_steps: list[SetupStep] = Field(default_factory=list)
     schedule: ScheduleSpec | None = None
     time_column: str
     granularity: Literal["event", "minute", "hour", "day"] = "event"

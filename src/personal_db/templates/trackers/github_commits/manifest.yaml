@@ -2,8 +2,13 @@ name: github_commits
 description: Commits authored across GitHub
 permission_type: api_key
 setup_steps:
-  - "Set GITHUB_TOKEN env var with a personal access token (scopes: read:user, repo)"
-  - "Set GITHUB_USER env var to your GitHub username"
+  - type: env_var
+    name: GITHUB_TOKEN
+    prompt: "GitHub personal access token (scopes: read:user, repo)"
+    secret: true
+  - type: env_var
+    name: GITHUB_USER
+    prompt: "Your GitHub username"
 schedule:
   every: 4h
 time_column: committed_at

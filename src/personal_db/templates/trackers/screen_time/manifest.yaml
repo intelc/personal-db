@@ -2,8 +2,8 @@ name: screen_time
 description: macOS app usage from ~/Library/Application Support/Knowledge/knowledgeC.db
 permission_type: full_disk_access
 setup_steps:
-  - "Run `personal-db permission check screen_time` to verify FDA"
-  - "If denied, grant Full Disk Access to your terminal binary in System Settings"
+  - type: fda_check
+    probe_path: "~/Library/Application Support/Knowledge/knowledgeC.db"
 schedule:
   every: 1h
 time_column: start_at

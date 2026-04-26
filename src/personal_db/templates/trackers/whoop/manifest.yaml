@@ -2,8 +2,20 @@ name: whoop
 description: Whoop daily cycles (strain, recovery, average HR)
 permission_type: oauth
 setup_steps:
-  - "Run `personal-db tracker setup whoop` to launch OAuth flow"
-  - "Set WHOOP_CLIENT_ID and WHOOP_CLIENT_SECRET env vars first"
+  - type: env_var
+    name: WHOOP_CLIENT_ID
+    prompt: "Whoop OAuth client ID (from developer.whoop.com)"
+  - type: env_var
+    name: WHOOP_CLIENT_SECRET
+    prompt: "Whoop OAuth client secret"
+    secret: true
+  - type: oauth
+    provider: whoop
+    client_id_env: WHOOP_CLIENT_ID
+    client_secret_env: WHOOP_CLIENT_SECRET
+    auth_url: "https://api.prod.whoop.com/oauth/oauth2/auth"
+    token_url: "https://api.prod.whoop.com/oauth/oauth2/token"
+    scopes: ["read:profile", "read:cycles"]
 schedule:
   every: 6h
 time_column: start

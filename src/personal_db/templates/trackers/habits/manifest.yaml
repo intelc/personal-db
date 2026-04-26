@@ -2,7 +2,8 @@ name: habits
 description: Manually-logged daily habits (meditate, gym, read, etc.)
 permission_type: manual
 setup_steps:
-  - "Log via the MCP tool log_event or `personal-db log habits name=… value=… ts=…`"
+  - type: instructions
+    text: "Log via the MCP tool log_event or `personal-db log habits name=… value=… ts=…`"
 schedule: null  # never auto-syncs
 time_column: ts
 granularity: event
