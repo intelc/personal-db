@@ -179,6 +179,15 @@ def sync(t: Tracker) -> None:
         all_contacts.extend(contacts)
         all_handles.extend(handles)
 
+    if not all_contacts:
+        # Don't wipe what we already have if the sync produced nothing — protects
+        # the table from a transient TCC denial or a temporarily-locked source.
+        t.log.warning(
+            "contacts: no contacts read from %d source DB(s); leaving existing rows in place",
+            len(dbs),
+        )
+        return
+
     # Snapshot: wipe and re-insert. Contacts data is small and fully derivable.
     con = sqlite3.connect(t.cfg.db_path)
     try:
@@ -188,8 +197,7 @@ def sync(t: Tracker) -> None:
     finally:
         con.close()
 
-    if all_contacts:
-        t.upsert("contacts", all_contacts, key=["contact_id"])
+    t.upsert("contacts", all_contacts, key=["contact_id"])
     if all_handles:
         t.upsert("contact_handles", all_handles, key=["contact_id", "kind", "normalized"])
 
