@@ -9,14 +9,24 @@ from __future__ import annotations
 
 import os
 import re
+import secrets
 import subprocess
+import urllib.parse
+import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
 
 import questionary
 
 from personal_db.config import Config
-from personal_db.manifest import CommandTestStep, EnvVarStep, FdaCheckStep, InstructionsStep
+from personal_db.manifest import (
+    CommandTestStep,
+    EnvVarStep,
+    FdaCheckStep,
+    InstructionsStep,
+    OAuthStep,
+)
+from personal_db.oauth import OAuthFlow, exchange_code, save_token
 from personal_db.permissions import open_fda_settings_pane, probe_sqlite_access
 from personal_db.wizard.env_file import read_env, upsert_env
 
@@ -114,3 +124,44 @@ def handle_command_test(step: CommandTestStep, ctx: WizardContext) -> StepResult
     if step.expect_pattern and not re.search(step.expect_pattern, r.stdout):
         return Failed(f"pattern mismatch: {step.expect_pattern!r} not in output")
     return Ok("command verified")
+
+
+def handle_oauth(step: OAuthStep, ctx: WizardContext) -> StepResult:
+    client_id = os.environ.get(step.client_id_env)
+    client_secret = os.environ.get(step.client_secret_env)
+    if not client_id or not client_secret:
+        return Failed(
+            f"missing OAuth credentials: ensure {step.client_id_env} and "
+            f"{step.client_secret_env} are set (run env_var steps first)"
+        )
+    state = secrets.token_urlsafe(16)
+    flow = OAuthFlow(state=state, port=0)
+    flow.start()
+    try:
+        redirect_uri = f"http://127.0.0.1:{flow.port}{step.redirect_path}"
+        params = {
+            "response_type": "code",
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "state": state,
+        }
+        if step.scopes:
+            params["scope"] = " ".join(step.scopes)
+        auth_url = step.auth_url + "?" + urllib.parse.urlencode(params)
+        print(f"\n  Opening browser to authorize {step.provider}…")
+        print(f"  If it doesn't open, paste this URL manually:\n    {auth_url}\n")
+        webbrowser.open(auth_url)
+        code = flow.wait_for_code(timeout_s=120)
+        if not code:
+            return Failed("OAuth timeout (120s): did you complete the redirect in your browser?")
+        token = exchange_code(
+            token_url=step.token_url,
+            client_id=client_id,
+            client_secret=client_secret,
+            code=code,
+            redirect_uri=redirect_uri,
+        )
+        save_token(ctx.cfg, step.provider, token)
+        return Ok(f"OAuth completed for {step.provider}")
+    finally:
+        flow.shutdown()
