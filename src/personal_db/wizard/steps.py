@@ -145,10 +145,10 @@ def handle_oauth(step: OAuthStep, ctx: WizardContext) -> StepResult:
             f"{step.client_secret_env} are set (run env_var steps first)"
         )
     state = secrets.token_urlsafe(16)
-    flow = OAuthFlow(state=state, port=0)
+    flow = OAuthFlow(state=state, port=step.redirect_port or 0)
     flow.start()
     try:
-        redirect_uri = f"http://127.0.0.1:{flow.port}{step.redirect_path}"
+        redirect_uri = f"http://{step.redirect_host}:{flow.port}{step.redirect_path}"
         params = {
             "response_type": "code",
             "client_id": client_id,

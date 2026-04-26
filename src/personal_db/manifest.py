@@ -55,6 +55,10 @@ class OAuthStep(BaseModel):
     token_url: str
     scopes: list[str] = Field(default_factory=list)
     redirect_path: str = "/callback"
+    redirect_port: int | None = (
+        None  # None → OS picks; set when provider requires exact pre-registered URI
+    )
+    redirect_host: str = "127.0.0.1"  # provider may require "localhost" in the URI string
 
 
 class FdaCheckStep(BaseModel):

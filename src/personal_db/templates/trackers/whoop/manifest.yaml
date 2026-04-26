@@ -16,6 +16,8 @@ setup_steps:
     auth_url: "https://api.prod.whoop.com/oauth/oauth2/auth"
     token_url: "https://api.prod.whoop.com/oauth/oauth2/token"
     scopes: ["read:profile", "read:cycles"]
+    redirect_host: localhost
+    redirect_port: 9876
 schedule:
   every: 6h
 time_column: start
