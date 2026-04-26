@@ -106,3 +106,32 @@ def refresh_if_needed(
         new_token["refresh_token"] = token["refresh_token"]
     save_token(cfg, provider, new_token)
     return new_token
+
+
+def exchange_code(
+    *,
+    token_url: str,
+    client_id: str,
+    client_secret: str,
+    code: str,
+    redirect_uri: str,
+) -> dict[str, Any]:
+    """Exchange an OAuth authorization code for an access token.
+
+    Counterpart to refresh_if_needed for the initial code-for-token step.
+    """
+    r = requests.post(
+        token_url,
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "client_id": client_id,
+            "client_secret": client_secret,
+        },
+        timeout=10,
+    )
+    r.raise_for_status()
+    token = r.json()
+    token["expires_at"] = int(time.time()) + int(token.get("expires_in", 3600))
+    return token
