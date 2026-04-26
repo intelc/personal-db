@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import os
-import shutil
 import sqlite3
-import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
@@ -43,36 +41,38 @@ def _domain_of(url: str) -> str:
 
 
 def _read_visits(history_path: Path, since_micros: int) -> list[dict]:
-    """Copy History to a tempdir (Chrome locks the original) and read visits > since."""
+    """Read visits > since. Uses immutable=1 to bypass Chrome's exclusive lock.
+
+    immutable=1 tells SQLite the file won't change, so it skips locking and
+    ignores the WAL. Trade-off: very recent visits still in Chrome's WAL won't
+    appear until the next checkpoint, but they show up on the next sync.
+    """
     rows: list[dict] = []
-    with tempfile.TemporaryDirectory() as td:
-        copy = Path(td) / "History"
-        shutil.copy2(history_path, copy)
-        con = sqlite3.connect(f"file:{copy}?mode=ro", uri=True)
-        try:
-            cursor = con.execute(
-                """
-                SELECT v.id, u.url, u.title, v.visit_time, v.visit_duration, v.transition
-                FROM visits v
-                JOIN urls u ON v.url = u.id
-                WHERE v.visit_time > ?
-                ORDER BY v.visit_time ASC
-                """,
-                (since_micros,),
+    con = sqlite3.connect(f"file:{history_path}?mode=ro&immutable=1", uri=True)
+    try:
+        cursor = con.execute(
+            """
+            SELECT v.id, u.url, u.title, v.visit_time, v.visit_duration, v.transition
+            FROM visits v
+            JOIN urls u ON v.url = u.id
+            WHERE v.visit_time > ?
+            ORDER BY v.visit_time ASC
+            """,
+            (since_micros,),
+        )
+        for vid, url, title, vtime, vdur, trans in cursor:
+            rows.append(
+                {
+                    "visit_id": vid,
+                    "url": url or "",
+                    "title": title or "",
+                    "visit_time": vtime or 0,
+                    "visit_duration": vdur or 0,
+                    "transition": trans or 0,
+                }
             )
-            for vid, url, title, vtime, vdur, trans in cursor:
-                rows.append(
-                    {
-                        "visit_id": vid,
-                        "url": url or "",
-                        "title": title or "",
-                        "visit_time": vtime or 0,
-                        "visit_duration": vdur or 0,
-                        "transition": trans or 0,
-                    }
-                )
-        finally:
-            con.close()
+    finally:
+        con.close()
     return rows
 
 
