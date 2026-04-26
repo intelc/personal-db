@@ -1,0 +1,4 @@
+[
+  {"sha": "aaaa1111", "commit": {"author": {"name": "x", "email": "x@y", "date": "2026-04-25T11:30:00Z"}, "message": "feat: hello"}},
+  {"sha": "aaaa2222", "commit": {"author": {"name": "x", "email": "x@y", "date": "2026-04-25T10:00:00Z"}, "message": "fix: world"}}
+]

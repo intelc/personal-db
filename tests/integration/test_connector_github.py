@@ -1,12 +1,15 @@
 import json
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+
+from personal_db.config import Config
+from personal_db.sync import sync_one
 
 
-def test_github_sync_inserts_rows_from_fixture(tmp_path, monkeypatch):
-    root = tmp_path / "personal_db"
+def _init_and_install(root):
     subprocess.run(
         [sys.executable, "-m", "personal_db.cli.main", "--root", str(root), "init"],
         check=True,
@@ -26,27 +29,104 @@ def test_github_sync_inserts_rows_from_fixture(tmp_path, monkeypatch):
         check=True,
         capture_output=True,
     )
-    fixture = json.loads(Path("tests/fixtures/github/commits_page1.json").read_text())
+
+
+def _make_response(body, status_code=200, link=""):
+    m = MagicMock()
+    m.status_code = status_code
+    m.headers = {"Link": link} if link else {}
+    m.json.return_value = body
+    m.raise_for_status = MagicMock()
+    return m
+
+
+def _make_fake_get(repos, commits1, commits2):
+    def fake_get(url, **kwargs):
+        if "/user/repos" in url:
+            return _make_response(repos)
+        elif "/repos/intelc/repo1/commits" in url:
+            return _make_response(commits1)
+        elif "/repos/intelc/repo2/commits" in url:
+            return _make_response(commits2)
+        else:
+            raise AssertionError(f"unexpected URL: {url}")
+
+    return fake_get
+
+
+def test_github_sync_inserts_commits_from_active_repos(tmp_path, monkeypatch):
+    root = tmp_path / "personal_db"
+    _init_and_install(root)
     monkeypatch.setenv("GITHUB_TOKEN", "fake")
     monkeypatch.setenv("GITHUB_USER", "intel")
 
-    # patch("requests.get") must run in the same process as sync_one.
-    # subprocess.run would spawn a separate process where the patch has no effect,
-    # so we call sync_one directly from this process.
-    from personal_db.config import Config
-    from personal_db.sync import sync_one
+    repos = json.loads(Path("tests/fixtures/github/repos.json").read_text())
+    commits1 = json.loads(Path("tests/fixtures/github/commits_repo1.json").read_text())
+    commits2 = json.loads(Path("tests/fixtures/github/commits_repo2.json").read_text())
 
     cfg = Config(root=root)
-    with patch("requests.get") as mock_get:
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = fixture
-        mock_get.return_value.headers = {"Link": ""}  # no next page
+    with patch("requests.get", side_effect=_make_fake_get(repos, commits1, commits2)):
         sync_one(cfg, "github_commits")
 
-    import sqlite3
+    rows = (
+        sqlite3.connect(root / "db.sqlite")
+        .execute("SELECT sha, repo, committed_at FROM github_commits ORDER BY committed_at DESC")
+        .fetchall()
+    )
+    assert len(rows) == 3
+    # Newest first
+    assert rows[0][0] == "aaaa1111"
+    # Both repos populated
+    assert {r[1] for r in rows} == {"intelc/repo1", "intelc/repo2"}
+    # UTC normalization: stored with explicit +00:00 offset
+    assert all(r[2].endswith("+00:00") for r in rows)
 
-    con = sqlite3.connect(root / "db.sqlite")
-    n = con.execute("SELECT COUNT(*) FROM github_commits").fetchone()[0]
-    # The fixture has 3 items in "items"; each produces exactly one commit row.
-    expected = len(fixture["items"])
-    assert n == expected, f"expected {expected} commits, got {n}"
+
+def test_github_sync_skips_repos_pushed_before_cursor(tmp_path, monkeypatch):
+    root = tmp_path / "personal_db"
+    _init_and_install(root)
+    monkeypatch.setenv("GITHUB_TOKEN", "fake")
+    monkeypatch.setenv("GITHUB_USER", "intel")
+
+    repos = json.loads(Path("tests/fixtures/github/repos.json").read_text())
+    commits1 = json.loads(Path("tests/fixtures/github/commits_repo1.json").read_text())
+    commits2 = json.loads(Path("tests/fixtures/github/commits_repo2.json").read_text())
+
+    cfg = Config(root=root)
+
+    # Set cursor to 2026-04-22: repo1 (pushed 04-25) should be scanned,
+    # repo2 (pushed 04-20) should be skipped because pushed_at <= cursor.
+    cursor_value = "2026-04-22T00:00:00+00:00"
+
+    repo2_fetched = []
+
+    def fake_get(url, **kwargs):
+        if "/user/repos" in url:
+            return _make_response(repos)
+        elif "/repos/intelc/repo1/commits" in url:
+            return _make_response(commits1)
+        elif "/repos/intelc/repo2/commits" in url:
+            repo2_fetched.append(url)
+            return _make_response(commits2)
+        else:
+            raise AssertionError(f"unexpected URL: {url}")
+
+    # Pre-seed the cursor before syncing
+    from personal_db.tracker import Tracker
+
+    Tracker(name="github_commits", cfg=cfg, manifest=None).cursor.set(cursor_value)
+
+    with patch("requests.get", side_effect=fake_get):
+        sync_one(cfg, "github_commits")
+
+    # repo2 should never have been fetched (pushed_at 04-20 <= cursor 04-22)
+    assert repo2_fetched == [], "repo2 should have been skipped due to cursor"
+
+    rows = (
+        sqlite3.connect(root / "db.sqlite")
+        .execute("SELECT sha, repo FROM github_commits")
+        .fetchall()
+    )
+    # Only repo1 commits (2 rows)
+    assert len(rows) == 2
+    assert all(r[1] == "intelc/repo1" for r in rows)
