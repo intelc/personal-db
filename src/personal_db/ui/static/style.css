@@ -1,0 +1,198 @@
+/* Pixel-inspired B&W. Color appears only inside data visualizations.
+   8px grid, monospace everywhere, hard 1px borders, no rounding, no shadows. */
+
+:root {
+  --fg: #000;
+  --bg: #fff;
+  --grid: 8px;
+  --rule: 1px solid #000;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'IBM Plex Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+main {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: calc(var(--grid) * 3) calc(var(--grid) * 2);
+}
+
+/* Masthead ------------------------------------------------------------- */
+.masthead {
+  border-bottom: 2px solid #000;
+  padding: var(--grid) calc(var(--grid) * 2);
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--grid) * 3);
+  background: var(--bg);
+}
+.masthead .logo { font-weight: bold; letter-spacing: 0.05em; }
+.masthead nav a {
+  color: var(--fg);
+  text-decoration: none;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+}
+.masthead nav a.active { border: 1px solid #000; }
+.masthead nav a:hover { background: #000; color: #fff; }
+
+/* Section block -------------------------------------------------------- */
+.block {
+  margin-bottom: calc(var(--grid) * 4);
+}
+.block-h {
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 0.1em;
+  margin: 0 0 var(--grid) 0;
+  padding-bottom: 4px;
+  border-bottom: var(--rule);
+  text-transform: uppercase;
+}
+h1.block-h { font-size: 16px; }
+.meta { color: #666; font-size: 12px; margin: 4px 0 0 0; }
+
+/* Stack bar ------------------------------------------------------------ */
+.stack {
+  display: flex;
+  height: 36px;
+  border: var(--rule);
+  margin: var(--grid) 0;
+  background: #fff;
+}
+.stack.thin { height: 14px; margin: 0; border-left: var(--rule); border-right: var(--rule); }
+
+.seg {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #fff;
+  padding: 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  border-right: 1px solid #000;
+}
+.seg:last-child { border-right: none; }
+.seg.empty { background: #fff; color: #999; justify-content: center; }
+.seg-label { font-weight: bold; }
+.seg-val { opacity: 0.9; }
+
+/* Legend table --------------------------------------------------------- */
+.legend {
+  border-collapse: collapse;
+  margin-top: var(--grid);
+  font-size: 12px;
+}
+.legend td { padding: 2px 8px 2px 0; vertical-align: middle; }
+.legend .swatch span {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 1px solid #000;
+}
+.legend .cat { padding-right: calc(var(--grid) * 2); }
+.legend .hrs { color: #666; }
+
+/* Recent / health tables ---------------------------------------------- */
+table.recent, table.health {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: var(--grid);
+  font-size: 12px;
+}
+table.recent td, table.health td, table.health th {
+  padding: 4px 8px;
+  border-bottom: 1px solid #000;
+  vertical-align: middle;
+}
+table.health th {
+  text-align: left;
+  font-weight: bold;
+  border-bottom: var(--rule);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+.day-label { width: 64px; text-align: right; padding-right: var(--grid); }
+.day-date { color: #666; font-size: 11px; }
+.day-bar { padding: 4px 0; }
+
+/* life_context --------------------------------------------------------- */
+.lc-today {
+  list-style: none;
+  margin: 0 0 var(--grid) 0;
+  padding: 0;
+  border: var(--rule);
+}
+.lc-today li {
+  padding: 6px var(--grid);
+  border-bottom: 1px solid #000;
+  display: flex;
+  gap: var(--grid);
+}
+.lc-today li:last-child { border-bottom: none; }
+.lc-state {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid #000;
+  background: #000;
+  color: #fff;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex: 0 0 auto;
+}
+.lc-note { color: #000; }
+
+.lc-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--grid);
+  align-items: center;
+  border: var(--rule);
+  padding: var(--grid);
+  margin-top: var(--grid);
+  font-size: 12px;
+}
+.lc-form label { display: flex; align-items: center; gap: 6px; }
+.lc-form label.grow { flex: 1; }
+.lc-form label.grow input { flex: 1; }
+.lc-form input, .lc-form select {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 6px;
+  border: 1px solid #000;
+  background: #fff;
+  color: #000;
+  border-radius: 0;
+}
+.lc-form input[type="text"] { min-width: 200px; }
+.lc-form button {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 16px;
+  border: 1px solid #000;
+  background: #fff;
+  color: #000;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.lc-form button:hover { background: #000; color: #fff; }
+
+.lc-recent { margin-top: var(--grid); font-size: 12px; }
+.lc-recent summary { cursor: pointer; padding: 4px 0; }
+.lc-recent summary:hover { background: #000; color: #fff; padding-left: 4px; }
+.lc-date { width: 90px; color: #666; }
+.lc-note-cell { color: #000; }

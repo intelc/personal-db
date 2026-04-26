@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% set active = 'today' %}
+{% block title %}today · personal_db{% endblock %}
+
+{% block content %}
+<section class="block">
+  <h1 class="block-h">{{ weekday|upper }} · {{ today }}</h1>
+
+  {% if breakdown %}
+  <div class="stack">
+    {% for s in breakdown %}
+      <div class="seg" style="flex: {{ s.hours }}; background: {{ s.color }};"
+           title="{{ s.category }} · {{ s.hours }}h">
+        {% if s.hours >= 1.0 %}
+          <span class="seg-label">{{ s.category }}</span>
+          <span class="seg-val">{{ s.hours }}h</span>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+  <table class="legend">
+    <tbody>
+    {% for s in breakdown %}
+      <tr>
+        <td class="swatch"><span style="background: {{ s.color }};"></span></td>
+        <td class="cat">{{ s.category }}</td>
+        <td class="hrs">{{ s.hours }}h</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="meta">{{ total_today }}h accounted of 24h</p>
+  {% else %}
+  <p class="meta">no data yet for today — sync hasn't run, or all sources empty</p>
+  {% endif %}
+</section>
+
+<section class="block">
+  <h2 class="block-h">LAST 7 DAYS</h2>
+  <table class="recent">
+    <tbody>
+    {% for d in recent %}
+      <tr>
+        <td class="day-label">{{ d.weekday }}<br><span class="day-date">{{ d.date[5:] }}</span></td>
+        <td class="day-bar">
+          <div class="stack thin">
+            {% for s in d.segments %}
+              <div class="seg" style="flex: {{ s.hours }}; background: {{ s.color }};"
+                   title="{{ s.category }} · {{ s.hours }}h"></div>
+            {% endfor %}
+            {% if not d.segments %}<div class="seg empty">no data</div>{% endif %}
+          </div>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="block">
+  <h2 class="block-h">LIFE_CONTEXT</h2>
+  {% if today_lc %}
+    <ul class="lc-today">
+    {% for e in today_lc %}
+      <li>
+        {% if e.state %}<span class="lc-state">{{ e.state }}</span>{% endif %}
+        {% if e.note %}<span class="lc-note">{{ e.note }}</span>{% endif %}
+      </li>
+    {% endfor %}
+    </ul>
+  {% else %}
+    <p class="meta">nothing logged for today</p>
+  {% endif %}
+
+  <form action="/log_life_context" method="post" class="lc-form">
+    <label>from <input type="date" name="start_date" value="{{ today }}" required></label>
+    <label>to <input type="date" name="end_date" placeholder="(optional)"></label>
+    <label>state
+      <select name="state">
+        <option value=""></option>
+        {% for st in states %}<option value="{{ st }}">{{ st }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="grow">note <input type="text" name="note" placeholder="free text"></label>
+    <button type="submit">log</button>
+  </form>
+
+  {% if recent_lc %}
+  <details class="lc-recent">
+    <summary>last 14 days ({{ recent_lc|length }} entries)</summary>
+    <table class="recent">
+      <tbody>
+      {% for e in recent_lc %}
+        <tr>
+          <td class="lc-date">{{ e.date }}</td>
+          <td>{% if e.state %}<span class="lc-state">{{ e.state }}</span>{% endif %}</td>
+          <td class="lc-note-cell">{{ e.note or '' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% endif %}
+</section>
+
+<section class="block">
+  <h2 class="block-h">HEALTH</h2>
+  <table class="health">
+    <thead><tr><th>tracker</th><th>last sync</th><th>data horizon</th></tr></thead>
+    <tbody>
+    {% for t in health.trackers %}
+      <tr>
+        <td>{{ t.name }}</td>
+        <td>{{ t.age }}</td>
+        <td class="meta">{{ t.horizon[:10] if t.horizon else '—' }}</td>
+      </tr>
+    {% endfor %}
+    {% if not health.trackers %}
+      <tr><td colspan="3" class="meta">no syncs recorded yet</td></tr>
+    {% endif %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

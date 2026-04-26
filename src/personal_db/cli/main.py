@@ -11,6 +11,7 @@ from personal_db.cli import (
     scheduler_cmd,
     sync_cmd,
     tracker_cmd,
+    ui_cmd,
 )
 from personal_db.cli.state import _state, get_root
 
@@ -36,6 +37,7 @@ app.command("mcp")(mcp_cmd.mcp)
 app.command("sync")(sync_cmd.sync)
 app.command("backfill")(sync_cmd.backfill)
 app.command("log")(log_cmd.log)
+app.command("ui")(ui_cmd.ui)
 
 tracker_app = typer.Typer(no_args_is_help=True, help="Tracker management")
 tracker_app.command("new")(tracker_cmd.new)

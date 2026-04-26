@@ -12,6 +12,10 @@ dependencies = [
   "requests>=2.31",
   "keyring>=24.0",
   "mcp>=1.0",
+  "rumps>=0.4.0",
+  "fastapi>=0.100",
+  "uvicorn>=0.20",
+  "jinja2>=3.0",
 ]
 
 [project.optional-dependencies]
@@ -29,4 +33,6 @@ packages = ["src/personal_db"]
 include = [
   "src/personal_db/templates/**/*",
   "src/personal_db/mcp_server/prompts/*.md",
+  "src/personal_db/ui/templates/**/*",
+  "src/personal_db/ui/static/**/*",
 ]
