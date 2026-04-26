@@ -15,6 +15,7 @@ from personal_db.wizard.env_file import read_env
 from personal_db.wizard.steps import (
     Failed,
     Ok,
+    Skipped,
     WizardContext,
     handle_command_test,
     handle_env_var,
@@ -238,3 +239,27 @@ def test_oauth_handler_failed_when_credentials_missing(tmp_root, monkeypatch):
     r = handle_oauth(step, _ctx(tmp_root))
     assert isinstance(r, Failed)
     assert "WHOOP_CLIENT_ID" in r.reason or "client" in r.reason.lower()
+
+
+def test_env_var_optional_empty_returns_skipped(tmp_root, monkeypatch):
+    monkeypatch.delenv("MAYBE_KEY", raising=False)
+    monkeypatch.setattr("personal_db.wizard.steps._prompt", lambda *a, **kw: "")
+    ctx = _ctx(tmp_root)
+    step = EnvVarStep(type="env_var", name="MAYBE_KEY", prompt="opt", optional=True)
+    r = handle_env_var(step, ctx)
+    assert isinstance(r, Skipped)
+    # Nothing written to .env
+    assert not ctx.env_path.exists() or "MAYBE_KEY" not in (
+        ctx.env_path.read_text() if ctx.env_path.exists() else ""
+    )
+
+
+def test_env_var_optional_with_value_still_writes(tmp_root, monkeypatch):
+    """If user provides a value for an optional field, it's still written."""
+    monkeypatch.delenv("MAYBE_KEY", raising=False)
+    monkeypatch.setattr("personal_db.wizard.steps._prompt", lambda *a, **kw: "myvalue")
+    ctx = _ctx(tmp_root)
+    step = EnvVarStep(type="env_var", name="MAYBE_KEY", prompt="opt", optional=True)
+    r = handle_env_var(step, ctx)
+    assert isinstance(r, Ok)
+    assert read_env(ctx.env_path) == {"MAYBE_KEY": "myvalue"}

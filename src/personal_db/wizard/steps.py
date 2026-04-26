@@ -114,6 +114,8 @@ def handle_env_var(step: EnvVarStep, ctx: WizardContext) -> StepResult:
     new_value = _prompt(message, secret=step.secret)
     final = new_value or current
     if not final:
+        if step.optional:
+            return Skipped(f"{step.name} left unset (optional)")
         return Failed(f"no value provided for {step.name}")
     upsert_env(ctx.env_path, step.name, final)
     os.environ[step.name] = final  # propagate so test sync sees it

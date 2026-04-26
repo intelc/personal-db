@@ -44,6 +44,7 @@ class EnvVarStep(BaseModel):
     name: str
     prompt: str
     secret: bool = False
+    optional: bool = False  # if True, empty input returns Skipped instead of Failed
 
 
 class OAuthStep(BaseModel):

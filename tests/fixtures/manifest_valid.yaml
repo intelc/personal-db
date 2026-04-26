@@ -7,8 +7,9 @@ setup_steps:
     prompt: "GitHub personal access token (scopes: read:user, repo)"
     secret: true
   - type: env_var
-    name: GITHUB_USER
-    prompt: "Your GitHub username"
+    name: GITHUB_AUTHOR_EMAILS
+    prompt: "Optional: emails you commit with (comma-separated). Press Enter to skip"
+    optional: true
 schedule:
   every: 4h
 time_column: committed_at

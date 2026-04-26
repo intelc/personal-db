@@ -29,8 +29,9 @@ personal-db tracker setup
 # (Or set up one specific tracker: personal-db tracker setup whoop)
 #
 # The wizard:
-#   - prompts for env vars (GITHUB_TOKEN, WHOOP_CLIENT_ID, etc.) and writes them
-#     to <root>/.env (mode 0600, gitignored)
+#   - prompts for env vars (GITHUB_TOKEN, GITHUB_AUTHOR_EMAILS, WHOOP_CLIENT_ID, etc.)
+#     and writes them to <root>/.env (mode 0600, gitignored)
+#   - optional fields (like GITHUB_AUTHOR_EMAILS) can be skipped with Enter
 #   - launches OAuth flows in your browser for OAuth-based connectors (whoop)
 #   - probes Full Disk Access for chat.db / knowledgeC.db and opens System
 #     Settings if needed
@@ -83,12 +84,18 @@ In Claude Code:
 
 ## github_commits — capturing local-CLI commits
 
-By default, `github_commits` matches commits via GitHub's standard email-to-user
-linkage. If you commit locally with an email that isn't on your GitHub
-account (`git config user.email`), those commits won't be attributed to you
-on GitHub and won't be captured.
+The setup wizard (`personal-db tracker setup github_commits`) asks for your
+GitHub token and then optionally for the email addresses you commit with.
+You can also set or update `GITHUB_AUTHOR_EMAILS` manually at any time.
 
-To include them, set `GITHUB_AUTHOR_EMAILS` in `<root>/.env`:
+By default, `github_commits` matches commits via GitHub's standard email-to-user
+linkage (your GitHub login is derived automatically from the token). If you
+commit locally with an email that isn't on your GitHub account
+(`git config user.email`), those commits won't be attributed to you on GitHub
+and won't be captured.
+
+To include them, set `GITHUB_AUTHOR_EMAILS` in `<root>/.env` (the wizard also
+prompts for this during setup):
 
 ```bash
 echo 'GITHUB_AUTHOR_EMAILS=intel@intelchen.com,me@work.com' >> ~/personal_db/.env

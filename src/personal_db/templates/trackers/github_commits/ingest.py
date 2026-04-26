@@ -67,20 +67,29 @@ def _days_ago_iso(days: int) -> str:
     return (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
 
+def _authed_login(headers: dict) -> str:
+    r = requests.get(f"{API}/user", headers=headers, timeout=15)
+    r.raise_for_status()
+    login = r.json().get("login")
+    if not login:
+        raise RuntimeError("could not determine GitHub login from /user response")
+    return login
+
+
 def backfill(t: Tracker, start: str | None, end: str | None) -> None:
     sync(t)
 
 
 def sync(t: Tracker) -> None:
     token = os.environ.get("GITHUB_TOKEN")
-    user = os.environ.get("GITHUB_USER")
-    if not token or not user:
-        raise RuntimeError("Set GITHUB_TOKEN and GITHUB_USER env vars (see manifest setup_steps)")
+    if not token:
+        raise RuntimeError("Set GITHUB_TOKEN env var (see manifest setup_steps)")
     emails = _accepted_emails()
     headers = {
         "Authorization": f"token {token}",
         "Accept": "application/vnd.github+json",
     }
+    user = _authed_login(headers)
     cursor = t.cursor.get()
     # First sync (no cursor): default to last 365 days. Subsequent: use stored cursor.
     since = cursor or _days_ago_iso(365)

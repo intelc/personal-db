@@ -52,3 +52,28 @@ def test_load_manifest_rejects_unknown_step_type():
     """A typo'd step type must fail validation."""
     with pytest.raises(ManifestError):
         load_manifest(FIXTURES / "manifest_invalid_step_type.yaml")
+
+
+def test_load_manifest_parses_optional_env_var(tmp_path):
+    """env_var steps support an optional flag; default is False."""
+    p = tmp_path / "m.yaml"
+    p.write_text(
+        "name: x\n"
+        "description: x\n"
+        "permission_type: api_key\n"
+        "setup_steps:\n"
+        "  - type: env_var\n"
+        "    name: REQUIRED_KEY\n"
+        "    prompt: required\n"
+        "  - type: env_var\n"
+        "    name: OPTIONAL_KEY\n"
+        "    prompt: optional\n"
+        "    optional: true\n"
+        "time_column: ts\n"
+        "schema:\n"
+        "  tables:\n"
+        "    x: {columns: {ts: {type: TEXT, semantic: ts}}}\n"
+    )
+    m = load_manifest(p)
+    assert m.setup_steps[0].optional is False
+    assert m.setup_steps[1].optional is True

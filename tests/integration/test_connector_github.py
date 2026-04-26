@@ -44,6 +44,8 @@ def _make_fake_get(repos, commits1, commits2):
     def fake_get(url, **kwargs):
         if "/user/repos" in url:
             return _make_response(repos)
+        elif url.endswith("/user") or "/user?" in url:
+            return _make_response({"login": "intelc", "id": 1})
         elif "/repos/intelc/repo1/commits" in url:
             return _make_response(commits1)
         elif "/repos/intelc/repo2/commits" in url:
@@ -58,7 +60,6 @@ def test_github_sync_inserts_commits_from_active_repos(tmp_path, monkeypatch):
     root = tmp_path / "personal_db"
     _init_and_install(root)
     monkeypatch.setenv("GITHUB_TOKEN", "fake")
-    monkeypatch.setenv("GITHUB_USER", "intelc")
     monkeypatch.delenv("GITHUB_AUTHOR_EMAILS", raising=False)
 
     repos = json.loads(Path("tests/fixtures/github/repos.json").read_text())
@@ -90,7 +91,6 @@ def test_github_sync_skips_repos_pushed_before_cursor(tmp_path, monkeypatch):
     root = tmp_path / "personal_db"
     _init_and_install(root)
     monkeypatch.setenv("GITHUB_TOKEN", "fake")
-    monkeypatch.setenv("GITHUB_USER", "intelc")
     monkeypatch.delenv("GITHUB_AUTHOR_EMAILS", raising=False)
 
     repos = json.loads(Path("tests/fixtures/github/repos.json").read_text())
@@ -108,6 +108,8 @@ def test_github_sync_skips_repos_pushed_before_cursor(tmp_path, monkeypatch):
     def fake_get(url, **kwargs):
         if "/user/repos" in url:
             return _make_response(repos)
+        elif url.endswith("/user") or "/user?" in url:
+            return _make_response({"login": "intelc", "id": 1})
         elif "/repos/intelc/repo1/commits" in url:
             return _make_response(commits1)
         elif "/repos/intelc/repo2/commits" in url:
@@ -144,7 +146,6 @@ def test_github_sync_matches_login_only_when_emails_unset(tmp_path, monkeypatch)
     root = tmp_path / "personal_db"
     _init_and_install(root)
     monkeypatch.setenv("GITHUB_TOKEN", "fake")
-    monkeypatch.setenv("GITHUB_USER", "intelc")
     monkeypatch.delenv("GITHUB_AUTHOR_EMAILS", raising=False)
 
     repos = json.loads(Path("tests/fixtures/github/repos.json").read_text())
@@ -176,7 +177,6 @@ def test_github_sync_includes_nested_email_when_emails_set(tmp_path, monkeypatch
     root = tmp_path / "personal_db"
     _init_and_install(root)
     monkeypatch.setenv("GITHUB_TOKEN", "fake")
-    monkeypatch.setenv("GITHUB_USER", "intelc")
     monkeypatch.setenv("GITHUB_AUTHOR_EMAILS", "intel@intelchen.com")
 
     repos = json.loads(Path("tests/fixtures/github/repos.json").read_text())
@@ -205,7 +205,6 @@ def test_github_sync_emails_set_is_case_insensitive(tmp_path, monkeypatch):
     root = tmp_path / "personal_db"
     _init_and_install(root)
     monkeypatch.setenv("GITHUB_TOKEN", "fake")
-    monkeypatch.setenv("GITHUB_USER", "intelc")
     monkeypatch.setenv("GITHUB_AUTHOR_EMAILS", "INTEL@IntelChen.com")
 
     repos = json.loads(Path("tests/fixtures/github/repos.json").read_text())
