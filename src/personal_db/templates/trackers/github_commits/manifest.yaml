@@ -2,9 +2,17 @@ name: github_commits
 description: Commits authored across GitHub
 permission_type: api_key
 setup_steps:
+  - type: instructions
+    text: |
+      Create a GitHub personal access token at:
+
+        https://github.com/settings/tokens
+
+      Required scopes: read:user, repo
+      (Use a classic token; fine-grained tokens also work but need read access to all repos.)
   - type: env_var
     name: GITHUB_TOKEN
-    prompt: "GitHub personal access token (scopes: read:user, repo)"
+    prompt: "GitHub personal access token (scopes: read:user, repo) — see https://github.com/settings/tokens"
     secret: true
   - type: env_var
     name: GITHUB_USER
