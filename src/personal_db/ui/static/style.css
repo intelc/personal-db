@@ -36,14 +36,55 @@ main {
   background: var(--bg);
 }
 .masthead .logo { font-weight: bold; letter-spacing: 0.05em; }
+.masthead nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
 .masthead nav a {
   color: var(--fg);
   text-decoration: none;
   padding: 2px 6px;
   border: 1px solid transparent;
+  font-size: 12px;
+  white-space: nowrap;
 }
 .masthead nav a.active { border: 1px solid #000; }
 .masthead nav a:hover { background: #000; color: #fff; }
+
+/* Viz title bar (with link to dedicated page + raw slug) */
+.block-h .viz-title-link {
+  color: inherit;
+  text-decoration: none;
+}
+.block-h .viz-title-link:hover { text-decoration: underline; }
+.block-h .viz-meta {
+  font-size: 10px;
+  font-weight: normal;
+  letter-spacing: 0.05em;
+  color: #666;
+  margin-left: var(--grid);
+  text-transform: lowercase;
+}
+.viz-desc { margin-bottom: var(--grid); }
+.viz-footer { font-size: 11px; margin-top: calc(var(--grid) * 2); }
+.viz-footer a { color: var(--fg); }
+
+/* Slug list on dashboard config section */
+.slug-list {
+  list-style: none;
+  padding: 0;
+  margin: var(--grid) 0;
+  font-size: 12px;
+}
+.slug-list li { padding: 2px 0; }
+
+code {
+  background: #f0f0f0;
+  padding: 1px 4px;
+  border: 1px solid #ddd;
+  font-size: 12px;
+}
 
 /* Section block -------------------------------------------------------- */
 .block {

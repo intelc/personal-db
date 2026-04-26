@@ -9,7 +9,7 @@ from pathlib import Path
 
 from personal_db.config import Config
 
-_TRACKER_FILES = ("manifest.yaml", "ingest.py", "schema.sql")
+_TRACKER_FILES = ("manifest.yaml", "ingest.py", "schema.sql", "visualizations.py")
 
 
 def _hash_dir(path: Path) -> str:
