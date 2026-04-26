@@ -6,8 +6,16 @@ from personal_db.installer import install_template, is_outdated, list_bundled, u
 
 def test_list_bundled_returns_known_templates():
     names = set(list_bundled())
-    # Exactly these 5 ship with v0.1.
-    assert names == {"github_commits", "whoop", "screen_time", "imessage", "habits"}
+    # These connectors ship with the package; new ones extend this set.
+    assert {
+        "github_commits",
+        "whoop",
+        "screen_time",
+        "imessage",
+        "habits",
+        "claude_conversations",
+        "codex_conversations",
+    } <= names
 
 
 def test_install_template_copies_tree(tmp_root):
