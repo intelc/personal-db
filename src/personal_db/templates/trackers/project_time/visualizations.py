@@ -6,7 +6,7 @@ import sqlite3
 from datetime import date, datetime, timedelta
 
 from personal_db.config import Config
-from personal_db.ui.charts import calendar_grid, horizontal_bars
+from personal_db.ui.charts import horizontal_bars, stacked_vertical_bars
 
 # Stable per-project palette so the calendar's colors mean something. Cycled
 # in declaration order; non-saturated mid-tones to fit the rest of the page.
@@ -47,13 +47,19 @@ def render_total_per_project(cfg: Config) -> str:
     )
 
 
-def render_dominant_project_calendar(cfg: Config) -> str:
-    """30-day calendar where each cell's color = the project with most hours that day."""
+def render_daily_stack(cfg: Config) -> str:
+    """Stacked daily bars showing project-time mix over the last 30 days.
+
+    Each day = one vertical bar, segments stacked bottom-up by project. Bar
+    heights normalized to the busiest day in the window so a quiet day is
+    visibly shorter. Same project palette is reused across days so colors
+    are stable.
+    """
     con = _connect(cfg)
     if not con:
         return '<p class="meta">no data</p>'
     today = date.today()
-    cutoff = (today - timedelta(days=30)).isoformat()
+    cutoff = (today - timedelta(days=29)).isoformat()
     try:
         rows = con.execute(
             "SELECT date, project, hours FROM project_time WHERE date >= ?",
@@ -66,91 +72,51 @@ def render_dominant_project_calendar(cfg: Config) -> str:
     if not rows:
         return '<p class="meta">no project_time data in the last 30 days</p>'
 
+    # Group by date → {project: hours}, dropping the underscore-prefixed
+    # synthetic categories (_no_data, _unaccounted, etc.) that don't belong
+    # in a "real work" view.
     by_day: dict[date, dict[str, float]] = {}
     for d_str, project, hours in rows:
+        if project.startswith("_") or not hours or hours <= 0:
+            continue
         try:
             d = date.fromisoformat(d_str)
         except (TypeError, ValueError):
             continue
-        by_day.setdefault(d, {})[project] = hours or 0.0
+        by_day.setdefault(d, {})[project] = hours
 
-    # Stable project → color mapping by appearance order.
-    project_order: list[str] = []
-    seen: set[str] = set()
-    for d in sorted(by_day):
-        for p in by_day[d]:
-            if p not in seen:
-                project_order.append(p)
-                seen.add(p)
+    # Stable project → color mapping by total-hours rank (biggest projects
+    # get the front of the palette so their color is most distinctive).
+    totals: dict[str, float] = {}
+    for hours in by_day.values():
+        for p, h in hours.items():
+            totals[p] = totals.get(p, 0) + h
+    project_order = sorted(totals.keys(), key=lambda p: (-totals[p], p))
     color_for = {
         p: _PROJECT_PALETTE[i % len(_PROJECT_PALETTE)] for i, p in enumerate(project_order)
     }
 
-    dominant: dict[date, str] = {}
-    intensity: dict[date, float] = {}
-    for d, hours in by_day.items():
-        # Only consider real categories (skip _no_data, _unaccounted)
-        real = {p: h for p, h in hours.items() if not p.startswith("_") and h > 0}
-        if not real:
-            continue
-        top = max(real.items(), key=lambda kv: kv[1])
-        dominant[d] = top[0]
-        intensity[d] = sum(real.values())
-
-    def _color(_v: float) -> str:
-        # Doesn't actually use _v — color comes from the dominant project lookup
-        # we wire in via label_fn instead. Returning a placeholder here.
-        return "#000"
-
-    # We need calendar_grid to color by project, but its API takes a single
-    # value→color fn. Workaround: expose the project as the "value" via a
-    # dict keyed on date, and have color_fn map project name → palette color.
-    # Easiest: synthesize a custom grid here rather than reusing calendar_grid.
-    weeks = 5  # ~30 days
-    grid_end = today
-    grid_start = grid_end - timedelta(days=weeks * 7 - 1)
-    cells_by_week: list[list[date | None]] = []
-    cur = grid_start
-    while cur <= grid_end:
-        week = []
-        for _ in range(7):
-            week.append(cur if cur <= grid_end else None)
-            cur += timedelta(days=1)
-        cells_by_week.append(week)
-
-    weekday_labels = ["Mon", "", "Wed", "", "Fri", "", "Sun"]
-    rows_html = []
-    for wd in range(7):
-        cells = []
-        for week in cells_by_week:
-            d = week[wd]
-            if d is None:
-                cells.append('<td class="cal-empty"></td>')
-                continue
-            project = dominant.get(d)
-            if not project:
-                cells.append(
-                    f'<td class="cal-cell" title="{d.isoformat()}: no work logged"></td>'
-                )
-                continue
-            color = color_for.get(project, "#666")
-            title = f"{d.isoformat()} · {project} · {intensity[d]:.1f}h"
-            cells.append(
-                f'<td class="cal-cell" style="background: {color};" title="{title}"></td>'
-            )
-        rows_html.append(
-            f'<tr><td class="cal-rowlabel">{weekday_labels[wd]}</td>{"".join(cells)}</tr>'
-        )
-    grid_html = f'<table class="calendar"><tbody>{"".join(rows_html)}</tbody></table>'
+    # Build one bar per day across the full 30-day window so empty days show
+    # as zero-height bars (tells the eye "nothing happened" vs "no data").
+    bars: list[dict] = []
+    for i in range(29, -1, -1):
+        d = today - timedelta(days=i)
+        day_hours = by_day.get(d, {})
+        # Segments in project_order — keeps colors in the same vertical
+        # position across days so the eye can track a project over time.
+        segments = [(p, color_for[p], day_hours.get(p, 0.0)) for p in project_order]
+        bars.append({"label": d.strftime("%m-%d"), "segments": segments})
 
     legend = " ".join(
         f'<span class="proj-legend"><span class="proj-swatch" '
-        f'style="background: {color_for[p]};"></span>{p}</span>'
+        f'style="background: {color_for[p]};"></span>{p}'
+        f' <span class="meta">({totals[p]:.1f}h)</span></span>'
         for p in project_order
     )
     return (
-        '<p class="meta">last ~5 weeks · cell color = dominant project that day</p>'
-        + grid_html
+        '<p class="meta">last 30 days · daily project-time mix · '
+        "bar height scaled to the busiest day</p>"
+        + stacked_vertical_bars(bars, value_unit="h")
         + f'<p class="proj-legend-line">{legend}</p>'
     )
 
@@ -164,9 +130,9 @@ def list_visualizations() -> list[dict]:
             "render": render_total_per_project,
         },
         {
-            "slug": "dominant_calendar",
-            "name": "Dominant Project (5w)",
-            "description": "Calendar grid colored by the project with the most hours each day.",
-            "render": render_dominant_project_calendar,
+            "slug": "daily_stack_30d",
+            "name": "Daily Stack (30d)",
+            "description": "Stacked daily bars showing project-time mix over the last 30 days.",
+            "render": render_daily_stack,
         },
     ]

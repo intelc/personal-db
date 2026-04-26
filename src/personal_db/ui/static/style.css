@@ -185,6 +185,23 @@ table.health a:hover { background: #000; color: #fff; border-bottom-color: trans
   transform-origin: left top;
 }
 
+/* Stacked vertical bar chart -- segments stack bottom-up per day ------ */
+.svc-chart .vbar-col { justify-content: flex-end; }
+.svc-stack {
+  width: 100%;
+  height: 110px;
+  display: flex;
+  flex-direction: column-reverse;  /* first segment in the list = bottom */
+  align-items: stretch;
+  border-bottom: 1px solid #000;
+}
+.svc-seg {
+  width: 100%;
+  min-height: 1px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+}
+.svc-seg:first-child { border-top: none; }
+
 /* Heatmap (2D grid: e.g. 7 days × 24 hours) ---------------------------- */
 table.heatmap {
   border-collapse: collapse;

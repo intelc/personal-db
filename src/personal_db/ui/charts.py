@@ -177,6 +177,55 @@ def calendar_grid(
     return f'<table class="calendar"><tbody>{"".join(rows)}</tbody></table>'
 
 
+def stacked_vertical_bars(
+    bars: list[dict],
+    *,
+    show_every_nth_label: int = 5,
+    value_unit: str = "",
+) -> str:
+    """Stacked bar chart for time-series.
+
+    bars: [{"label": str, "segments": [(name, color, value), ...]}, ...]
+    Each day-bar's segments stack bottom-up (first segment in the list at the
+    bottom). Bar heights are normalized to the max daily total across the
+    series, so days with less activity render shorter.
+    """
+    if not bars:
+        return '<p class="meta">no data</p>'
+    totals = [sum(v for _, _, v in b["segments"] if v > 0) for b in bars]
+    max_total = max(totals) or 1
+    cols: list[str] = []
+    for i, bar in enumerate(bars):
+        total = totals[i]
+        if total <= 0:
+            inner = ""
+        else:
+            seg_html: list[str] = []
+            for name, color, value in bar["segments"]:
+                if value <= 0:
+                    continue
+                pct_of_max = (value / max_total) * 100
+                title = f"{name}: {value:g}{value_unit}"
+                seg_html.append(
+                    f'<div class="svc-seg" '
+                    f'style="height:{pct_of_max:.2f}%; background:{color};" '
+                    f'title="{escape(title)}"></div>'
+                )
+            inner = "".join(seg_html)
+        show_label = (i % show_every_nth_label == 0) or i == len(bars) - 1
+        label_html = (
+            f'<div class="vbar-label">{escape(bar["label"])}</div>' if show_label else ""
+        )
+        title = f'{bar["label"]}: {total:g}{value_unit}'
+        cols.append(
+            f'<div class="vbar-col" title="{escape(title)}">'
+            f'<div class="svc-stack">{inner}</div>'
+            f"{label_html}"
+            f"</div>"
+        )
+    return f'<div class="vbar-chart svc-chart">{"".join(cols)}</div>'
+
+
 def word_cloud(
     items: list[tuple[str, int]],
     *,
