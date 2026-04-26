@@ -4,9 +4,10 @@ import json
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from mcp.types import GetPromptResult, Prompt, PromptMessage, TextContent, Tool
 
 from personal_db.config import Config
+from personal_db.mcp_server import prompts as P
 from personal_db.mcp_server import tools as T
 
 
@@ -140,6 +141,34 @@ def build_server(cfg: Config) -> Server:
         else:
             raise ValueError(f"unknown tool {name}")
         return [TextContent(type="text", text=json.dumps(result, default=str))]
+
+    @server.list_prompts()
+    async def _list_prompts() -> list[Prompt]:
+        return [
+            Prompt(
+                name=P.CREATE_TRACKER,
+                description=(
+                    "Walk through designing a new derived tracker — Q&A flow that "
+                    "verifies SQL on real data and writes manifest+ingest+schema files."
+                ),
+                arguments=[],
+            ),
+        ]
+
+    @server.get_prompt()
+    async def _get_prompt(name: str, arguments: dict | None) -> GetPromptResult:
+        if name == P.CREATE_TRACKER:
+            text = P.build_create_tracker_prompt(cfg)
+            return GetPromptResult(
+                description="Design a derived tracker for personal_db",
+                messages=[
+                    PromptMessage(
+                        role="user",
+                        content=TextContent(type="text", text=text),
+                    )
+                ],
+            )
+        raise ValueError(f"unknown prompt: {name}")
 
     return server
 
