@@ -41,6 +41,7 @@ tracker_app = typer.Typer(no_args_is_help=True, help="Tracker management")
 tracker_app.command("new")(tracker_cmd.new)
 tracker_app.command("list")(tracker_cmd.list_cmd)
 tracker_app.command("install")(tracker_cmd.install)
+tracker_app.command("setup")(tracker_cmd.setup)
 app.add_typer(tracker_app, name="tracker")
 
 permission_app = typer.Typer(no_args_is_help=True, help="OS permission helpers")

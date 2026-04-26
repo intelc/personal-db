@@ -4,7 +4,10 @@ from importlib import resources
 import typer
 
 from personal_db.cli.state import get_root
+from personal_db.config import Config
 from personal_db.manifest import load_manifest
+from personal_db.wizard.menu import run_menu
+from personal_db.wizard.runner import run_tracker
 
 _SCAFFOLD_MANIFEST = """\
 name: {name}
@@ -91,3 +94,18 @@ def install(name: str) -> None:
     with resources.as_file(src_pkg) as src_path:
         shutil.copytree(src_path, dest)
     typer.echo(f"Installed {name} -> {dest}")
+
+
+def setup(name: str | None = typer.Argument(None)) -> None:
+    """Configure a tracker's required env vars / OAuth / FDA / instructions, then test sync.
+
+    No argument → opens an interactive menu of all installed trackers.
+    Argument     → runs setup for that one tracker and exits.
+    """
+    cfg = Config(root=get_root())
+    if name is None:
+        run_menu(cfg)
+    else:
+        result = run_tracker(cfg, name)
+        if not result.success:
+            raise typer.Exit(1)
