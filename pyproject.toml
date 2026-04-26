@@ -9,7 +9,7 @@ dependencies = [
   "pyyaml>=6.0",
   "requests>=2.31",
   "keyring>=24.0",
-  "mcp>=0.9",
+  "mcp>=1.0",
 ]
 
 [project.optional-dependencies]
