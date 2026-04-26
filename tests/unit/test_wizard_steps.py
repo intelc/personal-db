@@ -2,7 +2,7 @@ import os
 import sqlite3
 
 from personal_db.config import Config
-from personal_db.manifest import EnvVarStep, FdaCheckStep
+from personal_db.manifest import EnvVarStep, FdaCheckStep, InstructionsStep
 from personal_db.wizard.env_file import read_env
 from personal_db.wizard.steps import (
     Failed,
@@ -10,6 +10,7 @@ from personal_db.wizard.steps import (
     WizardContext,
     handle_env_var,
     handle_fda_check,
+    handle_instructions,
 )
 
 
@@ -96,3 +97,14 @@ def test_fda_check_succeeds_on_retry(tmp_root, monkeypatch):
     step = FdaCheckStep(type="fda_check", probe_path="/dev/null")
     r = handle_fda_check(step, _ctx(tmp_root))
     assert isinstance(r, Ok)
+
+
+def test_instructions_always_returns_ok(tmp_root, monkeypatch, capsys):
+    monkeypatch.setattr("personal_db.wizard.steps._prompt", lambda *a, **kw: "")
+    step = InstructionsStep(
+        type="instructions", text="Edit `<root>/entities/people.yaml` to add aliases."
+    )
+    r = handle_instructions(step, _ctx(tmp_root))
+    assert isinstance(r, Ok)
+    captured = capsys.readouterr()
+    assert "Edit" in captured.out

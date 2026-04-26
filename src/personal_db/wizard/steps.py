@@ -14,7 +14,7 @@ from pathlib import Path
 import questionary
 
 from personal_db.config import Config
-from personal_db.manifest import EnvVarStep, FdaCheckStep
+from personal_db.manifest import EnvVarStep, FdaCheckStep, InstructionsStep
 from personal_db.permissions import open_fda_settings_pane, probe_sqlite_access
 from personal_db.wizard.env_file import read_env, upsert_env
 
@@ -71,6 +71,12 @@ def handle_fda_check(step: FdaCheckStep, ctx: WizardContext) -> StepResult:
         f"FDA still denied after 3 attempts: {probe_path}. "
         f"Restart your terminal after granting and try again."
     )
+
+
+def handle_instructions(step: InstructionsStep, ctx: WizardContext) -> StepResult:
+    print("\n" + step.text + "\n")
+    _prompt("Press Enter when done")
+    return Ok("acknowledged")
 
 
 def handle_env_var(step: EnvVarStep, ctx: WizardContext) -> StepResult:
