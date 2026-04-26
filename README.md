@@ -44,7 +44,10 @@ personal-db backfill whoop
 personal-db scheduler install
 
 # Add the MCP server to Claude Code
-claude mcp add personal_db -- personal-db mcp
+# (use the absolute path — Claude Code spawns MCP servers with a minimal
+# environment that does NOT inherit your shell's PATH, so a bare
+# "personal-db" reference will fail to connect)
+claude mcp add personal_db -- "$(which personal-db)" mcp
 
 # Install the /insights skill
 mkdir -p ~/.claude/skills/personal-db
