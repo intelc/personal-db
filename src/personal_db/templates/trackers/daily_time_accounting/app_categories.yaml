@@ -43,6 +43,7 @@ chrome_domains:
     - linear.app
     - notion.so
     - claude.ai
+    - claude.com
     - chatgpt.com
     - openai.com
     - anthropic.com
@@ -51,6 +52,11 @@ chrome_domains:
     - stackoverflow.com
     - developer.mozilla.org
     - docs.python.org
+    - docs.google.com
+    - drive.google.com
+    - huggingface.co
+    - arxiv.org
+    - brew.sh
   communication:
     - mail.google.com
     - calendar.google.com
@@ -66,4 +72,6 @@ chrome_domains:
     - tiktok.com
     - instagram.com
     - facebook.com
+    - news.ycombinator.com
+    - linkedin.com
   default: other_screen
