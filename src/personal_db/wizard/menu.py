@@ -62,11 +62,13 @@ def _list_bundled_not_installed(cfg: Config) -> list[str]:
 
 
 def _format_choice(cfg: Config, name: str) -> str:
-    if is_outdated(cfg, name):
+    try:
         manifest = load_manifest(cfg.trackers_dir / name / "manifest.yaml")
+    except Exception as e:
+        return f"⚠ {name:18s} broken manifest      — {type(e).__name__}: {e}"
+    if is_outdated(cfg, name):
         return f"⟳ {name:18s} update available — {manifest.description}"
     icon = compute_icon(cfg, name)
-    manifest = load_manifest(cfg.trackers_dir / name / "manifest.yaml")
     status = read_status(cfg).get(name)
     if icon == "—":
         suffix = _data_summary(cfg, name) or "no setup needed"
@@ -82,8 +84,13 @@ def _format_choice(cfg: Config, name: str) -> str:
 
 def _format_bundled_choice(name: str) -> str:
     pkg = resources.files("personal_db.templates.trackers")
-    manifest_text = pkg.joinpath(name, "manifest.yaml").read_text()
-    description = yaml.safe_load(manifest_text).get("description", "")
+    try:
+        manifest_text = pkg.joinpath(name, "manifest.yaml").read_text()
+        description = (yaml.safe_load(manifest_text) or {}).get("description", "")
+    except (yaml.YAMLError, OSError) as e:
+        # A broken bundled manifest shouldn't take down the whole menu.
+        # Surface it as a choice the user can see, so they know what to fix.
+        return f"⚠ {name:18s} broken manifest      — {type(e).__name__}: {e}"
     return f"+ {name:18s} not installed       — {description}"
 
 

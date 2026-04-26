@@ -43,7 +43,7 @@ Specifically verify:
 - Date/timestamp parsing — is it ISO-8601, epoch, microseconds? Look at a real row.
 
 ### Step 5. Generate the tracker files
-Write these files into `{{trackers_dir}}/<tracker_name>/`:
+Write these files into **`{{trackers_dir}}/<tracker_name>/`** — the user's installed trackers folder. Do NOT write to any `templates/trackers/` path inside the personal_db source repo unless the user is explicitly developing personal_db itself and asks for a bundled template.
 
 - **`manifest.yaml`** — schema declaration + description. `permission_type: none` for derived trackers. `setup_steps: []` if no config; or a single `instructions` step pointing at the config yaml if there is one.
 - **`schema.sql`** — `CREATE TABLE IF NOT EXISTS` for the tracker's output table(s). Match the columns declared in manifest.
@@ -58,12 +58,22 @@ Key conventions:
 - Cursor stores the last-processed date; on next sync, recompute the last 2 days plus everything since cursor (handles incomplete data).
 - For a fresh install with no cursor, start from `today - 90 days`.
 
-### Step 6. Hand off
-After the files are written:
-1. Tell the user to run `personal-db tracker install <name>` (this validates the manifest and loads the schema).
-2. Then `personal-db sync <name>` for the initial backfill — or `personal-db backfill <name>` if you want to force a recompute later.
-3. If you generated a config yaml, mention that **edits only affect the last 2 days on `sync`**; full re-categorization needs `backfill`.
-4. The tracker will appear in `personal-db tracker setup` menus and run on the schedule from manifest.yaml.
+### Step 6. Validate before declaring done
+After writing the files, verify them — don't trust your own output:
+
+1. **YAML parse check** — for each `.yaml` file, run `python -c "import yaml; yaml.safe_load(open('<path>').read())"`. If it raises, fix it. Common gotcha: any string containing `{`, `:`, `#`, or a leading `-` should be wrapped in single quotes.
+2. **Python syntax check** — run `python -m py_compile <path/to/ingest.py>`. If it fails, fix it before proceeding.
+3. **Manifest schema check** — run `python -c "from personal_db.manifest import load_manifest; load_manifest('<path/to/manifest.yaml>')"`. This validates required fields (name, schedule, schema.tables, etc.) and will tell you exactly what's missing.
+
+Only proceed to handoff once all three checks pass.
+
+### Step 7. Hand off
+After validation passes:
+1. Tell the user the install + sync commands:
+   - `personal-db tracker install <name>` — *only if you wrote into `{{trackers_dir}}` directly without going through `install_template`. If files are already in `{{trackers_dir}}/<name>/`, the tracker is effectively installed; skip this and just run sync.*
+   - `personal-db sync <name>` for the initial run — or `personal-db backfill <name>` to recompute the full window.
+2. If you generated a config yaml, mention that **edits only affect the last 2 days on `sync`**; full re-categorization needs `backfill`.
+3. The tracker will appear in `personal-db tracker setup` menus on the next launch.
 
 ## Hard rules
 
