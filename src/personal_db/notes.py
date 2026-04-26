@@ -31,7 +31,19 @@ def write_note(cfg: Config, title: str, body: str) -> str:
 
 
 def list_notes(cfg: Config, query: str | None = None) -> list[dict]:
-    con = connect(cfg.db_path, read_only=True)
+    cfg.notes_dir.mkdir(parents=True, exist_ok=True)
+    con = connect(cfg.db_path)
+    indexed = {r[0] for r in con.execute("SELECT path FROM notes")}
+    for note_file in cfg.notes_dir.glob("*.md"):
+        if note_file.name in indexed:
+            continue
+        body = note_file.read_text()
+        excerpt = body.strip().splitlines()[0][:200] if body.strip() else ""
+        con.execute(
+            "INSERT INTO notes(path,title,created_at,body_excerpt) VALUES (?,?,datetime('now'),?)",
+            (note_file.name, note_file.stem, excerpt),
+        )
+    con.commit()
     if query:
         rows = con.execute(
             "SELECT path,title,created_at,body_excerpt FROM notes "
