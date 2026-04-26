@@ -1,0 +1,20 @@
+name: whoop
+description: Whoop daily cycles (strain, recovery, average HR)
+permission_type: oauth
+setup_steps:
+  - "Run `personal-db tracker setup whoop` to launch OAuth flow"
+  - "Set WHOOP_CLIENT_ID and WHOOP_CLIENT_SECRET env vars first"
+schedule:
+  every: 6h
+time_column: start
+granularity: day
+schema:
+  tables:
+    whoop_cycles:
+      columns:
+        id:                {type: TEXT,    semantic: "Whoop cycle id"}
+        start:             {type: TEXT,    semantic: "ISO-8601 cycle start (UTC)"}
+        end:               {type: TEXT,    semantic: "ISO-8601 cycle end (UTC)"}
+        strain:            {type: REAL,    semantic: "0-21 daily strain"}
+        average_heart_rate: {type: INTEGER, semantic: "bpm avg"}
+related_entities: []
