@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import typer
+from dotenv import load_dotenv
 
 from personal_db.cli import (
     init_cmd,
@@ -11,15 +12,23 @@ from personal_db.cli import (
     sync_cmd,
     tracker_cmd,
 )
-from personal_db.cli.state import _state, get_root  # noqa: F401 — re-exported for callers
+from personal_db.cli.state import _state, get_root
 
 app = typer.Typer(no_args_is_help=True, help="Personal data layer CLI")
+
+
+def _load_root_env(root: Path) -> None:
+    """Load <root>/.env if present. override=False so shell env wins."""
+    env_path = root / ".env"
+    if env_path.exists():
+        load_dotenv(env_path, override=False)
 
 
 @app.callback()
 def _global(root: str = typer.Option(None, "--root", help="Override data root")):
     if root:
         _state["root"] = Path(root).expanduser()
+    _load_root_env(get_root())
 
 
 app.command("init")(init_cmd.run)
