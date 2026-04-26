@@ -111,6 +111,50 @@ def build_server(cfg: Config) -> Server:
                     "required": ["path"],
                 },
             ),
+            Tool(
+                name="read_tracker_file",
+                description=(
+                    "Read a text file under <root>/trackers/. Path is relative to the "
+                    "trackers directory (e.g. 'project_time/manifest.yaml'). Use this to "
+                    "inspect existing tracker files before editing them."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}},
+                    "required": ["path"],
+                },
+            ),
+            Tool(
+                name="write_tracker_file",
+                description=(
+                    "Create or overwrite a text file under <root>/trackers/. Path is "
+                    "relative to the trackers dir. Use this to author manifest.yaml, "
+                    "ingest.py, schema.sql, and config yamls when scaffolding or "
+                    "editing a tracker. Always call validate_tracker after writing."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "content": {"type": "string"},
+                    },
+                    "required": ["path", "content"],
+                },
+            ),
+            Tool(
+                name="validate_tracker",
+                description=(
+                    "Run lint checks on a tracker dir: YAML parse, Pydantic manifest "
+                    "schema, py_compile on ingest.py, schema.sql executes against an "
+                    "in-memory sqlite. Returns per-check pass/fail. Call after every "
+                    "round of write_tracker_file before declaring done."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                    "required": ["name"],
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -138,6 +182,12 @@ def build_server(cfg: Config) -> Server:
             result = T.list_notes_tool(cfg, arguments.get("query"))
         elif name == "read_note":
             result = T.read_note_tool(cfg, arguments["path"])
+        elif name == "read_tracker_file":
+            result = T.read_tracker_file(cfg, arguments["path"])
+        elif name == "write_tracker_file":
+            result = T.write_tracker_file(cfg, arguments["path"], arguments["content"])
+        elif name == "validate_tracker":
+            result = T.validate_tracker(cfg, arguments["name"])
         else:
             raise ValueError(f"unknown tool {name}")
         return [TextContent(type="text", text=json.dumps(result, default=str))]
