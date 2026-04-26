@@ -10,11 +10,13 @@ import yaml
 from personal_db.config import Config
 from personal_db.installer import install_template, list_bundled
 from personal_db.manifest import load_manifest
+from personal_db.wizard.mcp_setup import run_mcp_setup_menu
 from personal_db.wizard.runner import run_tracker
 from personal_db.wizard.status import compute_icon, read_status
 
 _DONE = "__DONE__"
 _INSTALL_PREFIX = "__INSTALL__:"
+_MCP_SETUP = "__MCP_SETUP__"
 
 
 def _list_trackers(cfg: Config) -> list[str]:
@@ -75,11 +77,21 @@ def run_menu(cfg: Config) -> None:
                     value=f"{_INSTALL_PREFIX}{name}",
                 )
             )
+        choices.append(
+            questionary.Choice(
+                title="🔌 MCP setup — install into Claude Code / Cursor / Desktop",
+                value=_MCP_SETUP,
+            )
+        )
         choices.append(questionary.Choice(title="✓ Done — exit wizard", value=_DONE))
 
         selection = questionary.select("Tracker setup:", choices=choices).ask()
         if selection is None or selection == _DONE:
             return
+
+        if selection == _MCP_SETUP:
+            run_mcp_setup_menu(cfg)
+            continue
 
         if selection.startswith(_INSTALL_PREFIX):
             name = selection[len(_INSTALL_PREFIX) :]
