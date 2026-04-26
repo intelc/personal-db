@@ -1,0 +1,12 @@
+{# Reusable bits — import via {% import "_macros.html" as m %} #}
+
+{# Refresh button: posts to /sync/<tracker>, server runs sync_one, redirects
+   back to the referrer. Renders nothing for built-in pseudo-trackers since
+   they have no sync. #}
+{% macro refresh_btn(tracker) %}
+  {% if tracker and tracker != "_builtin" %}
+    <form action="/sync/{{ tracker }}" method="post" class="refresh-form">
+      <button type="submit" class="refresh-btn" title="re-sync {{ tracker }}">↻ refresh</button>
+    </form>
+  {% endif %}
+{% endmacro %}

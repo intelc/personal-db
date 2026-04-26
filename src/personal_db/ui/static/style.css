@@ -89,6 +89,27 @@ main {
 }
 .nav-more-menu a:hover { background: #000; color: #fff; }
 
+/* Refresh button — sits inline with H1/H2 titles, posts to /sync/<tracker>.
+   Browser shows its loading spinner during the POST; server redirects back. */
+.refresh-form {
+  display: inline-block;
+  margin-left: 12px;
+  vertical-align: middle;
+}
+.refresh-btn {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 1px 8px;
+  border: 1px solid #000;
+  background: #fff;
+  color: #000;
+  cursor: pointer;
+  letter-spacing: 0.05em;
+  text-transform: lowercase;
+}
+.refresh-btn:hover { background: #000; color: #fff; }
+.refresh-btn:active { background: #333; color: #fff; }
+
 /* Viz title bar (with link to dedicated page + raw slug) */
 .block-h .viz-title-link {
   color: inherit;

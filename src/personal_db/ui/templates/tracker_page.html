@@ -1,9 +1,10 @@
 {% extends "base.html" %}
+{% import "_macros.html" as m %}
 {% block title %}{{ tracker }} · personal_db{% endblock %}
 
 {% block content %}
 <section class="block">
-  <h1 class="block-h">{{ tracker|upper }}</h1>
+  <h1 class="block-h">{{ tracker|upper }} {{ m.refresh_btn(tracker) }}</h1>
   <p class="meta">
     {{ rendered|length }} visualization{% if rendered|length != 1 %}s{% endif %}.
   </p>

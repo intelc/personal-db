@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_macros.html" as m %}
 {% block title %}dashboard · personal_db{% endblock %}
 
 {% block content %}
@@ -8,6 +9,7 @@
       <h2 class="block-h">
         <a href="/v/{{ entry.viz.slug }}" class="viz-title-link">{{ entry.viz.name|upper }}</a>
         <span class="viz-meta">{{ entry.viz.slug }}</span>
+        {{ m.refresh_btn(entry.viz.tracker) }}
       </h2>
       {{ entry.html|safe }}
     </section>

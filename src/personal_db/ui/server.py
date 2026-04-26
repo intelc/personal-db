@@ -18,6 +18,7 @@ from fastapi.templating import Jinja2Templates
 
 from personal_db.config import Config
 from personal_db.mcp_server.tools import log_life_context
+from personal_db.sync import sync_one
 from personal_db.ui.viz import discover, list_trackers_with_viz, load_dashboard_slugs
 
 _HERE = Path(__file__).parent
@@ -132,6 +133,22 @@ def build_app(cfg: Config) -> FastAPI:
                 **_nav_context(reg, active=tracker),
             },
         )
+
+    @app.post("/sync/{tracker}")
+    async def post_sync(request: Request, tracker: str):
+        """Refresh a single tracker, then redirect back to wherever the form
+        was submitted from. Errors are swallowed (logged elsewhere) so the
+        redirect always happens — the user can check Health for failures.
+
+        Blocking by design: most incremental syncs are sub-second; the user
+        gets immediate visual feedback (spinner) during the request, then
+        sees the freshly-synced data on redirect."""
+        try:
+            sync_one(cfg, tracker)
+        except Exception:  # noqa: BLE001 — surface via logs/health, don't 500
+            pass
+        referer = request.headers.get("referer") or f"/t/{tracker}"
+        return RedirectResponse(url=referer, status_code=303)
 
     @app.post("/log_life_context")
     async def post_life_context(

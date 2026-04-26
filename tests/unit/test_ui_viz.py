@@ -141,6 +141,57 @@ def test_broken_viz_does_not_kill_dashboard(tmp_path):
     assert "error rendering" in r.text
 
 
+def test_refresh_button_renders_on_tracker_page(tmp_path):
+    cfg = _setup(tmp_path, "daily_time_accounting")
+    client = TestClient(build_app(cfg))
+    r = client.get("/t/daily_time_accounting")
+    assert r.status_code == 200
+    # Form posts to /sync/<tracker>; button has the visible label.
+    assert 'action="/sync/daily_time_accounting"' in r.text
+    assert "↻ refresh" in r.text
+
+
+def test_refresh_button_skipped_for_builtin_viz(tmp_path):
+    """The health viz lives under _builtin — no underlying tracker, no refresh button."""
+    cfg = _setup(tmp_path, "daily_time_accounting")
+    client = TestClient(build_app(cfg))
+    r = client.get("/v/_builtin:health")
+    assert r.status_code == 200
+    # Health is built-in; no sync to run.
+    assert "/sync/_builtin" not in r.text
+
+
+def test_refresh_endpoint_runs_sync_and_redirects(tmp_path):
+    cfg = _setup(tmp_path, "daily_time_accounting")
+    client = TestClient(build_app(cfg))
+    # Track that sync_one was called by checking the framework's last_run.json
+    # gets updated after the POST.
+    from datetime import datetime, timezone
+    before = datetime.now(timezone.utc).isoformat()
+    r = client.post(
+        "/sync/daily_time_accounting",
+        headers={"referer": "/t/daily_time_accounting"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == "/t/daily_time_accounting"
+    # Confirm sync actually ran — last_run.json should now have an entry
+    last_run_path = cfg.state_dir / "last_run.json"
+    assert last_run_path.exists()
+    import json
+    data = json.loads(last_run_path.read_text())
+    assert "daily_time_accounting" in data
+    assert data["daily_time_accounting"] >= before
+
+
+def test_refresh_endpoint_swallows_sync_errors(tmp_path):
+    """A failing sync (e.g. uninstalled tracker) should still redirect, not 500."""
+    cfg = _setup(tmp_path)
+    client = TestClient(build_app(cfg))
+    r = client.post("/sync/nonexistent_tracker", follow_redirects=False)
+    assert r.status_code == 303  # not 500
+
+
 def test_nav_split_under_limit_returns_all_visible():
     from personal_db.ui.server import _split_nav
     visible, overflow = _split_nav(["a", "b", "c"], active=None, limit=6)
