@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sqlite3
+from datetime import UTC, datetime, timedelta
 from importlib import resources
 
 import questionary
@@ -17,6 +19,33 @@ from personal_db.wizard.status import compute_icon, read_status
 _DONE = "__DONE__"
 _INSTALL_PREFIX = "__INSTALL__:"
 _MCP_SETUP = "__MCP_SETUP__"
+
+
+def _data_summary(cfg: Config, name: str) -> str | None:
+    """Return a short data-freshness summary for the tracker, or None on error/empty."""
+    try:
+        manifest = load_manifest(cfg.trackers_dir / name / "manifest.yaml")
+        table = name if name in manifest.schema.tables else next(iter(manifest.schema.tables))
+        time_col = manifest.time_column
+        cutoff = (datetime.now(UTC) - timedelta(days=7)).isoformat()
+        con = sqlite3.connect(cfg.db_path)
+        try:
+            row = con.execute(
+                f"SELECT max({time_col}), "
+                f"sum(CASE WHEN {time_col} >= ? THEN 1 ELSE 0 END) "
+                f"FROM {table}",
+                (cutoff,),
+            ).fetchone()
+        finally:
+            con.close()
+        latest_iso, count_7d = row if row else (None, 0)
+        if latest_iso is None:
+            return "no data yet"
+        # latest_iso may include time + offset; show date only
+        latest_date = latest_iso[:10]
+        return f"latest {latest_date} · {count_7d or 0} in 7d"
+    except (sqlite3.OperationalError, OSError, KeyError, AttributeError):
+        return None
 
 
 def _list_trackers(cfg: Config) -> list[str]:
@@ -40,9 +69,9 @@ def _format_choice(cfg: Config, name: str) -> str:
     manifest = load_manifest(cfg.trackers_dir / name / "manifest.yaml")
     status = read_status(cfg).get(name)
     if icon == "—":
-        suffix = "no setup needed"
+        suffix = _data_summary(cfg, name) or "no setup needed"
     elif icon == "✓":
-        suffix = "configured · last test passed"
+        suffix = _data_summary(cfg, name) or "configured · last test passed"
     elif icon == "!":
         detail = (status or {}).get("detail", "test sync failed")
         suffix = f"configured · {detail}"

@@ -93,3 +93,70 @@ def test_format_choice_marks_outdated_with_arrow_icon(tmp_root):
     label = _format_choice(cfg, "habits")
     assert "⟳" in label
     assert "update available" in label
+
+
+def test_format_choice_shows_latest_and_7d_count_for_healthy_tracker(tmp_root):
+    """✓ tracker shows 'latest YYYY-MM-DD · N in 7d' when DB has rows within 7 days."""
+    cfg = Config(root=tmp_root)
+    init_db(cfg.db_path)
+    _install(tmp_root, "habits", setup_steps=[])
+
+    # Create the actual table the manifest declares (column: ts)
+    import sqlite3
+    from datetime import UTC, datetime, timedelta
+
+    con = sqlite3.connect(cfg.db_path)
+    con.execute("CREATE TABLE habits (ts TEXT)")
+    now = datetime.now(UTC)
+    # 3 rows in last 7 days, 1 row older
+    con.executemany(
+        "INSERT INTO habits VALUES (?)",
+        [
+            ((now - timedelta(days=1)).isoformat(),),
+            ((now - timedelta(days=3)).isoformat(),),
+            ((now - timedelta(days=6)).isoformat(),),
+            ((now - timedelta(days=30)).isoformat(),),
+        ],
+    )
+    con.commit()
+    con.close()
+
+    # _install creates a manifest that differs from the bundled one, so is_outdated
+    # returns True and the ⟳ branch would fire before reaching our new code.
+    # Patch is_outdated so we can exercise the data-summary path.
+    with patch("personal_db.wizard.menu.is_outdated", return_value=False):
+        label = _format_choice(cfg, "habits")
+    assert "latest" in label
+    assert "in 7d" in label
+    assert "3 in 7d" in label  # exactly 3 rows in last 7 days
+
+
+def test_format_choice_shows_no_data_yet_for_empty_table(tmp_root):
+    cfg = Config(root=tmp_root)
+    init_db(cfg.db_path)
+    _install(tmp_root, "habits", setup_steps=[])
+
+    import sqlite3
+
+    con = sqlite3.connect(cfg.db_path)
+    con.execute("CREATE TABLE habits (ts TEXT)")
+    con.commit()
+    con.close()
+
+    with patch("personal_db.wizard.menu.is_outdated", return_value=False):
+        label = _format_choice(cfg, "habits")
+    assert "no data yet" in label
+
+
+def test_format_choice_falls_back_when_table_missing(tmp_root):
+    """If the schema table doesn't exist (e.g., never synced), don't crash —
+    fall back to the icon's default suffix."""
+    cfg = Config(root=tmp_root)
+    init_db(cfg.db_path)
+    _install(tmp_root, "habits", setup_steps=[])
+    # Don't create the habits table at all
+
+    with patch("personal_db.wizard.menu.is_outdated", return_value=False):
+        label = _format_choice(cfg, "habits")
+    # Should NOT crash; should fall back to the original "no setup needed" or similar
+    assert "habits" in label
