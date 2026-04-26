@@ -24,11 +24,17 @@ personal-db tracker install screen_time
 personal-db tracker install imessage
 personal-db tracker install habits
 
-# For each, run setup
-export GITHUB_TOKEN=…  GITHUB_USER=…
-export WHOOP_CLIENT_ID=…  WHOOP_CLIENT_SECRET=…
-personal-db permission check screen_time   # opens System Settings if FDA missing
-personal-db permission check imessage      # same
+# Configure each connector via the interactive wizard
+personal-db tracker setup
+# (Or set up one specific tracker: personal-db tracker setup whoop)
+#
+# The wizard:
+#   - prompts for env vars (GITHUB_TOKEN, WHOOP_CLIENT_ID, etc.) and writes them
+#     to <root>/.env (mode 0600, gitignored)
+#   - launches OAuth flows in your browser for OAuth-based connectors (whoop)
+#   - probes Full Disk Access for chat.db / knowledgeC.db and opens System
+#     Settings if needed
+#   - runs a test sync after each connector to confirm it's working
 
 # First run: backfill what's available
 personal-db backfill github_commits
@@ -52,6 +58,17 @@ cp src/personal_db/templates/claude_skill/insights.md ~/.claude/skills/personal-
 - ❌ `personal-db init --root /tmp/foo` (rejected by typer)
 
 Without `--root`, the data root defaults to `~/personal_db`.
+
+## Credentials
+
+Credentials live in `<root>/.env` (default `~/personal_db/.env`, mode 0600).
+The file is loaded automatically on every `personal-db` invocation; shell
+environment variables override `.env` values (useful for debugging and tests).
+
+To rotate a credential or fix a misconfiguration, re-run
+`personal-db tracker setup <name>` — current values are shown as defaults
+(secrets are masked) so you can press Enter to keep them or type a new value
+to overwrite.
 
 ## Verify
 
