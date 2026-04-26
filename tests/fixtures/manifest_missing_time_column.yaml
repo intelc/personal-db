@@ -1,0 +1,8 @@
+name: bad_tracker
+description: missing time column
+permission_type: api_key
+setup_steps: []
+schedule: {every: 1h}
+schema:
+  tables:
+    bad: {columns: {x: {type: INTEGER, semantic: "x"}}}
