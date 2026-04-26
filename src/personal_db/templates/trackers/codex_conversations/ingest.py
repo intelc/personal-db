@@ -15,6 +15,33 @@ def _codex_root() -> Path:
     return Path(os.environ.get("CODEX_SESSIONS_DIR") or "~/.codex/sessions").expanduser()
 
 
+def _history_path() -> Path:
+    return Path(os.environ.get("CODEX_HISTORY_FILE") or "~/.codex/history.jsonl").expanduser()
+
+
+def _load_history_first_prompts() -> dict[str, str]:
+    """Map session_id → first user prompt text from ~/.codex/history.jsonl.
+
+    history.jsonl rows: {"session_id": "<uuid>", "ts": <epoch_seconds>, "text": "..."}
+    Lines for the same session_id are in chronological order; keep the FIRST one.
+    """
+    path = _history_path()
+    out: dict[str, str] = {}
+    if not path.exists():
+        return out
+    with path.open() as f:
+        for line in f:
+            try:
+                d = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            sid = d.get("session_id")
+            text = d.get("text")
+            if sid and text and sid not in out:
+                out[sid] = text[:500]
+    return out
+
+
 def _parse_payload(raw) -> dict | None:
     """Parse a payload that may be a dict already, a JSON string, or a Python repr string."""
     if isinstance(raw, dict):
@@ -36,17 +63,34 @@ def _parse_payload(raw) -> dict | None:
     return None
 
 
-def _extract_text(content) -> str:
-    """Extract text from a content field that may be a string or list of blocks."""
+def _extract_text_from_content(content) -> str:
+    """Codex stores message content as a list of {type, text} blocks, but
+    sometimes serializes it as a stringified Python repr. Handle both."""
     if isinstance(content, str):
-        return content
+        s = content.strip()
+        if s.startswith("["):
+            try:
+                content = json.loads(s)
+            except json.JSONDecodeError:
+                try:
+                    content = ast.literal_eval(s)
+                except (ValueError, SyntaxError):
+                    return s[:500]
+        else:
+            return s[:500]
     if isinstance(content, list):
         parts = []
         for block in content:
-            if isinstance(block, dict) and block.get("type") == "text":
-                parts.append(block.get("text", ""))
-        return "".join(parts)
-    return ""
+            if isinstance(block, dict):
+                t = block.get("text") or block.get("input_text")
+                if t:
+                    parts.append(t)
+        return " ".join(parts)[:500]
+    return str(content)[:500]
+
+
+def _is_synthetic_user_message(text: str) -> bool:
+    return text.startswith("# AGENTS.md instructions for ")
 
 
 def _filename_uuid(path: Path) -> str | None:
@@ -116,14 +160,16 @@ def _parse_session(jsonl_path: Path) -> dict | None:
                         continue
                     role = payload.get("role", "")
                     if role in {"user", "assistant"}:
-                        event_count += 1
                         if role == "user":
-                            user_msg_count += 1
-                            if first_user_prompt is None:
-                                content = payload.get("content", "")
-                                text = _extract_text(content)
-                                first_user_prompt = text[:500] if text else None
+                            content = payload.get("content", "")
+                            text = _extract_text_from_content(content)
+                            if not _is_synthetic_user_message(text):
+                                event_count += 1
+                                user_msg_count += 1
+                                if first_user_prompt is None:
+                                    first_user_prompt = text[:500] if text else None
                         else:
+                            event_count += 1
                             assistant_msg_count += 1
 
     except OSError as exc:
@@ -161,6 +207,8 @@ def sync(t: Tracker) -> None:
     except (TypeError, ValueError):
         cursor_mtime = 0.0
 
+    history_prompts = _load_history_first_prompts()
+
     max_mtime = cursor_mtime
     rows = []
 
@@ -176,6 +224,9 @@ def sync(t: Tracker) -> None:
 
         session = _parse_session(jsonl_file)
         if session is not None:
+            # Override first_user_prompt with history-sourced text if available
+            if session["session_id"] in history_prompts:
+                session["first_user_prompt"] = history_prompts[session["session_id"]]
             rows.append(session)
 
     if rows:

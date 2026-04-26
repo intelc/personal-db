@@ -1,3 +1,4 @@
+import json
 import shutil
 import sqlite3
 import subprocess
@@ -118,3 +119,156 @@ def test_codex_sync_handles_missing_dir_gracefully(tmp_path, monkeypatch):
     count = con.execute("SELECT COUNT(*) FROM codex_sessions").fetchone()[0]
     con.close()
     assert count == 0
+
+
+def test_codex_sync_uses_history_jsonl_for_first_user_prompt(tmp_path, monkeypatch):
+    """history.jsonl takes precedence over the session file for first_user_prompt."""
+    root = tmp_path / "personal_db"
+    _init_and_install(root)
+
+    sessions_dir = tmp_path / "sessions"
+    sessions_dir.mkdir()
+    history_path = tmp_path / "history.jsonl"
+
+    sid = "019dcb33-aaaa-bbbb-cccc-ddddeeee0001"
+
+    # Session file with AGENTS.md injection as the only user message — fallback
+    # would return None (synthetic skipped); history.jsonl provides the real prompt.
+    session_meta_payload = json.dumps({"id": sid, "timestamp": "2026-04-26T10:00:00Z"})
+    response_item_payload = json.dumps(
+        {
+            "type": "message",
+            "role": "user",
+            "content": "[{'type': 'input_text', 'text': '# AGENTS.md instructions for /tmp'}]",
+        }
+    )
+    rollout = sessions_dir / "rollout-test.jsonl"
+    rollout.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-04-26T10:00:00Z",
+                "type": "session_meta",
+                "payload": session_meta_payload,
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "timestamp": "2026-04-26T10:00:01Z",
+                "type": "response_item",
+                "payload": response_item_payload,
+            }
+        )
+        + "\n"
+    )
+
+    history_path.write_text(
+        json.dumps({"session_id": sid, "ts": 1745604000, "text": "real first user prompt"}) + "\n"
+    )
+
+    monkeypatch.setenv("CODEX_SESSIONS_DIR", str(sessions_dir))
+    monkeypatch.setenv("CODEX_HISTORY_FILE", str(history_path))
+
+    cfg = Config(root=root)
+    sync_one(cfg, "codex_conversations")
+
+    con = sqlite3.connect(root / "db.sqlite")
+    rows = con.execute("SELECT session_id, first_user_prompt FROM codex_sessions").fetchall()
+    con.close()
+
+    assert len(rows) == 1
+    assert rows[0][0] == sid
+    assert rows[0][1] == "real first user prompt"
+
+
+def test_codex_sync_skips_agents_md_when_no_history(tmp_path, monkeypatch):
+    """When history.jsonl is missing, the fallback parser skips AGENTS.md
+    auto-injected user messages and finds the next real one."""
+    root = tmp_path / "personal_db"
+    _init_and_install(root)
+
+    sessions_dir = tmp_path / "sessions"
+    sessions_dir.mkdir()
+
+    sid = "019dcb33-aaaa-bbbb-cccc-ddddeeee0002"
+
+    session_meta_payload = json.dumps({"id": sid, "timestamp": "2026-04-26T11:00:00Z"})
+    # First response_item: synthetic AGENTS.md injection (should be skipped)
+    agents_payload = json.dumps(
+        {
+            "type": "message",
+            "role": "user",
+            "content": "[{'type': 'input_text', 'text': '# AGENTS.md instructions for /home/user'}]",
+        }
+    )
+    # Second response_item: real user prompt
+    real_payload = json.dumps(
+        {
+            "type": "message",
+            "role": "user",
+            "content": "[{'type': 'input_text', 'text': 'Fix the bug in main.py'}]",
+        }
+    )
+    assistant_payload = json.dumps(
+        {
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "text", "text": "Sure, let me fix that."}],
+        }
+    )
+
+    rollout = sessions_dir / "rollout-test2.jsonl"
+    rollout.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-04-26T11:00:00Z",
+                "type": "session_meta",
+                "payload": session_meta_payload,
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "timestamp": "2026-04-26T11:00:01Z",
+                "type": "response_item",
+                "payload": agents_payload,
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {"timestamp": "2026-04-26T11:00:02Z", "type": "response_item", "payload": real_payload}
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "timestamp": "2026-04-26T11:00:03Z",
+                "type": "response_item",
+                "payload": assistant_payload,
+            }
+        )
+        + "\n"
+    )
+
+    # No history.jsonl — point to nonexistent file
+    monkeypatch.setenv("CODEX_SESSIONS_DIR", str(sessions_dir))
+    monkeypatch.setenv("CODEX_HISTORY_FILE", str(tmp_path / "no_history.jsonl"))
+
+    cfg = Config(root=root)
+    sync_one(cfg, "codex_conversations")
+
+    con = sqlite3.connect(root / "db.sqlite")
+    rows = con.execute(
+        "SELECT session_id, first_user_prompt, user_msg_count, assistant_msg_count, event_count "
+        "FROM codex_sessions"
+    ).fetchall()
+    con.close()
+
+    assert len(rows) == 1
+    session_id, first_user_prompt, user_msg_count, assistant_msg_count, event_count = rows[0]
+    assert session_id == sid
+    # AGENTS.md injection skipped; real prompt is found
+    assert first_user_prompt == "Fix the bug in main.py"
+    # Synthetic message doesn't count toward user_msg_count
+    assert user_msg_count == 1
+    assert assistant_msg_count == 1
+    assert event_count == 2
