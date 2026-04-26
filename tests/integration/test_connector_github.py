@@ -47,11 +47,6 @@ def test_github_sync_inserts_rows_from_fixture(tmp_path, monkeypatch):
 
     con = sqlite3.connect(root / "db.sqlite")
     n = con.execute("SELECT COUNT(*) FROM github_commits").fetchone()[0]
-    # Note: each PushEvent in the fixture can produce multiple commit rows.
-    # Compute the expected count from the fixture rather than `len(fixture)`.
-    expected = sum(
-        len(ev.get("payload", {}).get("commits", []))
-        for ev in fixture
-        if ev.get("type") == "PushEvent"
-    )
+    # The fixture has 3 items in "items"; each produces exactly one commit row.
+    expected = len(fixture["items"])
     assert n == expected, f"expected {expected} commits, got {n}"
