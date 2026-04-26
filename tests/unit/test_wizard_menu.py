@@ -4,7 +4,13 @@ import yaml
 
 from personal_db.config import Config
 from personal_db.db import init_db
-from personal_db.wizard.menu import _format_choice, _list_trackers, run_menu
+from personal_db.wizard.menu import (
+    _format_bundled_choice,
+    _format_choice,
+    _list_bundled_not_installed,
+    _list_trackers,
+    run_menu,
+)
 
 
 def _install(tmp_root, name, setup_steps=None):
@@ -57,3 +63,22 @@ def test_run_menu_exits_on_done_selection(tmp_root):
         sel.return_value.ask.return_value = "__DONE__"
         run_menu(cfg)
     assert sel.called
+
+
+def test_list_bundled_not_installed_excludes_installed(tmp_root):
+    cfg = Config(root=tmp_root)
+    init_db(cfg.db_path)
+    _install(tmp_root, "habits", setup_steps=[])
+    not_installed = _list_bundled_not_installed(cfg)
+    # habits is installed, so it should NOT be in the not-installed list
+    assert "habits" not in not_installed
+    # but the other 4 bundled templates should be
+    assert {"github_commits", "whoop", "screen_time", "imessage"} <= set(not_installed)
+
+
+def test_format_bundled_choice_includes_plus_and_description():
+    label = _format_bundled_choice("habits")
+    assert label.startswith("+ ")
+    assert "habits" in label
+    assert "not installed" in label
+    assert "Manually-logged daily habits" in label  # from the bundled manifest

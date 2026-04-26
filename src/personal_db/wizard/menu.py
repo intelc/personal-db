@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+from importlib import resources
+
 import questionary
+import yaml
 
 from personal_db.config import Config
+from personal_db.installer import install_template, list_bundled
 from personal_db.manifest import load_manifest
 from personal_db.wizard.runner import run_tracker
 from personal_db.wizard.status import compute_icon, read_status
 
 _DONE = "__DONE__"
+_INSTALL_PREFIX = "__INSTALL__:"
 
 
 def _list_trackers(cfg: Config) -> list[str]:
@@ -18,6 +23,11 @@ def _list_trackers(cfg: Config) -> list[str]:
     return sorted(
         d.name for d in cfg.trackers_dir.iterdir() if d.is_dir() and (d / "manifest.yaml").exists()
     )
+
+
+def _list_bundled_not_installed(cfg: Config) -> list[str]:
+    installed = set(_list_trackers(cfg))
+    return [n for n in list_bundled() if n not in installed]
 
 
 def _format_choice(cfg: Config, name: str) -> str:
@@ -36,16 +46,49 @@ def _format_choice(cfg: Config, name: str) -> str:
     return f"{icon} {name:18s} {suffix} — {manifest.description}"
 
 
+def _format_bundled_choice(name: str) -> str:
+    pkg = resources.files("personal_db.templates.trackers")
+    manifest_text = pkg.joinpath(name, "manifest.yaml").read_text()
+    description = yaml.safe_load(manifest_text).get("description", "")
+    return f"+ {name:18s} not installed       — {description}"
+
+
 def run_menu(cfg: Config) -> None:
     """Loop: render → select tracker (or Done) → run that tracker → repeat."""
     while True:
-        names = _list_trackers(cfg)
-        if not names:
-            print("No trackers installed. Use `personal-db tracker install <name>` first.")
+        installed = _list_trackers(cfg)
+        not_installed = _list_bundled_not_installed(cfg)
+
+        if not installed and not not_installed:
+            print("No trackers available (no installed trackers and no bundled templates).")
             return
-        choices = [questionary.Choice(title=_format_choice(cfg, n), value=n) for n in names]
+
+        choices: list = []
+        for name in installed:
+            choices.append(questionary.Choice(title=_format_choice(cfg, name), value=name))
+        if installed and not_installed:
+            choices.append(questionary.Separator("─── available to install ───"))
+        for name in not_installed:
+            choices.append(
+                questionary.Choice(
+                    title=_format_bundled_choice(name),
+                    value=f"{_INSTALL_PREFIX}{name}",
+                )
+            )
         choices.append(questionary.Choice(title="✓ Done — exit wizard", value=_DONE))
+
         selection = questionary.select("Tracker setup:", choices=choices).ask()
         if selection is None or selection == _DONE:
             return
-        run_tracker(cfg, selection)
+
+        if selection.startswith(_INSTALL_PREFIX):
+            name = selection[len(_INSTALL_PREFIX) :]
+            try:
+                install_template(cfg, name)
+                print(f"  Installed {name}")
+            except (FileExistsError, ValueError) as e:
+                print(f"  ✗ install failed: {e}")
+                continue
+            run_tracker(cfg, name)
+        else:
+            run_tracker(cfg, selection)

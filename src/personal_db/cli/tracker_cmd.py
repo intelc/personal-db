@@ -1,10 +1,8 @@
-import shutil
-from importlib import resources
-
 import typer
 
 from personal_db.cli.state import get_root
 from personal_db.config import Config
+from personal_db.installer import install_template
 from personal_db.manifest import load_manifest
 from personal_db.wizard.menu import run_menu
 from personal_db.wizard.runner import run_tracker
@@ -81,18 +79,15 @@ def list_cmd() -> None:
 
 def install(name: str) -> None:
     """Copy a bundled tracker template into the user's trackers/ directory."""
-    root = get_root()
-    dest = root / "trackers" / name
-    if dest.exists():
-        typer.echo(f"already installed: {dest}", err=True)
-        raise typer.Exit(1)
-    src_pkg = resources.files("personal_db.templates.trackers").joinpath(name)
-    if not src_pkg.is_dir():
-        typer.echo(f"unknown built-in tracker: {name}", err=True)
-        raise typer.Exit(1)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    with resources.as_file(src_pkg) as src_path:
-        shutil.copytree(src_path, dest)
+    cfg = Config(root=get_root())
+    try:
+        dest = install_template(cfg, name)
+    except FileExistsError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from e
+    except ValueError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from e
     typer.echo(f"Installed {name} -> {dest}")
 
 
