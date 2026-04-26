@@ -74,3 +74,13 @@ class Tracker:
         n = con.total_changes
         con.close()
         return n
+
+    def resolve_person(self, alias: str, *, auto_create: bool = True) -> int | None:
+        from personal_db.entities import resolve_person
+
+        return resolve_person(self.cfg, alias, auto_create=auto_create)
+
+    def resolve_topic(self, alias: str, *, auto_create: bool = True) -> int | None:
+        from personal_db.entities import resolve_topic
+
+        return resolve_topic(self.cfg, alias, auto_create=auto_create)
