@@ -92,6 +92,26 @@ def test_fda_check_failed_after_3_retries_when_denied(tmp_root, monkeypatch):
     assert "FDA" in r.reason or "denied" in r.reason
 
 
+def test_fda_check_message_includes_python_binary_path(tmp_root, monkeypatch, capsys):
+    """When the probe fails, the message must tell the user which binary to grant FDA to."""
+    monkeypatch.setattr(
+        "personal_db.wizard.steps.probe_sqlite_access",
+        lambda p: type("R", (), {"granted": False, "reason": "FDA denied"})(),
+    )
+    monkeypatch.setattr("personal_db.wizard.steps._prompt", lambda *a, **kw: "")
+    monkeypatch.setattr("personal_db.wizard.steps.open_fda_settings_pane", lambda: None)
+    step = FdaCheckStep(type="fda_check", probe_path="/dev/null/fake")
+    handle_fda_check(step, _ctx(tmp_root))
+    out = capsys.readouterr().out
+    # The actual python binary path appears in the recommendation
+    import sys
+    from pathlib import Path
+
+    assert str(Path(sys.executable).resolve()) in out
+    # The message names "Python interpreter" so the user knows what they're granting
+    assert "Python" in out or "python" in out
+
+
 def test_fda_check_succeeds_on_retry(tmp_root, monkeypatch):
     """First probe denied, user presses Enter, second probe granted → Ok."""
     state = {"calls": 0}

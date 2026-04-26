@@ -27,7 +27,11 @@ from personal_db.manifest import (
     OAuthStep,
 )
 from personal_db.oauth import OAuthFlow, exchange_code, save_token
-from personal_db.permissions import open_fda_settings_pane, probe_sqlite_access
+from personal_db.permissions import (
+    open_fda_settings_pane,
+    probe_sqlite_access,
+    responsible_binary_path,
+)
 from personal_db.wizard.env_file import read_env, upsert_env
 
 
@@ -70,12 +74,18 @@ def handle_fda_check(step: FdaCheckStep, ctx: WizardContext) -> StepResult:
         if r.granted:
             return Ok(f"FDA granted for {probe_path}")
         if attempt == 0:
+            python_bin = responsible_binary_path()
             print(
                 f"\n  ✗ Cannot access {probe_path}\n"
                 f"    Reason: {r.reason}\n"
-                f"\n  Grant Full Disk Access to your terminal binary "
-                f"(Terminal.app, iTerm2, Cursor, etc.) in System Settings.\n"
-                f"  Opening System Settings now…\n"
+                f"\n  Grant Full Disk Access to the Python interpreter that runs personal-db:\n"
+                f"\n    {python_bin}\n"
+                f"\n  In System Settings → Privacy & Security → Full Disk Access → +,\n"
+                f"  press Cmd+Shift+G and paste the path above.\n"
+                f"\n  This is more durable than granting FDA to your terminal app: it works\n"
+                f"  regardless of which terminal you use, and it's required for the launchd\n"
+                f"  scheduler (which doesn't run through your terminal at all).\n"
+                f"\n  Opening System Settings now…\n"
             )
             open_fda_settings_pane()
         _prompt(f"Press Enter once granted (attempt {attempt + 1}/3), or just Enter to retry")

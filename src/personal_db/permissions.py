@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -26,6 +27,16 @@ def probe_sqlite_access(path: Path) -> PermissionResult:
         if "unable to open" in msg and not path.exists():
             return PermissionResult(granted=False, reason=f"file missing: {path}")
         return PermissionResult(granted=False, reason=str(e))
+
+
+def responsible_binary_path() -> Path:
+    """The actual binary TCC will see when probing protected files.
+
+    sys.executable points at the venv shim, but TCC follows the symlink to
+    the real interpreter. Return the resolved path so the wizard can tell
+    the user exactly which binary to grant FDA to.
+    """
+    return Path(sys.executable).resolve()
 
 
 def open_fda_settings_pane() -> None:
