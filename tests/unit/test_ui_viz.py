@@ -141,9 +141,38 @@ def test_broken_viz_does_not_kill_dashboard(tmp_path):
     assert "error rendering" in r.text
 
 
+def test_every_bundled_tracker_viz_renders_without_error(tmp_path):
+    """Smoke test: install every bundled tracker, then render every declared viz.
+
+    Catches typos, missing tables, wrong import names, etc. — any viz that
+    raises during render() fails the test with the slug + exception.
+    """
+    from personal_db.installer import list_bundled
+    cfg = _setup(tmp_path, *list_bundled())
+    reg = discover(cfg)
+    failures = []
+    for slug, viz in reg.items():
+        try:
+            html = viz.render(cfg)
+        except Exception as e:  # noqa: BLE001
+            failures.append(f"{slug}: {type(e).__name__}: {e}")
+            continue
+        assert isinstance(html, str), f"{slug} returned non-string"
+        assert html, f"{slug} returned empty"
+    assert not failures, "viz render failures:\n  " + "\n  ".join(failures)
+
+
+def _strip_viz_file(cfg, tracker):
+    """Helper: simulate a tracker without visualizations.py by deleting it."""
+    p = cfg.trackers_dir / tracker / "visualizations.py"
+    if p.exists():
+        p.unlink()
+
+
 def test_synthesized_recent_viz_for_trackers_without_viz_file(tmp_path):
-    """github_commits has no visualizations.py → framework synthesizes :recent."""
+    """A tracker without visualizations.py should still get a synthesized :recent."""
     cfg = _setup(tmp_path, "github_commits")
+    _strip_viz_file(cfg, "github_commits")
     reg = discover(cfg)
     assert "github_commits:recent" in reg
     assert reg["github_commits:recent"].auto is True
@@ -162,6 +191,7 @@ def test_explicit_viz_suppresses_synthesized(tmp_path):
 def test_dashboard_default_excludes_auto_viz(tmp_path):
     """Synthetic :recent rows shouldn't clutter the dashboard by default."""
     cfg = _setup(tmp_path, "github_commits", "daily_time_accounting")
+    _strip_viz_file(cfg, "github_commits")  # force synthesized
     reg = discover(cfg)
     slugs = load_dashboard_slugs(cfg, reg)
     # Curated viz appear
@@ -174,6 +204,7 @@ def test_dashboard_default_excludes_auto_viz(tmp_path):
 def test_dashboard_config_can_explicitly_include_auto_viz(tmp_path):
     """User can add an auto viz to their dashboard if they want it there."""
     cfg = _setup(tmp_path, "github_commits")
+    _strip_viz_file(cfg, "github_commits")  # force synthesized
     config_dir = cfg.root / ".config"
     config_dir.mkdir()
     (config_dir / "dashboard.yaml").write_text(
@@ -186,6 +217,7 @@ def test_dashboard_config_can_explicitly_include_auto_viz(tmp_path):
 
 def test_synthesized_viz_renders_recent_rows(tmp_path):
     cfg = _setup(tmp_path, "github_commits")
+    _strip_viz_file(cfg, "github_commits")  # force synthesized
     # Seed a couple of rows
     con = sqlite3.connect(cfg.db_path)
     con.execute(
@@ -211,14 +243,16 @@ def test_synthesized_viz_renders_recent_rows(tmp_path):
 
 def test_synthesized_viz_handles_empty_table(tmp_path):
     cfg = _setup(tmp_path, "github_commits")  # installed but no rows
+    _strip_viz_file(cfg, "github_commits")
     reg = discover(cfg)
     html = reg["github_commits:recent"].render(cfg)
     assert "no rows" in html.lower()
 
 
 def test_tracker_page_works_for_tracker_without_explicit_viz(tmp_path):
-    """github_commits has no visualizations.py — its /t page should still load."""
+    """A tracker without visualizations.py should still load /t/<name>."""
     cfg = _setup(tmp_path, "github_commits")
+    _strip_viz_file(cfg, "github_commits")
     client = TestClient(build_app(cfg))
     r = client.get("/t/github_commits")
     assert r.status_code == 200
