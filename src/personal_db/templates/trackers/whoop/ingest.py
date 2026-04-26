@@ -133,7 +133,7 @@ def _flatten_sleep(rec: dict) -> dict:
 
 def _flatten_workout(rec: dict) -> dict:
     score = rec.get("score") or {}
-    zones = score.get("zone_duration") or {}
+    zones = score.get("zone_duration") or score.get("zone_durations") or {}
     return {
         "id": str(rec["id"]),
         "start": rec.get("start"),
@@ -165,7 +165,7 @@ def _flatten_workout(rec: dict) -> dict:
 
 def _sync_cycles(t: Tracker, headers: dict) -> None:
     cursor = Cursor("whoop:cycles", t.cfg.state_dir)
-    records = _fetch_paginated(headers, "/v1/cycle", cursor.get())
+    records = _fetch_paginated(headers, "/v2/cycle", cursor.get())
     rows = [_flatten_cycle(r) for r in records]
     if rows:
         t.upsert("whoop_cycles", rows, key=["id"])
@@ -175,7 +175,7 @@ def _sync_cycles(t: Tracker, headers: dict) -> None:
 
 def _sync_recovery(t: Tracker, headers: dict) -> None:
     cursor = Cursor("whoop:recovery", t.cfg.state_dir)
-    records = _fetch_paginated(headers, "/v1/recovery", cursor.get())
+    records = _fetch_paginated(headers, "/v2/recovery", cursor.get())
     if not records:
         t.log.info("whoop recovery: 0")
         return
@@ -203,7 +203,7 @@ def _sync_recovery(t: Tracker, headers: dict) -> None:
 
 def _sync_sleep(t: Tracker, headers: dict) -> None:
     cursor = Cursor("whoop:sleep", t.cfg.state_dir)
-    records = _fetch_paginated(headers, "/v1/activity/sleep", cursor.get())
+    records = _fetch_paginated(headers, "/v2/activity/sleep", cursor.get())
     rows = [_flatten_sleep(r) for r in records]
     if rows:
         t.upsert("whoop_sleep", rows, key=["id"])
@@ -215,7 +215,7 @@ def _sync_sleep(t: Tracker, headers: dict) -> None:
 
 def _sync_workouts(t: Tracker, headers: dict) -> None:
     cursor = Cursor("whoop:workouts", t.cfg.state_dir)
-    records = _fetch_paginated(headers, "/v1/activity/workout", cursor.get())
+    records = _fetch_paginated(headers, "/v2/activity/workout", cursor.get())
     rows = [_flatten_workout(r) for r in records]
     if rows:
         t.upsert("whoop_workouts", rows, key=["id"])
