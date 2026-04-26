@@ -4,27 +4,21 @@ permission_type: none
 setup_steps:
   - type: instructions
     text: |
-      This tracker derives daily time totals from your other connectors:
-        - whoop_sleep (sleep + naps)
-        - whoop_workouts (exercise)
+      Tracks daily hours per category by deriving from your other connectors:
+        - whoop_sleep + whoop_workouts (sleep, exercise)
         - screen_time_app_usage (per-app categorization)
 
-      App categorization lives at:
+      A starter app→category mapping is shipped in:
         <root>/trackers/daily_time_accounting/app_categories.yaml
 
-      Edit it to match how YOU categorize your apps (uses macOS bundle IDs).
-      Example:
-        work:
-          - com.todesktop.230313mzl4w4u92    # Cursor
-          - com.mitchellh.ghostty
-        leisure:
-          - com.apple.Safari
+      The mapping covers common dev/comms/leisure apps with sensible defaults.
+      Apps not in the mapping fall under 'other_screen'. Time outside sleep,
+      workouts, and screen time goes to '_unaccounted'.
 
-      Time NOT covered by sleep + workout + categorized screen time goes to '_unaccounted'.
-      This includes off-screen time AND any double-counting overlap (which shows as negative).
+      To improve the categorization for YOUR apps, ask Claude Code:
+        "review my daily_time_accounting and suggest category improvements"
 
-      Re-run sync after editing the YAML:
-        personal-db sync daily_time_accounting
+      (A dedicated /methodology skill that auto-populates this is planned.)
 schedule:
   every: 1h
 time_column: date
