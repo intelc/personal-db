@@ -29,3 +29,5 @@ schema:
         is_from_me:  {type: INTEGER, semantic: "1 if I sent it"}
         sent_at:     {type: TEXT,    semantic: "ISO-8601 UTC"}
 related_entities: ["people"]
+
+local_only: true

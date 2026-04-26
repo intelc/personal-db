@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from personal_db.config import Config
+from personal_db.data_horizon import compute_and_store as _store_horizon
 from personal_db.db import apply_tracker_schema, init_db
 from personal_db.manifest import load_manifest
 from personal_db.tracker import Tracker
@@ -82,6 +83,7 @@ def sync_one(cfg: Config, name: str) -> None:
     t = Tracker(name=name, cfg=cfg, manifest=manifest)
     mod.sync(t)
     _write_last_run(cfg, name, datetime.now(UTC).isoformat())
+    _store_horizon(cfg, name, manifest)
 
 
 def backfill_one(cfg: Config, name: str, start: str | None, end: str | None) -> None:
@@ -91,6 +93,7 @@ def backfill_one(cfg: Config, name: str, start: str | None, end: str | None) -> 
     mod = _load_ingest_module(tracker_dir, name)
     t = Tracker(name=name, cfg=cfg, manifest=manifest)
     mod.backfill(t, start, end)
+    _store_horizon(cfg, name, manifest)
 
 
 def sync_due(cfg: Config) -> dict[str, str]:

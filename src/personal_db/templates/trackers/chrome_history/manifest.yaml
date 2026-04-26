@@ -35,3 +35,5 @@ schema:
         duration_seconds: {type: REAL,    semantic: "dwell time on page; 0 if Chrome didn't measure"}
         transition:       {type: INTEGER, semantic: "Chrome's navigation transition bitmask"}
 related_entities: []
+
+local_only: true

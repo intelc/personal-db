@@ -10,9 +10,16 @@ from pathlib import Path
 
 import yaml
 
+from personal_db.data_horizon import get as _get_horizon
+from personal_db.manifest import ManifestError, load_manifest
 from personal_db.tracker import Tracker
 
 _CHROME_BUNDLE = "com.google.Chrome"
+
+# Source trackers this derived tracker depends on. We check each one's manifest
+# at runtime to decide which are local-only (and therefore horizon-relevant) —
+# the manifest is the single source of truth, not a duplicate list here.
+_SOURCE_TRACKERS = ("screen_time", "chrome_history", "whoop")
 
 
 def _local_tz():
@@ -95,6 +102,39 @@ def _categorize_domain(
     return default_cat
 
 
+def _is_local_only(t: Tracker, name: str) -> bool:
+    """Read the source tracker's manifest and return its local_only flag."""
+    path = t.cfg.trackers_dir / name / "manifest.yaml"
+    if not path.is_file():
+        return False
+    try:
+        return load_manifest(path).local_only
+    except ManifestError:
+        return False
+
+
+def _max_local_only_horizon(t: Tracker) -> date_t | None:
+    """Latest local-date among our local-only source trackers' horizons.
+
+    For each declared source tracker, consult its manifest's `local_only` flag
+    to decide whether its horizon matters here. Days before max(horizons) get
+    `_no_data` because at least one source we depend on has no records
+    covering them. Returns None if no relevant horizon is recorded yet.
+    """
+    cutoffs: list[date_t] = []
+    for src in _SOURCE_TRACKERS:
+        if not _is_local_only(t, src):
+            continue
+        h = _get_horizon(t.cfg, src)
+        if not h:
+            continue
+        try:
+            cutoffs.append(_to_local(h).date())
+        except (ValueError, TypeError):
+            continue
+    return max(cutoffs) if cutoffs else None
+
+
 def _chrome_dwell_by_day(
     con, domain_rules: list[tuple[str, str]], default_cat: str
 ) -> dict[date_t, dict[str, float]]:
@@ -147,6 +187,11 @@ def sync(t: Tracker) -> None:
 
     chrome_dwell = _chrome_dwell_by_day(con, domain_rules, default_domain_cat)
 
+    # Earliest date for which we have data from any local-only source. Days
+    # before this are flagged as `_no_data` instead of `_unaccounted`, since
+    # the absence is a data-loss artifact, not a real "idle" measurement.
+    no_data_cutoff = _max_local_only_horizon(t)
+
     rows: list[dict] = []
     for day in _date_iter(start_date, today):
         # Per-date totals
@@ -196,14 +241,35 @@ def sync(t: Tracker) -> None:
                 # No usable visits — fall back to Chrome's app-level category
                 per_cat[bundle_to_cat.get(_CHROME_BUNDLE, default_cat)] += chrome_screen_hours
 
-        # Compute residual
+        # Compute residual. Before the local-only data horizon, we *lost* the
+        # screen_time/chrome signal (reinstall, cache wipe), so the unaccounted
+        # hours don't represent idle time — bucket them as `_no_data` so the
+        # consumer knows to exclude these days from "fair" comparisons.
         accounted = sum(per_cat.values())
-        per_cat["_unaccounted"] = 24.0 - accounted
+        residual = 24.0 - accounted
+        if no_data_cutoff is not None and day < no_data_cutoff:
+            per_cat["_no_data"] = residual
+        else:
+            per_cat["_unaccounted"] = residual
 
         date_str = day.isoformat()
         for cat, hrs in per_cat.items():
             rows.append({"date": date_str, "category": cat, "hours": round(hrs, 4)})
 
+    # Delete rows in the recomputed window before upserting. Without this, a
+    # residual that flipped category (e.g. _unaccounted -> _no_data after a
+    # horizon was recorded) leaves the old row behind because upsert only
+    # touches matching (date, category) keys.
+    if rows:
+        con2 = sqlite3.connect(t.cfg.db_path)
+        try:
+            con2.execute(
+                "DELETE FROM daily_time_accounting WHERE date >= ? AND date <= ?",
+                (start_date.isoformat(), today.isoformat()),
+            )
+            con2.commit()
+        finally:
+            con2.close()
     con.close()
     if rows:
         t.upsert("daily_time_accounting", rows, key=["date", "category"])

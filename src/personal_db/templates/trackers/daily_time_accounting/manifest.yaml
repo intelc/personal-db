@@ -28,6 +28,6 @@ schema:
     daily_time_accounting:
       columns:
         date:     {type: TEXT, semantic: "ISO-8601 local date YYYY-MM-DD"}
-        category: {type: TEXT, semantic: "category from app_categories.yaml, or 'sleep', 'workout', '_unaccounted'"}
+        category: {type: TEXT, semantic: "category from app_categories.yaml, or 'sleep', 'workout', '_unaccounted' (real idle/offline time), '_no_data' (date predates the earliest available local-only source — system reinstall, cache wipe, etc.)"}
         hours:    {type: REAL, semantic: "hours in this category on this date"}
 related_entities: []

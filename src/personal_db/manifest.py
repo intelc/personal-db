@@ -97,6 +97,11 @@ class Manifest(BaseModel):
     granularity: Literal["event", "minute", "hour", "day"] = "event"
     schema: SchemaSpec
     related_entities: list[str] = Field(default_factory=list)
+    # local_only: this tracker reads from local files that don't survive a system
+    # reinstall (~/Library/..., local app DBs, etc.). The framework records the
+    # earliest available date after each sync so derived trackers can flag days
+    # before that horizon as "no_data" rather than misleadingly attributing them.
+    local_only: bool = False
 
 
 def load_manifest(path: Path) -> Manifest:

@@ -181,6 +181,71 @@ def test_daily_time_accounting_redistributes_chrome_via_visits(tmp_path):
     assert by_cat.get("leisure", 0) == 1.0
 
 
+def test_daily_time_accounting_marks_pre_horizon_days_as_no_data(tmp_path):
+    """Days before the local-only sources' horizon should be _no_data, not _unaccounted."""
+    root = tmp_path / "personal_db"
+    subprocess.run(
+        [sys.executable, "-m", "personal_db.cli.main", "--root", str(root), "init"],
+        check=True,
+        capture_output=True,
+    )
+    for tracker in ("daily_time_accounting", "screen_time"):
+        subprocess.run(
+            [sys.executable, "-m", "personal_db.cli.main", "--root", str(root), "tracker",
+             "install", tracker],
+            check=True, capture_output=True,
+        )
+    cfg = Config(root=root)
+
+    # Seed: screen_time has a horizon at 2026-04-13 (later data only).
+    # No data at all on 2026-04-10 — that day predates the horizon, so it should
+    # be _no_data not _unaccounted. Screen_time is installed (above) so its
+    # manifest's local_only=True is what makes its horizon "matter."
+    con = sqlite3.connect(cfg.db_path)
+    con.executescript(
+        """
+        CREATE TABLE screen_time_app_usage (
+          id INTEGER PRIMARY KEY, bundle_id TEXT NOT NULL, start_at TEXT NOT NULL,
+          end_at TEXT NOT NULL, seconds INTEGER NOT NULL
+        );
+        CREATE TABLE tracker_horizons (
+          tracker TEXT PRIMARY KEY, horizon TEXT NOT NULL, computed_at TEXT NOT NULL
+        );
+        """
+    )
+    con.execute(
+        "INSERT INTO screen_time_app_usage(bundle_id, start_at, end_at, seconds) "
+        "VALUES ('com.apple.Safari', '2026-04-13T15:00:00+00:00', "
+        "'2026-04-13T16:00:00+00:00', 3600)"
+    )
+    # Pretend the framework already computed the horizon
+    con.execute(
+        "INSERT INTO tracker_horizons VALUES (?, ?, ?)",
+        ("screen_time", "2026-04-13T15:00:00+00:00", "2026-04-26T00:00:00+00:00"),
+    )
+    con.commit()
+    con.close()
+
+    sync_one(cfg, "daily_time_accounting")
+
+    con = sqlite3.connect(cfg.db_path)
+    pre_rows = dict(con.execute(
+        "SELECT category, hours FROM daily_time_accounting WHERE date = '2026-04-10'"
+    ).fetchall())
+    post_rows = dict(con.execute(
+        "SELECT category, hours FROM daily_time_accounting WHERE date = '2026-04-13'"
+    ).fetchall())
+
+    # Pre-horizon: residual goes to _no_data
+    assert "_no_data" in pre_rows
+    assert "_unaccounted" not in pre_rows
+    assert abs(pre_rows["_no_data"] - 24.0) < 0.01
+
+    # Post-horizon: regular _unaccounted bucketing
+    assert "_unaccounted" in post_rows
+    assert "_no_data" not in post_rows
+
+
 def test_daily_time_accounting_handles_missing_source_tables(tmp_path):
     """When source tables don't exist (e.g. fresh install), tracker still runs."""
     root = tmp_path / "personal_db"

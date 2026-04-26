@@ -19,3 +19,5 @@ schema:
         assistant_msg_count:  {type: INTEGER, semantic: "assistant responses"}
         first_user_prompt:    {type: TEXT,    semantic: "first user message text, truncated to 500 chars"}
 related_entities: []
+
+local_only: true
