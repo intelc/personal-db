@@ -108,9 +108,18 @@ def _finalize_terminal(cfg: Config) -> None:
         # exec replaces this process so Ctrl+C goes to the menubar app, not us
         os.execvp("personal-db", ["personal-db", "ui"])
 
-    typer.echo("\nDone. Useful next steps:")
+    typer.echo("\n──────── try it ────────")
+    typer.echo("Open Claude (Code, Desktop, or any MCP-connected agent) and paste:")
+    typer.echo("")
+    typer.echo("    What can personal_db tell you about my last week?")
+    typer.echo("")
+    typer.echo("Backfills are running in the background — agent answers get richer as")
+    typer.echo("historical data populates. Tail logs at <root>/state/backfill_*.log")
+    typer.echo("")
+    typer.echo("Other useful commands:")
     typer.echo("  personal-db ui                # menu bar + dashboard")
     typer.echo("  personal-db setup             # add or reconfigure trackers")
+    typer.echo("  personal-db mcp install       # add MCP into another agent")
     typer.echo("  personal-db scheduler status  # check periodic sync")
 
 

@@ -9,25 +9,23 @@ SQLite + per-tracker ingest scripts + MCP server. macOS only in v0.
 ## Install
 
 ```bash
+bash <(curl -LsSf https://raw.githubusercontent.com/intelc/personal-db/main/install.sh)
+```
+
+This installs [`uv`](https://github.com/astral-sh/uv) if you don't have it, then `uv tool install`s `personal-db` and launches the setup wizard.
+
+The wizard initializes the data root, then asks how you want to configure trackers — **Browser** (visual wizard at http://127.0.0.1:8765/setup), **Terminal** (questionary prompts), or **Skip**.
+
+**Why `bash <(...)` instead of `curl ... | bash`?** Process substitution keeps your terminal connected as stdin, so the interactive wizard launches automatically after install. The `curl | bash` form pipes the script *into* bash's stdin, which means there's no TTY left for an interactive prompt. Both forms install the binary correctly; only the first auto-launches the wizard.
+
+**Non-interactive install** (CI, headless servers — wizard skipped):
+
+```bash
 curl -LsSf https://raw.githubusercontent.com/intelc/personal-db/main/install.sh | bash
+# then run `personal-db setup` whenever you're ready
 ```
 
-This installs [`uv`](https://github.com/astral-sh/uv) if you don't have it, then `uv tool install`s `personal-db`. After install:
-
-```bash
-personal-db setup
-```
-
-`setup` initializes the data root, then asks how you want to configure trackers — **Browser** (visual wizard at http://127.0.0.1:8765/setup), **Terminal** (questionary prompts), or **Skip**.
-
-**Tip:** download and run the script directly to have the wizard launch automatically:
-
-```bash
-curl -LsSf https://raw.githubusercontent.com/intelc/personal-db/main/install.sh -o install.sh
-bash install.sh
-```
-
-Set `PERSONAL_DB_NO_SETUP=1` to opt out of the auto-launched wizard.
+`PERSONAL_DB_NO_SETUP=1` also opts out of the wizard if you piped via `bash <(...)` and want install-only.
 
 ### From source (for development)
 

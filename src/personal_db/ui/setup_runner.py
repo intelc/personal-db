@@ -19,6 +19,7 @@ from pathlib import Path
 
 import yaml
 
+from personal_db import backfill as backfill_mod
 from personal_db.config import Config
 from personal_db.installer import list_bundled
 from personal_db.manifest import (
@@ -218,7 +219,9 @@ def process_form(
         return results, RunResult(success=False, detail=f"test sync failed: {e}")
 
     write_status(cfg, name, success=True, detail="test sync passed")
-    return results, RunResult(success=True, detail="test sync passed")
+    # Detached historical backfill — same as the terminal wizard does.
+    backfill_mod.start_async(cfg, name)
+    return results, RunResult(success=True, detail="test sync passed; backfill running in background")
 
 
 def _process_step(
