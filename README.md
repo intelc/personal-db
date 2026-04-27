@@ -6,6 +6,8 @@ Where Obsidian holds your notes, `personal_db` holds your structured data — sl
 
 SQLite + per-tracker ingest scripts + MCP server. macOS only in v0.
 
+![personal_db setup demo — install + wizard + finalize](docs/demos/setup-demo.gif)
+
 ## Install
 
 ```bash
