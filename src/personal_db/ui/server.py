@@ -42,7 +42,15 @@ _NAV_VISIBLE_LIMIT = 6
 def _install_scheduler_safe(cfg: Config) -> str:
     """Install the launchd scheduler. Returns a one-line status string for the
     finalize page. Idempotent (the underlying scheduler.install overwrites the
-    plist if it already exists). macOS-only."""
+    plist if it already exists). macOS-only.
+
+    Honors PERSONAL_DB_NO_SCHEDULER=1 — the launchd plist lives at a global
+    path (~/Library/LaunchAgents/...), so writing it from tests or demos would
+    clobber the real install. The env var lets those contexts opt out cleanly."""
+    import os
+
+    if os.environ.get("PERSONAL_DB_NO_SCHEDULER") == "1":
+        return "✓ scheduler skipped (PERSONAL_DB_NO_SCHEDULER=1)"
     if sys.platform != "darwin":
         return f"⚠ scheduler is macOS-only (detected {sys.platform}); periodic sync skipped"
     try:

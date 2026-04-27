@@ -5,10 +5,22 @@ from __future__ import annotations
 import subprocess
 import sys
 
+import pytest
 from fastapi.testclient import TestClient
 
 from personal_db.config import Config
 from personal_db.ui.server import build_app
+
+
+@pytest.fixture(autouse=True)
+def _no_scheduler(monkeypatch):
+    """Prevent /setup/finish from writing the GLOBAL launchd plist during tests.
+
+    The plist lives at ~/Library/LaunchAgents/com.personal_db.scheduler.plist
+    regardless of cfg.root, so tests would otherwise clobber the user's real
+    scheduler. PERSONAL_DB_NO_SCHEDULER=1 makes _install_scheduler_safe a no-op.
+    """
+    monkeypatch.setenv("PERSONAL_DB_NO_SCHEDULER", "1")
 
 
 def _init(tmp_path):
