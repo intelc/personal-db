@@ -9,8 +9,30 @@ SQLite + per-tracker ingest scripts + MCP server. macOS only in v0.
 ## Install
 
 ```bash
-git clone <this repo>
-cd personal_db
+curl -LsSf https://raw.githubusercontent.com/intelc/personal-db/main/install.sh | bash
+```
+
+This installs [`uv`](https://github.com/astral-sh/uv) if you don't have it, then `uv tool install`s `personal-db`. After install:
+
+```bash
+personal-db init           # one-time, creates ~/personal_db
+personal-db tracker setup  # interactive wizard for each connector
+```
+
+**Tip:** download and run the script directly to have the wizard launch automatically:
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/intelc/personal-db/main/install.sh -o install.sh
+bash install.sh
+```
+
+Set `PERSONAL_DB_NO_SETUP=1` to opt out of the auto-launched wizard.
+
+### From source (for development)
+
+```bash
+git clone https://github.com/intelc/personal-db
+cd personal-db
 ./scripts/install_dev.sh
 source .venv/bin/activate
 ```
