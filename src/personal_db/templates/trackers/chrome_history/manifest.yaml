@@ -1,0 +1,39 @@
+name: chrome_history
+description: Chrome browser visits — per-URL with title, domain, dwell time, profile
+permission_type: full_disk_access
+setup_steps:
+  - type: fda_check
+    probe_path: "~/Library/Application Support/Google/Chrome/Default/History"
+  - type: instructions
+    text: |
+      This connector reads Chrome's local History SQLite (one per profile).
+      It captures every visit with title, domain, and dwell time.
+
+      Multiple Chrome profiles are supported — all `~/Library/Application Support/Google/Chrome/Profile*/History` files are read.
+
+      Notes:
+        - History is COPIED to a temp dir before reading, so this works even
+          while Chrome is running.
+        - Chrome periodically prunes its own history (default ~90 days). Sync
+          regularly to avoid losing older data.
+        - Currently does NOT include Chrome Incognito (Chrome doesn't write
+          History for incognito).
+schedule:
+  every: 1h
+time_column: visited_at
+granularity: event
+schema:
+  tables:
+    chrome_visits:
+      columns:
+        visit_id:         {type: INTEGER, semantic: "Chrome's internal visit id (unique per profile)"}
+        profile:          {type: TEXT,    semantic: "profile dir name, e.g. Default, Profile 1"}
+        url:              {type: TEXT,    semantic: "full URL visited"}
+        title:            {type: TEXT,    semantic: "page title at visit time"}
+        domain:           {type: TEXT,    semantic: "host portion of URL, e.g. github.com"}
+        visited_at:       {type: TEXT,    semantic: "ISO-8601 UTC timestamp"}
+        duration_seconds: {type: REAL,    semantic: "dwell time on page; 0 if Chrome didn't measure"}
+        transition:       {type: INTEGER, semantic: "Chrome's navigation transition bitmask"}
+related_entities: []
+
+local_only: true

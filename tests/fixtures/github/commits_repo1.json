@@ -1,0 +1,17 @@
+[
+  {
+    "sha": "aaaa1111",
+    "author": {"login": "octocat"},
+    "commit": {"author": {"name": "octocat", "email": "1+octocat@users.noreply.github.com", "date": "2026-04-25T11:30:00Z"}, "message": "feat: hello"}
+  },
+  {
+    "sha": "aaaa2222",
+    "author": null,
+    "commit": {"author": {"name": "Test User", "email": "you@example.com", "date": "2026-04-25T10:00:00Z"}, "message": "fix: world"}
+  },
+  {
+    "sha": "aaaa3333",
+    "author": {"login": "someone-else"},
+    "commit": {"author": {"name": "Other", "email": "other@example.com", "date": "2026-04-25T09:00:00Z"}, "message": "chore: not me"}
+  }
+]

@@ -1,0 +1,22 @@
+name: screen_time
+description: macOS app usage from ~/Library/Application Support/Knowledge/knowledgeC.db
+permission_type: full_disk_access
+setup_steps:
+  - type: fda_check
+    probe_path: "~/Library/Application Support/Knowledge/knowledgeC.db"
+schedule:
+  every: 1h
+time_column: start_at
+granularity: event
+schema:
+  tables:
+    screen_time_app_usage:
+      columns:
+        id:         {type: INTEGER, semantic: "rowid"}
+        bundle_id:  {type: TEXT,    semantic: "macOS bundle identifier (e.g. com.apple.dt.Xcode)"}
+        start_at:   {type: TEXT,    semantic: "ISO-8601 UTC"}
+        end_at:     {type: TEXT,    semantic: "ISO-8601 UTC"}
+        seconds:    {type: INTEGER, semantic: "duration in seconds"}
+related_entities: []
+
+local_only: true

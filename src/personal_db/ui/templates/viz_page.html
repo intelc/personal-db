@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ viz.name }} · personal_db{% endblock %}
+
+{% block content %}
+<section class="block">
+  <h1 class="block-h">{{ viz.name|upper }} {{ m.refresh_btn(viz.tracker) }}</h1>
+  {% if viz.description %}<p class="meta viz-desc">{{ viz.description }}</p>{% endif %}
+  {{ html|safe }}
+  <p class="meta viz-footer">
+    slug: <code>{{ viz.slug }}</code>
+    {% if viz.tracker != '_builtin' %}· tracker: <a href="/t/{{ viz.tracker }}">{{ viz.tracker }}</a>{% endif %}
+  </p>
+</section>
+{% endblock %}

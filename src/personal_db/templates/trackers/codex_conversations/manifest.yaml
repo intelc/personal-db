@@ -1,0 +1,23 @@
+name: codex_conversations
+description: Codex CLI session metadata from ~/.codex/sessions/
+permission_type: none
+setup_steps: []
+schedule:
+  every: 1h
+time_column: started_at
+granularity: event
+schema:
+  tables:
+    codex_sessions:
+      columns:
+        session_id:           {type: TEXT,    semantic: "session UUID, primary key"}
+        cwd:                  {type: TEXT,    semantic: "working directory from first turn_context (nullable)"}
+        started_at:           {type: TEXT,    semantic: "ISO-8601 UTC, from session_meta timestamp"}
+        last_event_at:        {type: TEXT,    semantic: "ISO-8601 UTC, latest line timestamp"}
+        event_count:          {type: INTEGER, semantic: "count of response_item lines that are user or assistant"}
+        user_msg_count:       {type: INTEGER, semantic: "user messages"}
+        assistant_msg_count:  {type: INTEGER, semantic: "assistant messages"}
+        first_user_prompt:    {type: TEXT,    semantic: "first user message text, list-content joined and truncated to 500 chars"}
+related_entities: []
+
+local_only: true

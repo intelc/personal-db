@@ -1,0 +1,4 @@
+{"type":"system","timestamp":"2026-04-26T10:00:00.000Z"}
+{"type":"user","timestamp":"2026-04-26T10:00:01.000Z","message":{"content":"hello, can you help me debug?"}}
+{"type":"assistant","timestamp":"2026-04-26T10:00:02.000Z","message":{"content":[{"type":"text","text":"Sure, what's the error?"}]}}
+{"type":"user","timestamp":"2026-04-26T10:00:30.000Z","message":{"content":[{"type":"text","text":"NullPointerException"}]}}

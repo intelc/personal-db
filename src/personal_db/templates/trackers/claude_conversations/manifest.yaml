@@ -1,0 +1,23 @@
+name: claude_conversations
+description: Claude Code session metadata from ~/.claude/projects/
+permission_type: none
+setup_steps: []
+schedule:
+  every: 1h
+time_column: started_at
+granularity: event
+schema:
+  tables:
+    claude_sessions:
+      columns:
+        session_id:           {type: TEXT,    semantic: "session UUID, primary key"}
+        project_slug:         {type: TEXT,    semantic: "raw directory name in ~/.claude/projects (slashes and underscores both replaced with hyphens)"}
+        started_at:           {type: TEXT,    semantic: "ISO-8601 UTC, earliest user/assistant message timestamp"}
+        last_msg_at:          {type: TEXT,    semantic: "ISO-8601 UTC, latest user/assistant message timestamp"}
+        message_count:        {type: INTEGER, semantic: "user + assistant lines in the jsonl"}
+        user_msg_count:       {type: INTEGER, semantic: "user prompts"}
+        assistant_msg_count:  {type: INTEGER, semantic: "assistant responses"}
+        first_user_prompt:    {type: TEXT,    semantic: "first user message text, truncated to 500 chars"}
+related_entities: []
+
+local_only: true

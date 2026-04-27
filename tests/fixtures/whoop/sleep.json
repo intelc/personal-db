@@ -1,0 +1,71 @@
+[
+  {
+    "id": 93001,
+    "start": "2026-04-23T02:25:44.774Z",
+    "end": "2026-04-23T10:15:00.000Z",
+    "timezone_offset": "-05:00",
+    "nap": false,
+    "score_state": "SCORED",
+    "score": {
+      "stage_summary": {
+        "total_in_bed_time_milli": 28140000,
+        "total_awake_time_milli": 1200000,
+        "total_light_sleep_time_milli": 12000000,
+        "total_slow_wave_sleep_time_milli": 6000000,
+        "total_rem_sleep_time_milli": 5400000,
+        "sleep_cycle_count": 3,
+        "disturbance_count": 8
+      },
+      "respiratory_rate": 15.8,
+      "sleep_performance_percentage": 88.0,
+      "sleep_consistency_percentage": 85.0,
+      "sleep_efficiency_percentage": 90.5
+    }
+  },
+  {
+    "id": 93002,
+    "start": "2026-04-24T02:10:00.000Z",
+    "end": "2026-04-24T09:50:00.000Z",
+    "timezone_offset": "-05:00",
+    "nap": false,
+    "score_state": "SCORED",
+    "score": {
+      "stage_summary": {
+        "total_in_bed_time_milli": 27600000,
+        "total_awake_time_milli": 1403507,
+        "total_light_sleep_time_milli": 14905851,
+        "total_slow_wave_sleep_time_milli": 6630370,
+        "total_rem_sleep_time_milli": 5879573,
+        "sleep_cycle_count": 3,
+        "disturbance_count": 12
+      },
+      "respiratory_rate": 16.11,
+      "sleep_performance_percentage": 98.0,
+      "sleep_consistency_percentage": 90.0,
+      "sleep_efficiency_percentage": 91.69
+    }
+  },
+  {
+    "id": 93004,
+    "start": "2026-04-25T14:00:00.000Z",
+    "end": "2026-04-25T15:00:00.000Z",
+    "timezone_offset": "-05:00",
+    "nap": true,
+    "score_state": "SCORED",
+    "score": {
+      "stage_summary": {
+        "total_in_bed_time_milli": 3600000,
+        "total_awake_time_milli": 300000,
+        "total_light_sleep_time_milli": 2100000,
+        "total_slow_wave_sleep_time_milli": 900000,
+        "total_rem_sleep_time_milli": 0,
+        "sleep_cycle_count": 1,
+        "disturbance_count": 2
+      },
+      "respiratory_rate": 14.5,
+      "sleep_performance_percentage": 75.0,
+      "sleep_consistency_percentage": 70.0,
+      "sleep_efficiency_percentage": 83.3
+    }
+  }
+]

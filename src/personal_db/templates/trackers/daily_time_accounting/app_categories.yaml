@@ -1,0 +1,77 @@
+# Edit to match how YOU categorize apps. Bundle IDs from macOS.
+# To find a bundle ID: `osascript -e 'id of app "AppName"'` or look in screen_time_app_usage.
+# After editing, run: personal-db sync daily_time_accounting
+
+work:
+  - com.todesktop.230313mzl4w4u92      # Cursor
+  - com.microsoft.VSCode               # VS Code
+  - com.mitchellh.ghostty              # Ghostty
+  - com.googlecode.iterm2              # iTerm2
+  - com.apple.Terminal
+  - com.tinyspeck.slackmacgap          # Slack
+  - com.linear                         # Linear
+  - com.apple.dt.Xcode
+  - com.zed.Zed
+  - com.figma.Desktop                  # Figma
+  - com.electron.cursor.dev            # Cursor dev
+  - com.notion.id                      # Notion
+communication:
+  - com.apple.MobileSMS                # Messages
+  - com.apple.mail
+  - net.whatsapp.WhatsApp
+  - com.hnc.Discord
+  - com.tdesktop.Telegram
+leisure:
+  - com.apple.Safari
+  - com.google.Chrome
+  - com.spotify.client
+  - com.apple.TV
+  - com.netflix.Netflix
+  - com.twitter.twitter-mac
+  - com.reddit.Reddit
+default: other_screen
+
+# When chrome_history is installed, Chrome screen-time is split across these
+# categories using per-visit dwell time (suffix-match on hostname; longest match
+# wins, e.g. mail.google.com beats google.com). Domains not listed go to
+# `default` below. If chrome_history is missing, Chrome falls back to its
+# app-level category above.
+chrome_domains:
+  work:
+    - github.com
+    - gitlab.com
+    - linear.app
+    - notion.so
+    - claude.ai
+    - claude.com
+    - chatgpt.com
+    - openai.com
+    - anthropic.com
+    - localhost
+    - figma.com
+    - stackoverflow.com
+    - developer.mozilla.org
+    - docs.python.org
+    - docs.google.com
+    - drive.google.com
+    - huggingface.co
+    - arxiv.org
+    - brew.sh
+  communication:
+    - mail.google.com
+    - calendar.google.com
+    - slack.com
+    - discord.com
+  leisure:
+    - youtube.com
+    - reddit.com
+    - x.com
+    - twitter.com
+    - netflix.com
+    - hulu.com
+    - tiktok.com
+    - instagram.com
+    - facebook.com
+    - news.ycombinator.com
+    - linkedin.com
+  default: other_screen

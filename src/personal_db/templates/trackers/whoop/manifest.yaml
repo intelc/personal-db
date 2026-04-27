@@ -1,0 +1,90 @@
+name: whoop
+description: Whoop cycles, recovery, sleep, workouts
+permission_type: oauth
+setup_steps:
+  - type: env_var
+    name: WHOOP_CLIENT_ID
+    prompt: "Whoop OAuth client ID (from developer.whoop.com)"
+  - type: env_var
+    name: WHOOP_CLIENT_SECRET
+    prompt: "Whoop OAuth client secret"
+    secret: true
+  - type: oauth
+    provider: whoop
+    client_id_env: WHOOP_CLIENT_ID
+    client_secret_env: WHOOP_CLIENT_SECRET
+    auth_url: "https://api.prod.whoop.com/oauth/oauth2/auth"
+    token_url: "https://api.prod.whoop.com/oauth/oauth2/token"
+    scopes: ["read:profile", "read:cycles", "read:recovery", "read:sleep", "read:workout"]
+    redirect_host: localhost
+    redirect_port: 9876
+schedule:
+  every: 6h
+time_column: start
+granularity: day
+schema:
+  tables:
+    whoop_cycles:
+      columns:
+        id:                  {type: TEXT,    semantic: "Whoop cycle id"}
+        start:               {type: TEXT,    semantic: "ISO-8601 cycle start (UTC)"}
+        end:                 {type: TEXT,    semantic: "ISO-8601 cycle end (UTC)"}
+        timezone_offset:     {type: TEXT,    semantic: "UTC offset e.g. -05:00"}
+        score_state:         {type: TEXT,    semantic: "SCORED / PENDING_SCORE / UNSCORABLE"}
+        strain:              {type: REAL,    semantic: "0-21 daily strain"}
+        kilojoule:           {type: REAL,    semantic: "total energy expenditure in kJ"}
+        average_heart_rate:  {type: INTEGER, semantic: "bpm avg over cycle"}
+        max_heart_rate:      {type: INTEGER, semantic: "bpm peak over cycle"}
+    whoop_recovery:
+      columns:
+        cycle_id:            {type: TEXT,    semantic: "Whoop cycle id (PK, joins whoop_cycles.id)"}
+        sleep_id:            {type: TEXT,    semantic: "Whoop sleep id"}
+        start:               {type: TEXT,    semantic: "ISO-8601 cycle start (denormalized from whoop_cycles)"}
+        score_state:         {type: TEXT,    semantic: "SCORED / PENDING_SCORE / UNSCORABLE"}
+        recovery_score:      {type: INTEGER, semantic: "0-100 recovery score"}
+        resting_heart_rate:  {type: INTEGER, semantic: "resting HR in bpm"}
+        hrv_rmssd_milli:     {type: REAL,    semantic: "HRV RMSSD in milliseconds"}
+        spo2_percentage:     {type: REAL,    semantic: "blood oxygen saturation %"}
+        skin_temp_celsius:   {type: REAL,    semantic: "skin temperature in Celsius"}
+    whoop_sleep:
+      columns:
+        id:                          {type: TEXT,    semantic: "Whoop sleep id"}
+        start:                       {type: TEXT,    semantic: "ISO-8601 sleep start (UTC)"}
+        end:                         {type: TEXT,    semantic: "ISO-8601 sleep end (UTC)"}
+        timezone_offset:             {type: TEXT,    semantic: "UTC offset"}
+        nap:                         {type: INTEGER, semantic: "1 if nap, 0 if main sleep"}
+        score_state:                 {type: TEXT,    semantic: "SCORED / PENDING_SCORE / UNSCORABLE"}
+        total_in_bed_milli:          {type: INTEGER, semantic: "total time in bed ms"}
+        total_awake_milli:           {type: INTEGER, semantic: "total awake time ms"}
+        total_light_sleep_milli:     {type: INTEGER, semantic: "light sleep ms"}
+        total_slow_wave_sleep_milli: {type: INTEGER, semantic: "slow wave (deep) sleep ms"}
+        total_rem_sleep_milli:       {type: INTEGER, semantic: "REM sleep ms"}
+        sleep_cycle_count:           {type: INTEGER, semantic: "number of sleep cycles"}
+        disturbance_count:           {type: INTEGER, semantic: "number of disturbances"}
+        respiratory_rate:            {type: REAL,    semantic: "breaths per minute"}
+        sleep_performance_pct:       {type: REAL,    semantic: "sleep performance 0-100"}
+        sleep_consistency_pct:       {type: REAL,    semantic: "sleep consistency 0-100"}
+        sleep_efficiency_pct:        {type: REAL,    semantic: "sleep efficiency 0-100"}
+    whoop_workouts:
+      columns:
+        id:                    {type: TEXT,    semantic: "Whoop workout id"}
+        start:                 {type: TEXT,    semantic: "ISO-8601 workout start (UTC)"}
+        end:                   {type: TEXT,    semantic: "ISO-8601 workout end (UTC)"}
+        timezone_offset:       {type: TEXT,    semantic: "UTC offset"}
+        sport_id:              {type: INTEGER, semantic: "Whoop sport id"}
+        score_state:           {type: TEXT,    semantic: "SCORED / PENDING_SCORE / UNSCORABLE"}
+        strain:                {type: REAL,    semantic: "0-21 workout strain"}
+        average_heart_rate:    {type: INTEGER, semantic: "bpm avg during workout"}
+        max_heart_rate:        {type: INTEGER, semantic: "bpm peak during workout"}
+        kilojoule:             {type: REAL,    semantic: "energy expenditure in kJ"}
+        percent_recorded:      {type: REAL,    semantic: "% of workout with HR data"}
+        distance_meter:        {type: REAL,    semantic: "distance in meters"}
+        altitude_gain_meter:   {type: REAL,    semantic: "altitude gain in meters"}
+        altitude_change_meter: {type: REAL,    semantic: "net altitude change in meters"}
+        zone_zero_milli:       {type: INTEGER, semantic: "time in HR zone 0 ms"}
+        zone_one_milli:        {type: INTEGER, semantic: "time in HR zone 1 ms"}
+        zone_two_milli:        {type: INTEGER, semantic: "time in HR zone 2 ms"}
+        zone_three_milli:      {type: INTEGER, semantic: "time in HR zone 3 ms"}
+        zone_four_milli:       {type: INTEGER, semantic: "time in HR zone 4 ms"}
+        zone_five_milli:       {type: INTEGER, semantic: "time in HR zone 5 ms"}
+related_entities: []

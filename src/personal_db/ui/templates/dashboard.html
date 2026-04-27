@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}dashboard · personal_db{% endblock %}
+
+{% block content %}
+{% if rendered %}
+  {% for entry in rendered %}
+    <section class="block">
+      <h2 class="block-h">
+        <a href="/v/{{ entry.viz.slug }}" class="viz-title-link">{{ entry.viz.name|upper }}</a>
+        <span class="viz-meta">{{ entry.viz.slug }}</span>
+        {{ m.refresh_btn(entry.viz.tracker) }}
+      </h2>
+      {{ entry.html|safe }}
+    </section>
+  {% endfor %}
+{% else %}
+  <section class="block">
+    <h1 class="block-h">DASHBOARD</h1>
+    <p class="meta">
+      No visualizations available yet. Install a tracker that ships a
+      <code>visualizations.py</code> (e.g. <code>daily_time_accounting</code>),
+      then refresh.
+    </p>
+  </section>
+{% endif %}
+
+<section class="block">
+  <h2 class="block-h">CONFIGURE</h2>
+  <p class="meta">
+    Edit <code>~/personal_db/.config/dashboard.yaml</code> with a
+    <code>viz:</code> list of slugs to control what shows here. Available slugs:
+  </p>
+  <ul class="slug-list">
+    {% for entry in rendered %}<li><code>{{ entry.viz.slug }}</code></li>{% endfor %}
+  </ul>
+</section>
+{% endblock %}

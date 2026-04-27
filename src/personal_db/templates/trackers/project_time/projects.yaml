@@ -1,0 +1,32 @@
+# project_time — project definitions
+#
+# Each project lists the signals that count toward it:
+#   repos       — GitHub repo full_names (matches github_commits.repo exactly)
+#   cwds        — working directory paths (matches codex_sessions.cwd by exact-or-prefix,
+#                 and claude_sessions.project_slug after re-encoding "/" -> "-")
+#   bundle_ids  — macOS app bundle ids (matches screen_time_app_usage.bundle_id exactly)
+#
+# Edits to this file only re-attribute the last 2 days on `sync`.
+# Run `personal-db backfill project_time` to recompute the full window.
+#
+# This file ships with a few illustrative entries — replace them with your own.
+
+cap_session_hours: 4.0    # max hours any single Claude/Codex session contributes
+
+projects:
+  - name: example_web_app
+    repos:      [your-username/example-web-app]
+    cwds:       [~/code/example-web-app]
+    bundle_ids: []
+
+  - name: example_research
+    repos:      []
+    cwds:
+      - ~/code/research-notebooks
+      - ~/code/research-notebooks-archive
+    bundle_ids: []
+
+  - name: music_production
+    repos:      []
+    cwds:       []
+    bundle_ids: [com.ableton.live]

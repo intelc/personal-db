@@ -1,0 +1,33 @@
+name: daily_time_accounting
+description: "Daily breakdown of how 24 hours was spent across categories (sleep, workout, work, communication, leisure)"
+permission_type: none
+setup_steps:
+  - type: instructions
+    text: |
+      Tracks daily hours per category by deriving from your other connectors:
+        - whoop_sleep + whoop_workouts (sleep, exercise)
+        - screen_time_app_usage (per-app categorization)
+
+      A starter app→category mapping is shipped in:
+        <root>/trackers/daily_time_accounting/app_categories.yaml
+
+      The mapping covers common dev/comms/leisure apps with sensible defaults.
+      Apps not in the mapping fall under 'other_screen'. Time outside sleep,
+      workouts, and screen time goes to '_unaccounted'.
+
+      To improve the categorization for YOUR apps, ask Claude Code:
+        "review my daily_time_accounting and suggest category improvements"
+
+      (A dedicated /methodology skill that auto-populates this is planned.)
+schedule:
+  every: 1h
+time_column: date
+granularity: day
+schema:
+  tables:
+    daily_time_accounting:
+      columns:
+        date:     {type: TEXT, semantic: "ISO-8601 local date YYYY-MM-DD"}
+        category: {type: TEXT, semantic: "category from app_categories.yaml, or 'sleep', 'workout', '_unaccounted' (real idle/offline time), '_no_data' (date predates the earliest available local-only source — system reinstall, cache wipe, etc.)"}
+        hours:    {type: REAL, semantic: "hours in this category on this date"}
+related_entities: []

@@ -1,0 +1,485 @@
+/* Pixel-inspired B&W. Color appears only inside data visualizations.
+   8px grid, monospace everywhere, hard 1px borders, no rounding, no shadows. */
+
+:root {
+  --fg: #000;
+  --bg: #fff;
+  --grid: 8px;
+  --rule: 1px solid #000;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'IBM Plex Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+main {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: calc(var(--grid) * 3) calc(var(--grid) * 2);
+}
+
+/* Masthead ------------------------------------------------------------- */
+.masthead {
+  border-bottom: 2px solid #000;
+  padding: var(--grid) calc(var(--grid) * 2);
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--grid) * 3);
+  background: var(--bg);
+}
+.masthead .logo { font-weight: bold; letter-spacing: 0.05em; }
+.masthead nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.masthead nav a {
+  color: var(--fg);
+  text-decoration: none;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.masthead nav a.active { border: 1px solid #000; }
+.masthead nav a:hover { background: #000; color: #fff; }
+
+/* Nav overflow dropdown — pure HTML <details>, no JS. Click "more ▾" to
+   open; click again (or another nav link) to close. */
+.nav-more { position: relative; display: inline-block; }
+.nav-more summary {
+  list-style: none;          /* drop the default disclosure triangle */
+  cursor: pointer;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  color: var(--fg);
+  white-space: nowrap;
+  user-select: none;
+}
+.nav-more summary::-webkit-details-marker { display: none; }
+.nav-more summary::marker { content: ""; }
+.nav-more summary:hover { background: #000; color: #fff; }
+.nav-more[open] summary { background: #000; color: #fff; }
+.nav-more-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 10;
+  background: #fff;
+  border: 1px solid #000;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  margin-top: -1px;
+}
+.nav-more-menu a {
+  padding: 4px 8px !important;
+  border: none !important;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.nav-more-menu a:hover { background: #000; color: #fff; }
+
+/* Refresh button — sits inline with H1/H2 titles, posts to /sync/<tracker>.
+   Browser shows its loading spinner during the POST; server redirects back. */
+.refresh-form {
+  display: inline-block;
+  margin-left: 12px;
+  vertical-align: middle;
+}
+.refresh-btn {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 1px 8px;
+  border: 1px solid #000;
+  background: #fff;
+  color: #000;
+  cursor: pointer;
+  letter-spacing: 0.05em;
+  text-transform: lowercase;
+}
+.refresh-btn:hover { background: #000; color: #fff; }
+.refresh-btn:active { background: #333; color: #fff; }
+
+/* Viz title bar (with link to dedicated page + raw slug) */
+.block-h .viz-title-link {
+  color: inherit;
+  text-decoration: none;
+}
+.block-h .viz-title-link:hover { text-decoration: underline; }
+.block-h .viz-meta {
+  font-size: 10px;
+  font-weight: normal;
+  letter-spacing: 0.05em;
+  color: #666;
+  margin-left: var(--grid);
+  text-transform: lowercase;
+}
+.viz-desc { margin-bottom: var(--grid); }
+.viz-footer { font-size: 11px; margin-top: calc(var(--grid) * 2); }
+.viz-footer a { color: var(--fg); }
+
+/* Slug list on dashboard config section */
+.slug-list {
+  list-style: none;
+  padding: 0;
+  margin: var(--grid) 0;
+  font-size: 12px;
+}
+.slug-list li { padding: 2px 0; }
+
+code {
+  background: #f0f0f0;
+  padding: 1px 4px;
+  border: 1px solid #ddd;
+  font-size: 12px;
+}
+
+/* Auto-synthesized "recent rows" tables — wide, scroll horizontally. */
+.recent-rows-wrap {
+  overflow-x: auto;
+  border: var(--rule);
+  margin: var(--grid) 0;
+}
+table.recent-rows {
+  border-collapse: collapse;
+  font-size: 11px;
+  white-space: nowrap;
+}
+table.recent-rows th {
+  background: #000;
+  color: #fff;
+  padding: 4px 8px;
+  text-align: left;
+  font-weight: bold;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-right: 1px solid #444;
+}
+table.recent-rows th:last-child { border-right: none; }
+table.recent-rows td {
+  padding: 3px 8px;
+  border-bottom: 1px solid #ccc;
+  border-right: 1px solid #ccc;
+  vertical-align: top;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+table.recent-rows td:last-child { border-right: none; }
+table.recent-rows tbody tr:hover { background: #f5f5f5; }
+
+/* Health viz tracker links */
+table.health a { color: var(--fg); text-decoration: none; border-bottom: 1px dotted #000; }
+table.health a:hover { background: #000; color: #fff; border-bottom-color: transparent; }
+
+/* Horizontal bar chart -------------------------------------------------- */
+.hbar-chart {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--grid) 0;
+  font-size: 12px;
+}
+.hbar-chart td { padding: 2px 0; vertical-align: middle; }
+.hbar-label {
+  width: 30%;
+  padding-right: var(--grid) !important;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+.hbar-cell { width: 60%; }
+.hbar-val { width: 10%; padding-left: var(--grid) !important; color: #666; text-align: right; }
+.hbar { height: 12px; min-width: 1px; }
+
+/* Vertical bar chart (time series) ------------------------------------ */
+.vbar-chart {
+  display: flex;
+  align-items: flex-end;
+  height: 140px;
+  gap: 2px;
+  border-bottom: var(--rule);
+  padding: var(--grid) 0 0 0;
+  margin: var(--grid) 0;
+  position: relative;
+}
+.vbar-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  position: relative;
+  height: 100%;
+  min-width: 0;
+}
+.vbar-stem {
+  width: 100%;
+  height: 110px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.vbar { width: 100%; min-height: 1px; }
+.vbar-label {
+  position: absolute;
+  top: 100%;
+  margin-top: 2px;
+  font-size: 9px;
+  color: #666;
+  white-space: nowrap;
+  transform: rotate(-45deg);
+  transform-origin: left top;
+}
+
+/* Stacked vertical bar chart -- segments stack bottom-up per day ------ */
+.svc-chart .vbar-col { justify-content: flex-end; }
+.svc-stack {
+  width: 100%;
+  height: 110px;
+  display: flex;
+  flex-direction: column-reverse;  /* first segment in the list = bottom */
+  align-items: stretch;
+  border-bottom: 1px solid #000;
+}
+.svc-seg {
+  width: 100%;
+  min-height: 1px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+}
+.svc-seg:first-child { border-top: none; }
+
+/* Heatmap (2D grid: e.g. 7 days × 24 hours) ---------------------------- */
+table.heatmap {
+  border-collapse: collapse;
+  margin: var(--grid) 0;
+  font-size: 10px;
+}
+table.heatmap th {
+  font-weight: normal;
+  color: #666;
+  padding: 1px 2px;
+  text-align: center;
+}
+table.heatmap td.heat,
+table.heatmap td.heat-empty {
+  width: 18px;
+  height: 18px;
+  border: 1px solid #fff;
+  background: #f5f5f5;
+}
+table.heatmap td.heat-rowlabel {
+  padding: 0 6px 0 0;
+  color: #666;
+  text-align: right;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* Calendar (GitHub-style contribution grid) ---------------------------- */
+table.calendar {
+  border-collapse: collapse;
+  font-size: 10px;
+}
+table.calendar td.cal-cell,
+table.calendar td.cal-empty {
+  width: 12px;
+  height: 12px;
+  background: #eee;
+  border: 1px solid #fff;
+}
+table.calendar td.cal-empty { background: transparent; border-color: transparent; }
+table.calendar td.cal-rowlabel {
+  padding-right: 6px;
+  color: #666;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Word cloud ---------------------------------------------------------- */
+.wordcloud {
+  line-height: 1.6;
+  margin: var(--grid) 0;
+  border: var(--rule);
+  padding: var(--grid);
+  background: #fff;
+}
+.wordcloud .wc-word {
+  display: inline-block;
+  padding: 0 6px;
+  margin: 2px 0;
+  color: #000;
+}
+.wordcloud .wc-word:hover { background: #000; color: #fff; }
+
+/* Project legend (project_time:dominant_calendar) */
+.proj-legend-line { font-size: 11px; margin-top: var(--grid); display: flex; flex-wrap: wrap; gap: 12px; }
+.proj-legend { display: inline-flex; align-items: center; gap: 4px; }
+.proj-swatch {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border: 1px solid #000;
+}
+
+/* Section block -------------------------------------------------------- */
+.block {
+  margin-bottom: calc(var(--grid) * 4);
+}
+.block-h {
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 0.1em;
+  margin: 0 0 var(--grid) 0;
+  padding-bottom: 4px;
+  border-bottom: var(--rule);
+  text-transform: uppercase;
+}
+h1.block-h { font-size: 16px; }
+.meta { color: #666; font-size: 12px; margin: 4px 0 0 0; }
+
+/* Stack bar ------------------------------------------------------------ */
+.stack {
+  display: flex;
+  height: 36px;
+  border: var(--rule);
+  margin: var(--grid) 0;
+  background: #fff;
+}
+.stack.thin { height: 14px; margin: 0; border-left: var(--rule); border-right: var(--rule); }
+
+.seg {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #fff;
+  padding: 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  border-right: 1px solid #000;
+}
+.seg:last-child { border-right: none; }
+.seg.empty { background: #fff; color: #999; justify-content: center; }
+.seg-label { font-weight: bold; }
+.seg-val { opacity: 0.9; }
+
+/* Legend table --------------------------------------------------------- */
+.legend {
+  border-collapse: collapse;
+  margin-top: var(--grid);
+  font-size: 12px;
+}
+.legend td { padding: 2px 8px 2px 0; vertical-align: middle; }
+.legend .swatch span {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 1px solid #000;
+}
+.legend .cat { padding-right: calc(var(--grid) * 2); }
+.legend .hrs { color: #666; }
+
+/* Recent / health tables ---------------------------------------------- */
+table.recent, table.health {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: var(--grid);
+  font-size: 12px;
+}
+table.recent td, table.health td, table.health th {
+  padding: 4px 8px;
+  border-bottom: 1px solid #000;
+  vertical-align: middle;
+}
+table.health th {
+  text-align: left;
+  font-weight: bold;
+  border-bottom: var(--rule);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+.day-label { width: 64px; text-align: right; padding-right: var(--grid); }
+.day-date { color: #666; font-size: 11px; }
+.day-bar { padding: 4px 0; }
+
+/* life_context --------------------------------------------------------- */
+.lc-today {
+  list-style: none;
+  margin: 0 0 var(--grid) 0;
+  padding: 0;
+  border: var(--rule);
+}
+.lc-today li {
+  padding: 6px var(--grid);
+  border-bottom: 1px solid #000;
+  display: flex;
+  gap: var(--grid);
+}
+.lc-today li:last-child { border-bottom: none; }
+.lc-state {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid #000;
+  background: #000;
+  color: #fff;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex: 0 0 auto;
+}
+.lc-note { color: #000; }
+
+.lc-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--grid);
+  align-items: center;
+  border: var(--rule);
+  padding: var(--grid);
+  margin-top: var(--grid);
+  font-size: 12px;
+}
+.lc-form label { display: flex; align-items: center; gap: 6px; }
+.lc-form label.grow { flex: 1; }
+.lc-form label.grow input { flex: 1; }
+.lc-form input, .lc-form select {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 6px;
+  border: 1px solid #000;
+  background: #fff;
+  color: #000;
+  border-radius: 0;
+}
+.lc-form input[type="text"] { min-width: 200px; }
+.lc-form button {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 16px;
+  border: 1px solid #000;
+  background: #fff;
+  color: #000;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.lc-form button:hover { background: #000; color: #fff; }
+
+.lc-recent { margin-top: var(--grid); font-size: 12px; }
+.lc-recent summary { cursor: pointer; padding: 4px 0; }
+.lc-recent summary:hover { background: #000; color: #fff; padding-left: 4px; }
+.lc-date { width: 90px; color: #666; }
+.lc-note-cell { color: #000; }

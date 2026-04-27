@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ tracker }} · personal_db{% endblock %}
+
+{% block content %}
+<section class="block">
+  <h1 class="block-h">{{ tracker|upper }} {{ m.refresh_btn(tracker) }}</h1>
+  <p class="meta">
+    {{ rendered|length }} visualization{% if rendered|length != 1 %}s{% endif %}.
+  </p>
+</section>
+
+{% for entry in rendered %}
+  <section class="block">
+    <h2 class="block-h">
+      <a href="/v/{{ entry.viz.slug }}" class="viz-title-link">{{ entry.viz.name|upper }}</a>
+      <span class="viz-meta">{{ entry.viz.short }}</span>
+    </h2>
+    {% if entry.viz.description %}
+      <p class="meta viz-desc">{{ entry.viz.description }}</p>
+    {% endif %}
+    {{ entry.html|safe }}
+  </section>
+{% endfor %}
+{% endblock %}

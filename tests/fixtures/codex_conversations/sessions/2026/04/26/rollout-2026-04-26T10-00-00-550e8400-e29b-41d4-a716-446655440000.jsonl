@@ -1,0 +1,5 @@
+{"type":"session_meta","timestamp":"2026-04-26T10:00:00.000Z","payload":"{\"id\": \"550e8400-e29b-41d4-a716-446655440000\", \"timestamp\": \"2026-04-26T10:00:00.000Z\"}"}
+{"type":"turn_context","timestamp":"2026-04-26T10:00:01.000Z","payload":{"cwd":"/Users/test/code/example"}}
+{"type":"response_item","timestamp":"2026-04-26T10:00:02.000Z","payload":{"role":"user","content":[{"type":"text","text":"Write a hello world in Python"}]}}
+{"type":"response_item","timestamp":"2026-04-26T10:00:05.000Z","payload":{"role":"assistant","content":[{"type":"text","text":"print('Hello, world!')"}]}}
+{"type":"event_msg","timestamp":"2026-04-26T10:00:06.000Z","payload":{"event":"done"}}

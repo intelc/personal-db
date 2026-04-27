@@ -1,0 +1,54 @@
+name: project_time
+description: |
+  Per-day, per-project time breakdown derived from coding sessions (Claude Code, Codex CLI),
+  GitHub commits, and screen time. Projects are defined in projects.yaml and matched against
+  repo names, working directories, Claude project_slugs, and macOS app bundle_ids. Hours are
+  attributed to the date a session started (local time). Single-session contributions are
+  capped at 4 hours to avoid stale "left the terminal open" sessions inflating totals.
+
+permission_type: none
+
+setup_steps:
+  - type: instructions
+    text: |
+      Projects are defined in:
+        <root>/trackers/project_time/projects.yaml
+
+      Each project lists the signals that count toward it:
+        - repos:       e.g. ["your-username/example-repo"]   (matches github_commits.repo)
+        - cwds:        e.g. ["~/code/example-repo"]          (matches codex cwd, claude project_slug)
+        - bundle_ids:  e.g. ["com.ableton.live"]             (matches screen_time_app_usage)
+
+      Single Claude/Codex sessions are capped at 4h (cap_session_hours in projects.yaml).
+
+      After editing projects.yaml, only the last 2 days are recategorized on `sync`.
+      Run `personal-db backfill project_time` to recompute the full window.
+
+schedule:
+  every: 1h
+  cron: null
+
+time_column: date
+granularity: day
+
+schema:
+  tables:
+    project_time:
+      columns:
+        date:
+          type: TEXT
+          semantic: ISO-8601 local date YYYY-MM-DD
+        project:
+          type: TEXT
+          semantic: project name from projects.yaml
+        hours:
+          type: REAL
+          semantic: total attributed hours on this date for this project (capped per-session)
+        commit_count:
+          type: INTEGER
+          semantic: number of github commits authored to a matching repo on this date
+        breakdown_json:
+          type: TEXT
+          semantic: 'JSON like {"claude": 1.2, "codex": 0.4, "app": 0.3} — sums to hours'
+
+related_entities: []

@@ -1,0 +1,18 @@
+name: habits
+description: Manually-logged daily habits (meditate, gym, read, etc.)
+permission_type: manual
+setup_steps:
+  - type: instructions
+    text: "Log via the MCP tool log_event or `personal-db log habits name=… value=… ts=…`"
+schedule: null  # never auto-syncs
+time_column: ts
+granularity: event
+schema:
+  tables:
+    habits:
+      columns:
+        id:    {type: INTEGER, semantic: "rowid"}
+        name:  {type: TEXT,    semantic: "habit name (free text)"}
+        value: {type: TEXT,    semantic: "value as string (e.g. '1', '0', '15min')"}
+        ts:    {type: TEXT,    semantic: "ISO-8601 event time"}
+related_entities: []

@@ -1,0 +1,33 @@
+name: imessage
+description: iMessage messages from ~/Library/Messages/chat.db
+permission_type: full_disk_access
+setup_steps:
+  - type: fda_check
+    probe_path: "~/Library/Messages/chat.db"
+  - type: instructions
+    text: |
+      Add aliases for known people in `<root>/entities/people.yaml`, e.g.:
+
+        - display_name: Marko
+          aliases: ["marko@example.com", "+15551234567"]
+
+      Aliases let messages from emails/phones resolve to a single person_id
+      across all trackers. Without aliases, every handle becomes its own
+      auto-created person.
+schedule:
+  every: 30m
+time_column: sent_at
+granularity: event
+schema:
+  tables:
+    imessage_messages:
+      columns:
+        id:          {type: INTEGER, semantic: "rowid in chat.db"}
+        person_id:   {type: INTEGER, semantic: "FK -> people.person_id (nullable if unresolved)"}
+        handle:      {type: TEXT,    semantic: "raw phone or email"}
+        text:        {type: TEXT,    semantic: "message body"}
+        is_from_me:  {type: INTEGER, semantic: "1 if I sent it"}
+        sent_at:     {type: TEXT,    semantic: "ISO-8601 UTC"}
+related_entities: ["people"]
+
+local_only: true

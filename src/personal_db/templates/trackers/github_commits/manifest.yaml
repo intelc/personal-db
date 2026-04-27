@@ -1,0 +1,35 @@
+name: github_commits
+description: Commits authored across GitHub
+permission_type: api_key
+setup_steps:
+  - type: instructions
+    text: |
+      Create a GitHub personal access token at:
+
+        https://github.com/settings/tokens
+
+      Required scopes: read:user, repo
+      (Use a classic token; fine-grained tokens also work but need read access to all repos.)
+  - type: env_var
+    name: GITHUB_TOKEN
+    prompt: "GitHub personal access token (scopes: read:user, repo) — see https://github.com/settings/tokens"
+    secret: true
+  - type: env_var
+    name: GITHUB_AUTHOR_EMAILS
+    prompt: "Optional: emails you commit with (comma-separated, e.g. me@personal.com,me@work.com). Find via: git config user.email. Press Enter to skip"
+    optional: true
+schedule:
+  every: 4h
+time_column: committed_at
+granularity: event
+schema:
+  tables:
+    github_commits:
+      columns:
+        sha:          {type: TEXT,    semantic: "commit SHA, primary key"}
+        repo:         {type: TEXT,    semantic: "owner/name"}
+        committed_at: {type: TEXT,    semantic: "ISO-8601 commit timestamp (UTC)"}
+        message:      {type: TEXT,    semantic: "first line of commit message"}
+        additions:    {type: INTEGER, semantic: "lines added"}
+        deletions:    {type: INTEGER, semantic: "lines deleted"}
+related_entities: []

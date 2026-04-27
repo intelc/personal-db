@@ -1,0 +1,12 @@
+name: bad
+description: unknown step type
+permission_type: api_key
+setup_steps:
+  - type: nonexistent_step_type
+    foo: bar
+time_column: ts
+schema:
+  tables:
+    bad:
+      columns:
+        ts: {type: TEXT, semantic: ts}

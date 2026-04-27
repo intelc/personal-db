@@ -1,0 +1,38 @@
+[project]
+name = "personal_db"
+version = "0.1.0"
+description = "Personal data layer for AI agents"
+requires-python = ">=3.11"
+dependencies = [
+  "typer>=0.12",
+  "pydantic>=2.6",
+  "pyyaml>=6.0",
+  "python-dotenv>=1.0",
+  "questionary>=2.0",
+  "requests>=2.31",
+  "keyring>=24.0",
+  "mcp>=1.0",
+  "rumps>=0.4.0",
+  "fastapi>=0.100",
+  "uvicorn>=0.20",
+  "jinja2>=3.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.4", "pyright>=1.1"]
+
+[project.scripts]
+personal-db = "personal_db.cli.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/personal_db"]
+include = [
+  "src/personal_db/templates/**/*",
+  "src/personal_db/mcp_server/prompts/*.md",
+  "src/personal_db/ui/templates/**/*",
+  "src/personal_db/ui/static/**/*",
+]
