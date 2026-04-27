@@ -115,31 +115,6 @@ In Claude Code:
 - "Log that I meditated today" → calls `log_event("habits", …)`
 - "/insights weekly review" → runs the skill, writes `notes/YYYY-MM-DD-weekly-review.md`
 
-## github_commits — capturing local-CLI commits
-
-The setup wizard asks for your GitHub token and then optionally for the email
-addresses you commit with. You can also set or update `GITHUB_AUTHOR_EMAILS`
-manually at any time.
-
-By default, `github_commits` matches commits via GitHub's standard email-to-user
-linkage (your GitHub login is derived automatically from the token). If you
-commit locally with an email that isn't on your GitHub account
-(`git config user.email`), those commits won't be attributed to you on GitHub
-and won't be captured.
-
-To include them, set `GITHUB_AUTHOR_EMAILS` in `<root>/.env` (the wizard also
-prompts for this during setup):
-
-```bash
-echo 'GITHUB_AUTHOR_EMAILS=you@example.com,you@work.com' >> ~/personal_db/.env
-```
-
-Comma-separated; case-insensitive. Find your local email with:
-
-```bash
-git config user.email
-```
-
 ## Creating your own tracker
 
 `personal-db` ships with a starter set of trackers (GitHub, Whoop, Screen Time, iMessage, …), but the most useful data is usually idiosyncratic to you. Three ways to add a new one:
