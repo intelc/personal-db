@@ -9,6 +9,7 @@ from personal_db.cli import (
     mcp_cmd,
     permission_cmd,
     scheduler_cmd,
+    setup_cmd,
     sync_cmd,
     tracker_cmd,
     ui_cmd,
@@ -33,6 +34,7 @@ def _global(root: str = typer.Option(None, "--root", help="Override data root"))
 
 
 app.command("init")(init_cmd.run)
+app.command("setup")(setup_cmd.run)
 app.command("mcp")(mcp_cmd.mcp)
 app.command("sync")(sync_cmd.sync)
 app.command("backfill")(sync_cmd.backfill)

@@ -483,3 +483,107 @@ table.health th {
 .lc-recent summary:hover { background: #000; color: #fff; padding-left: 4px; }
 .lc-date { width: 90px; color: #666; }
 .lc-note-cell { color: #000; }
+
+/* Setup wizard ----------------------------------------------------------- */
+.setup-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.setup-table th, .setup-table td {
+  padding: 4px 6px;
+  border-bottom: 1px solid #ccc;
+  vertical-align: top;
+  text-align: left;
+}
+.setup-table th {
+  border-bottom: var(--rule);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 11px;
+  color: #666;
+  font-weight: normal;
+}
+.setup-col-icon { width: 24px; text-align: center; font-size: 14px; }
+.setup-col-name { width: 130px; }
+.setup-col-summary { width: 200px; color: #666; }
+.setup-col-action { width: 110px; text-align: right; }
+
+.btn-link {
+  display: inline-block;
+  border: 1px solid #000;
+  background: #fff;
+  color: #000;
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.btn-link:hover { background: #000; color: #fff; }
+
+.btn-primary {
+  border: 2px solid #000;
+  background: #000;
+  color: #fff;
+  padding: 6px 16px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.btn-primary:hover { background: #fff; color: #000; }
+
+.inline-form { display: inline; margin: 0; padding: 0; }
+
+.setup-form { margin: 0; }
+.setup-step { border-left: 3px solid #ccc; }
+.setup-step.ok { border-left-color: #000; background: #f6f6f6; }
+.setup-step.fail { border-left-color: #c00; background: #fff0f0; }
+
+.setup-step-type {
+  font-size: 11px;
+  color: #888;
+  font-weight: normal;
+  text-transform: lowercase;
+  letter-spacing: 0;
+  margin-left: 6px;
+}
+
+.setup-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: var(--rule);
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+}
+.setup-input:focus { outline: 2px solid #000; outline-offset: -2px; }
+
+.setup-instructions {
+  border: 1px solid #ccc;
+  background: #fafafa;
+  padding: var(--grid);
+  font: inherit;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: var(--grid) 0;
+}
+
+.setup-ack { display: block; padding: 4px 0; font-size: 12px; cursor: pointer; }
+.setup-ack input { margin-right: 6px; }
+
+.setup-step-result {
+  margin-top: var(--grid);
+  padding: 4px 8px;
+  font-size: 12px;
+  border-left: 3px solid #ccc;
+}
+.setup-step-result.ok { border-left-color: #000; }
+.setup-step-result.failed { border-left-color: #c00; color: #800; }
+.setup-step-result.skipped { color: #666; }
+
+.setup-result.ok { border-color: #000; border-width: 2px; }
+.setup-result.fail { border-color: #c00; }

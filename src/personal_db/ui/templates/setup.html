@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}setup · personal_db{% endblock %}
+
+{% block content %}
+<section class="block">
+  <h1 class="block-h">SETUP</h1>
+  <p class="meta">
+    Pick a tracker to install or configure. Each one has a small set of one-time
+    steps — API keys, Full Disk Access, etc. — after which it syncs periodically.
+  </p>
+  <p class="meta">
+    OAuth flows (e.g. Whoop) are handled in your terminal:
+    <code>personal-db tracker setup &lt;name&gt;</code>.
+  </p>
+</section>
+
+<section class="block">
+  <h2 class="block-h">TRACKERS</h2>
+  <table class="setup-table">
+    <thead>
+      <tr>
+        <th class="setup-col-icon">·</th>
+        <th class="setup-col-name">tracker</th>
+        <th class="setup-col-desc">description</th>
+        <th class="setup-col-summary">status</th>
+        <th class="setup-col-action"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in trackers %}
+      <tr>
+        <td class="setup-col-icon">{{ t.icon }}</td>
+        <td class="setup-col-name"><code>{{ t.name }}</code></td>
+        <td class="setup-col-desc">{{ t.description }}</td>
+        <td class="setup-col-summary">{{ t.summary }}</td>
+        <td class="setup-col-action">
+          {% if t.installed %}
+            <a href="/setup/{{ t.name }}" class="btn-link">configure →</a>
+          {% else %}
+            <form method="post" action="/setup/install/{{ t.name }}" class="inline-form">
+              <button type="submit" class="btn-link">install →</button>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

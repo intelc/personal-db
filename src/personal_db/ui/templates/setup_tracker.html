@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}setup · {{ tracker_name }} · personal_db{% endblock %}
+
+{% block content %}
+<section class="block">
+  <p class="meta"><a href="/setup">← back to setup</a></p>
+  <h1 class="block-h">{{ tracker_name|upper }}</h1>
+  <p class="meta">{{ manifest.description }}</p>
+</section>
+
+{% if run_result %}
+  <section class="block setup-result {{ 'ok' if run_result.success else 'fail' }}">
+    <h2 class="block-h">
+      {% if run_result.success %}✓ DONE{% else %}✗ FAILED{% endif %}
+    </h2>
+    <p class="meta">{{ run_result.detail }}</p>
+    {% if run_result.success %}
+      <p class="meta">
+        <a href="/setup">← back to setup</a> ·
+        <a href="/t/{{ tracker_name }}">view this tracker →</a>
+      </p>
+    {% endif %}
+  </section>
+{% endif %}
+
+<form method="post" action="/setup/{{ tracker_name }}" class="setup-form">
+  {% if not steps %}
+    <section class="block">
+      <p class="meta">
+        No setup steps required. Submit to run a test sync — if it succeeds the
+        tracker is ready.
+      </p>
+    </section>
+  {% endif %}
+
+  {% for step in steps %}
+    {% set r = step_results[loop.index0] if step_results else None %}
+    <section class="block setup-step{% if r and r.status == 'failed' %} fail{% elif r and r.status == 'ok' %} ok{% endif %}">
+      <h3 class="block-h">
+        {{ loop.index }}. {{ step.label }}
+        <span class="setup-step-type">[{{ step.type_ }}]</span>
+      </h3>
+
+      {% if step.type_ == 'env_var' %}
+        <p class="meta">{{ step.description }}</p>
+        <input type="{% if step.secret %}password{% else %}text{% endif %}"
+               name="{{ step.field_name }}"
+               class="setup-input"
+               value="{% if not step.secret %}{{ step.current_value or '' }}{% endif %}"
+               placeholder="{% if step.secret and step.current_value %}(saved — leave blank to keep){% else %}{{ step.label }}{% endif %}">
+
+      {% elif step.type_ == 'instructions' %}
+        <pre class="setup-instructions">{{ step.description }}</pre>
+        <label class="setup-ack">
+          <input type="checkbox" name="{{ step.field_name }}" value="1">
+          I've read this and completed any external steps.
+        </label>
+
+      {% elif step.type_ == 'fda_check' %}
+        <p class="meta">{{ step.description }}</p>
+        <p>
+          <a href="{{ step.settings_url }}" class="btn-link" target="_blank">
+            open System Settings →
+          </a>
+        </p>
+        <p class="meta">
+          Submit re-probes the gated file. If FDA isn't granted yet, this step
+          fails and you can retry.
+        </p>
+
+      {% elif step.type_ == 'command_test' %}
+        <p class="meta">{{ step.description }}</p>
+
+      {% elif step.type_ == 'oauth' %}
+        <p class="meta">{{ step.description }}</p>
+      {% endif %}
+
+      {% if r %}
+        <p class="setup-step-result {{ r.status }}">
+          {% if r.status == 'ok' %}✓{% elif r.status == 'failed' %}✗{% else %}—{% endif %}
+          {{ r.detail }}
+        </p>
+      {% endif %}
+    </section>
+  {% endfor %}
+
+  <section class="block">
+    <button type="submit" class="btn-primary">save &amp; test sync</button>
+  </section>
+</form>
+{% endblock %}

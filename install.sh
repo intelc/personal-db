@@ -51,7 +51,7 @@ if ! command -v personal-db >/dev/null 2>&1; then
     warn "personal-db installed but not yet on PATH for this shell."
     warn 'Add this to your shell rc and reopen your terminal:'
     warn '    export PATH="$HOME/.local/bin:$PATH"'
-    warn "Then continue with: personal-db init && personal-db tracker setup"
+    warn "Then run: personal-db setup"
     exit 0
 fi
 
@@ -60,7 +60,7 @@ info "Installed: $(command -v personal-db)"
 # 5. Decide whether to auto-launch the setup wizard
 if [ "${PERSONAL_DB_NO_SETUP:-0}" = "1" ]; then
     info "PERSONAL_DB_NO_SETUP=1 — skipping setup."
-    info "Continue with: personal-db init && personal-db tracker setup"
+    info "Run: personal-db setup"
     exit 0
 fi
 
@@ -69,8 +69,7 @@ fi
 # would fail. In that case, print the next-step message instead.
 if [ -t 0 ]; then
     info "Starting setup wizard..."
-    personal-db init
-    exec personal-db tracker setup
+    exec personal-db setup
 else
     cat <<'EOF'
 
@@ -78,8 +77,10 @@ Install complete.
 
 To finish setup, run:
 
-    personal-db init           # one-time, creates ~/personal_db
-    personal-db tracker setup  # interactive wizard for each connector
+    personal-db setup
+
+This walks you through init + tracker configuration. You can pick a
+browser-based wizard or a terminal-based one when prompted.
 
 EOF
 fi

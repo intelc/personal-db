@@ -1,10 +1,15 @@
 """FastAPI dashboard for personal_db.
 
 Routes:
-  GET  /                  → dashboard (configured viz list)
-  GET  /v/<slug>          → single viz on its own page
-  GET  /t/<tracker>       → all viz for one tracker
-  POST /log_life_context  → form target for the life_context diary entry
+  GET  /                       → dashboard (configured viz list)
+  GET  /v/<slug>               → single viz on its own page
+  GET  /t/<tracker>            → all viz for one tracker
+  GET  /setup                  → web wizard overview (tracker list + status)
+  GET  /setup/<name>           → per-tracker setup form
+  POST /setup/<name>           → process setup form, run test sync
+  POST /setup/install/<name>   → install a bundled tracker, redirect to /setup/<name>
+  POST /sync/<tracker>         → manual refresh button on viz pages
+  POST /log_life_context       → form target for the life_context diary entry
 """
 
 from __future__ import annotations
@@ -17,8 +22,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from personal_db.config import Config
+from personal_db.db import apply_tracker_schema, init_db
+from personal_db.installer import install_template
+from personal_db.manifest import load_manifest
 from personal_db.mcp_server.tools import log_life_context
 from personal_db.sync import sync_one
+from personal_db.ui.setup_runner import list_overview, list_step_views, process_form
 from personal_db.ui.viz import discover, list_trackers_with_viz, load_dashboard_slugs
 
 _HERE = Path(__file__).parent
@@ -149,6 +158,77 @@ def build_app(cfg: Config) -> FastAPI:
             pass
         referer = request.headers.get("referer") or f"/t/{tracker}"
         return RedirectResponse(url=referer, status_code=303)
+
+    @app.get("/setup", response_class=HTMLResponse)
+    async def setup_overview(request: Request):
+        reg = _registry()
+        return templates.TemplateResponse(
+            request=request,
+            name="setup.html",
+            context={
+                "active": "setup",
+                "trackers": list_overview(cfg),
+                **_nav_context(reg, active=None),
+            },
+        )
+
+    @app.post("/setup/install/{name}")
+    async def setup_install(name: str):
+        try:
+            dest = install_template(cfg, name)
+            init_db(cfg.db_path)
+            apply_tracker_schema(cfg.db_path, (dest / "schema.sql").read_text())
+        except (FileExistsError, ValueError):
+            # Already installed or unknown — fall through to the per-tracker page,
+            # which will render the existing state or 404.
+            pass
+        return RedirectResponse(url=f"/setup/{name}", status_code=303)
+
+    @app.get("/setup/{name}", response_class=HTMLResponse)
+    async def setup_tracker_get(request: Request, name: str, msg: str = ""):
+        reg = _registry()
+        manifest_path = cfg.trackers_dir / name / "manifest.yaml"
+        if not manifest_path.exists():
+            raise HTTPException(status_code=404, detail=f"unknown tracker: {name}")
+        manifest = load_manifest(manifest_path)
+        return templates.TemplateResponse(
+            request=request,
+            name="setup_tracker.html",
+            context={
+                "active": "setup",
+                "tracker_name": name,
+                "manifest": manifest,
+                "steps": list_step_views(cfg, manifest),
+                "step_results": None,
+                "run_result": None,
+                "flash": msg,
+                **_nav_context(reg, active=None),
+            },
+        )
+
+    @app.post("/setup/{name}", response_class=HTMLResponse)
+    async def setup_tracker_post(request: Request, name: str):
+        reg = _registry()
+        manifest_path = cfg.trackers_dir / name / "manifest.yaml"
+        if not manifest_path.exists():
+            raise HTTPException(status_code=404, detail=f"unknown tracker: {name}")
+        form = dict(await request.form())
+        results, run_result = process_form(cfg, name, form)
+        manifest = load_manifest(manifest_path)
+        return templates.TemplateResponse(
+            request=request,
+            name="setup_tracker.html",
+            context={
+                "active": "setup",
+                "tracker_name": name,
+                "manifest": manifest,
+                "steps": list_step_views(cfg, manifest),
+                "step_results": results,
+                "run_result": run_result,
+                "flash": "",
+                **_nav_context(reg, active=None),
+            },
+        )
 
     @app.post("/log_life_context")
     async def post_life_context(

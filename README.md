@@ -15,9 +15,10 @@ curl -LsSf https://raw.githubusercontent.com/intelc/personal-db/main/install.sh 
 This installs [`uv`](https://github.com/astral-sh/uv) if you don't have it, then `uv tool install`s `personal-db`. After install:
 
 ```bash
-personal-db init           # one-time, creates ~/personal_db
-personal-db tracker setup  # interactive wizard for each connector
+personal-db setup
 ```
+
+`setup` initializes the data root, then asks how you want to configure trackers — **Browser** (visual wizard at http://127.0.0.1:8765/setup), **Terminal** (questionary prompts), or **Skip**.
 
 **Tip:** download and run the script directly to have the wizard launch automatically:
 
