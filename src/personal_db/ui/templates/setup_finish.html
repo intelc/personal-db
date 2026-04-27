@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}finish · setup · personal_db{% endblock %}
+
+{% block content %}
+<section class="block">
+  <p class="meta"><a href="/setup">← back to tracker setup</a></p>
+  <h1 class="block-h">FINISH SETUP</h1>
+</section>
+
+<section class="block">
+  <h2 class="block-h">1. PERIODIC SYNC</h2>
+  <p class="meta">{{ scheduler_msg }}</p>
+  <p class="meta">
+    On macOS, this writes a launchd <code>LaunchAgent</code> at
+    <code>~/Library/LaunchAgents/com.personal_db.scheduler.plist</code>.
+    Re-running this page is idempotent — the plist gets overwritten with the
+    current path each time.
+  </p>
+</section>
+
+<section class="block">
+  <h2 class="block-h">2. CONNECT AN AGENT</h2>
+  <p class="meta">
+    The MCP server is what makes your data available to an AI agent. Pick the
+    targets you use; we'll edit their config files (or shell out to the
+    relevant CLI) so they spawn <code>personal-db mcp</code> on demand.
+  </p>
+
+  {% if mcp_flash %}
+    <p class="setup-step-result {{ 'ok' if mcp_flash.ok else 'failed' }}">
+      {% if mcp_flash.ok %}✓ installed for{% else %}✗ failed for{% endif %}
+      <code>{{ mcp_flash.target }}</code>
+    </p>
+  {% endif %}
+
+  <table class="setup-table">
+    <thead>
+      <tr>
+        <th class="setup-col-name">target</th>
+        <th class="setup-col-desc">notes</th>
+        <th class="setup-col-action"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in mcp_targets %}
+      <tr>
+        <td class="setup-col-name"><code>{{ t.key }}</code></td>
+        <td class="setup-col-desc">{{ t.label }}</td>
+        <td class="setup-col-action">
+          <form method="post" action="/setup/mcp/install/{{ t.key }}" class="inline-form">
+            <button type="submit" class="btn-link">install →</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <p class="meta">
+    Prefer to do it yourself? Run <code>personal-db mcp install</code> in a
+    terminal for an interactive picker, or
+    <code>personal-db mcp install &lt;target&gt;</code> for a single target.
+  </p>
+</section>
+
+<section class="block">
+  <h2 class="block-h">3. OPTIONAL — DASHBOARD</h2>
+  <p class="meta">
+    The menu bar app + dashboard are optional. Agents access your data over MCP
+    independently of the dashboard being open.
+  </p>
+  <p>
+    <a href="/" class="btn-link">continue to dashboard →</a>
+  </p>
+  <p class="meta">
+    To launch the menu bar version (macOS status bar icon), run
+    <code>personal-db ui</code> in a terminal.
+  </p>
+</section>
+{% endblock %}

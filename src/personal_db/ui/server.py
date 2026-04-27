@@ -1,19 +1,22 @@
 """FastAPI dashboard for personal_db.
 
 Routes:
-  GET  /                       → dashboard (configured viz list)
-  GET  /v/<slug>               → single viz on its own page
-  GET  /t/<tracker>            → all viz for one tracker
-  GET  /setup                  → web wizard overview (tracker list + status)
-  GET  /setup/<name>           → per-tracker setup form
-  POST /setup/<name>           → process setup form, run test sync
-  POST /setup/install/<name>   → install a bundled tracker, redirect to /setup/<name>
-  POST /sync/<tracker>         → manual refresh button on viz pages
-  POST /log_life_context       → form target for the life_context diary entry
+  GET  /                          → dashboard (configured viz list)
+  GET  /v/<slug>                  → single viz on its own page
+  GET  /t/<tracker>               → all viz for one tracker
+  GET  /setup                     → web wizard overview (tracker list + status)
+  GET  /setup/<name>              → per-tracker setup form
+  POST /setup/<name>              → process setup form, run test sync
+  POST /setup/install/<name>      → install a bundled tracker, redirect to /setup/<name>
+  GET  /setup/finish              → finalize page (installs scheduler, MCP options)
+  POST /setup/mcp/install/<tgt>   → install MCP into one target, redirect to finish
+  POST /sync/<tracker>            → manual refresh button on viz pages
+  POST /log_life_context          → form target for the life_context diary entry
 """
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, Request
@@ -29,10 +32,26 @@ from personal_db.mcp_server.tools import log_life_context
 from personal_db.sync import sync_one
 from personal_db.ui.setup_runner import list_overview, list_step_views, process_form
 from personal_db.ui.viz import discover, list_trackers_with_viz, load_dashboard_slugs
+from personal_db.wizard.mcp_setup import _TARGETS as _MCP_TARGETS
 
 _HERE = Path(__file__).parent
 
 _NAV_VISIBLE_LIMIT = 6
+
+
+def _install_scheduler_safe(cfg: Config) -> str:
+    """Install the launchd scheduler. Returns a one-line status string for the
+    finalize page. Idempotent (the underlying scheduler.install overwrites the
+    plist if it already exists). macOS-only."""
+    if sys.platform != "darwin":
+        return f"⚠ scheduler is macOS-only (detected {sys.platform}); periodic sync skipped"
+    try:
+        from personal_db import scheduler
+
+        plist = scheduler.install(cfg.root, 600)
+        return f"✓ scheduler installed → {plist} (sync every 10 min)"
+    except Exception as e:  # noqa: BLE001
+        return f"⚠ scheduler install failed: {e}"
 
 
 def _split_nav(trackers: list[str], active: str | None,
@@ -183,6 +202,43 @@ def build_app(cfg: Config) -> FastAPI:
             # which will render the existing state or 404.
             pass
         return RedirectResponse(url=f"/setup/{name}", status_code=303)
+
+    @app.get("/setup/finish", response_class=HTMLResponse)
+    async def setup_finish(request: Request, mcp: str = "", mcp_ok: str = ""):
+        """Finalize page: scheduler install + MCP target list + dashboard link.
+
+        Side effect: installs the launchd scheduler on every GET (idempotent).
+        macOS-only — on Linux/WSL the install is skipped with a notice.
+
+        Registered BEFORE /setup/{name} so `finish` doesn't get matched as a
+        tracker name parameter."""
+        scheduler_msg = _install_scheduler_safe(cfg)
+        reg = _registry()
+        targets = [
+            {"key": key, "label": tgt.label}
+            for key, tgt in _MCP_TARGETS.items()
+        ]
+        return templates.TemplateResponse(
+            request=request,
+            name="setup_finish.html",
+            context={
+                "active": "setup",
+                "scheduler_msg": scheduler_msg,
+                "mcp_targets": targets,
+                "mcp_flash": {"target": mcp, "ok": mcp_ok == "1"} if mcp else None,
+                **_nav_context(reg, active=None),
+            },
+        )
+
+    @app.post("/setup/mcp/install/{target}")
+    async def setup_mcp_install(target: str):
+        if target not in _MCP_TARGETS:
+            raise HTTPException(status_code=404, detail=f"unknown MCP target: {target}")
+        ok, _detail = _MCP_TARGETS[target].auto()
+        return RedirectResponse(
+            url=f"/setup/finish?mcp={target}&mcp_ok={'1' if ok else '0'}",
+            status_code=303,
+        )
 
     @app.get("/setup/{name}", response_class=HTMLResponse)
     async def setup_tracker_get(request: Request, name: str, msg: str = ""):

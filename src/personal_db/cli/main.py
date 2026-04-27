@@ -35,7 +35,7 @@ def _global(root: str = typer.Option(None, "--root", help="Override data root"))
 
 app.command("init")(init_cmd.run)
 app.command("setup")(setup_cmd.run)
-app.command("mcp")(mcp_cmd.mcp)
+app.add_typer(mcp_cmd.mcp_app, name="mcp")
 app.command("sync")(sync_cmd.sync)
 app.command("backfill")(sync_cmd.backfill)
 app.command("log")(log_cmd.log)

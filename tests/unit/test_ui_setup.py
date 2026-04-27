@@ -127,6 +127,55 @@ def test_setup_tracker_post_persists_env_var(tmp_path):
     assert "GITHUB_TOKEN=fake_test_token_value" in env_text
 
 
+def test_setup_finish_get_renders(tmp_path):
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg))
+    r = client.get("/setup/finish")
+    assert r.status_code == 200
+    assert "FINISH SETUP" in r.text
+    assert "PERIODIC SYNC" in r.text
+    assert "CONNECT AN AGENT" in r.text
+
+
+def test_setup_finish_lists_all_mcp_targets(tmp_path):
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg))
+    r = client.get("/setup/finish")
+    assert "claude_code" in r.text
+    assert "claude_desktop" in r.text
+    assert "cursor" in r.text
+
+
+def test_setup_mcp_install_unknown_404(tmp_path):
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg))
+    r = client.post("/setup/mcp/install/not_a_target", follow_redirects=False)
+    assert r.status_code == 404
+
+
+def test_setup_mcp_install_redirects_with_flash(tmp_path, monkeypatch):
+    """Mock the cursor target's auto-installer to return success; the route
+    should redirect to /setup/finish?mcp=cursor&mcp_ok=1."""
+    from personal_db.wizard import mcp_setup
+
+    monkeypatch.setattr(
+        mcp_setup._TARGETS["cursor"], "auto", lambda: (True, "wrote ~/.cursor/mcp.json")
+    )
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg))
+    r = client.post("/setup/mcp/install/cursor", follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"] == "/setup/finish?mcp=cursor&mcp_ok=1"
+
+
+def test_setup_finish_renders_mcp_flash(tmp_path):
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg))
+    r = client.get("/setup/finish?mcp=cursor&mcp_ok=1")
+    assert "✓ installed for" in r.text
+    assert "cursor" in r.text
+
+
 def test_setup_overview_marks_installed_with_icon(tmp_path):
     """Trackers without setup_steps render with the '—' icon (e.g. habits has 1
     instruction, but life_context with no steps shows '—'). Habits has 1 step,

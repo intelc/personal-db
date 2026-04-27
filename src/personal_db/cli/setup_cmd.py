@@ -2,10 +2,19 @@
 
 Called by install.sh after `uv tool install`. Idempotent: re-running re-prompts
 for the wizard mode but skips already-done init steps.
+
+After the terminal wizard exits, runs three finalize steps:
+  1. Install the launchd scheduler (silent, macOS only)
+  2. Offer to install the MCP server into an agent (Claude Code / Desktop / Cursor)
+  3. Optionally launch the menu bar + dashboard
+
+The browser wizard handles its own finalize via the /setup/finish web route.
 """
 
 from __future__ import annotations
 
+import os
+import sys
 import threading
 import webbrowser
 
@@ -44,6 +53,7 @@ def run(
 
     if choice == "terminal":
         run_menu(cfg)
+        _finalize_terminal(cfg)
         return
 
     _launch_browser_wizard(cfg, port)
@@ -52,9 +62,12 @@ def run(
 def _launch_browser_wizard(cfg: Config, port: int) -> None:
     url = f"http://127.0.0.1:{port}/setup"
     typer.echo(f"Starting wizard at {url}")
+    typer.echo(
+        "When you click 'Finish setup' in the browser we'll wire up the scheduler "
+        "and offer to install the MCP server into an agent."
+    )
     typer.echo("Press Ctrl+C in this terminal when you're done to stop the server.")
 
-    # Open the browser slightly after uvicorn binds, so the page loads on first try.
     threading.Timer(1.2, lambda: webbrowser.open(url)).start()
 
     import uvicorn
@@ -64,8 +77,6 @@ def _launch_browser_wizard(cfg: Config, port: int) -> None:
     try:
         uvicorn.run(build_app(cfg), host="127.0.0.1", port=port, log_level="warning")
     except OSError as e:
-        # errno 48 (EADDRINUSE on macOS) / 98 (Linux). The dashboard is probably
-        # already running — point the user at it instead of crashing.
         if e.errno in (48, 98) or "address already in use" in str(e).lower():
             typer.echo(
                 f"\nPort {port} is already in use — the dashboard may already be running.\n"
@@ -73,3 +84,47 @@ def _launch_browser_wizard(cfg: Config, port: int) -> None:
             )
             return
         raise
+
+
+def _finalize_terminal(cfg: Config) -> None:
+    """Post-wizard: scheduler, MCP, optional dashboard launch."""
+    typer.echo("\n──────── finalize ────────")
+    install_scheduler(cfg)
+
+    install_mcp = questionary.confirm(
+        "Install personal_db MCP server into an agent (Claude Code / Desktop / Cursor)?",
+        default=True,
+    ).ask()
+    if install_mcp:
+        from personal_db.wizard.mcp_setup import run_mcp_setup_menu
+
+        run_mcp_setup_menu(cfg)
+
+    open_ui = questionary.confirm(
+        "Open the dashboard now? (you can run `personal-db ui` any time)",
+        default=False,
+    ).ask()
+    if open_ui:
+        # exec replaces this process so Ctrl+C goes to the menubar app, not us
+        os.execvp("personal-db", ["personal-db", "ui"])
+
+    typer.echo("\nDone. Useful next steps:")
+    typer.echo("  personal-db ui                # menu bar + dashboard")
+    typer.echo("  personal-db setup             # add or reconfigure trackers")
+    typer.echo("  personal-db scheduler status  # check periodic sync")
+
+
+def install_scheduler(cfg: Config) -> None:
+    """Install the launchd job. macOS-only — prints a notice on other platforms."""
+    if sys.platform != "darwin":
+        typer.echo(
+            f"⚠ scheduler is macOS-only (detected {sys.platform}); periodic sync skipped"
+        )
+        return
+    try:
+        from personal_db import scheduler
+
+        plist = scheduler.install(cfg.root, 600)
+        typer.echo(f"✓ scheduler installed → {plist} (sync every 10 min)")
+    except Exception as e:  # noqa: BLE001
+        typer.echo(f"⚠ scheduler install failed: {e}")
