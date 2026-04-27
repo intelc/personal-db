@@ -132,7 +132,18 @@ Comma-separated; case-insensitive. Find your local email with:
 git config user.email
 ```
 
+## Creating your own tracker
+
+`personal-db` ships with a starter set of trackers (GitHub, Whoop, Screen Time, iMessage, …), but the most useful data is usually idiosyncratic to you. Three ways to add a new one:
+
+1. **Ask Claude.** Once MCP is wired up, ask Claude to use the `create_tracker` prompt — it walks through the design Q&A and writes all four files. Fastest path.
+2. **`personal-db tracker new <name>`** scaffolds a stub at `~/personal_db/trackers/<name>/`.
+3. **Copy a bundled tracker** under `src/personal_db/templates/trackers/` and adapt.
+
+A tracker is just four files: `manifest.yaml`, `schema.sql`, `ingest.py`, and an optional `visualizations.py`. Full guide with a worked example: **[docs/creating-trackers.md](docs/creating-trackers.md)**.
+
 ## Layout
 
+See `docs/creating-trackers.md` for the tracker-authoring guide.
 See `docs/superpowers/specs/2026-04-25-personal-db-v0-design.md` for the full design.
 See `docs/superpowers/plans/2026-04-25-personal-db-v0.md` for the implementation plan.
