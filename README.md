@@ -6,13 +6,13 @@ Where Obsidian holds your notes, `personal_db` holds your structured data — sl
 
 SQLite + per-tracker ingest scripts + MCP server. macOS only in v0.
 
-![personal_db setup demo — install + wizard + finalize](docs/demos/setup-demo.gif)
-
 ## Install
 
 ```bash
 bash <(curl -LsSf https://raw.githubusercontent.com/intelc/personal-db/main/install.sh)
 ```
+
+![install demo](docs/demos/install-demo.gif)
 
 This installs [`uv`](https://github.com/astral-sh/uv) if you don't have it, then `uv tool install`s `personal-db` and launches the setup wizard.
 
@@ -45,6 +45,8 @@ source .venv/bin/activate
 ```bash
 personal-db setup
 ```
+
+![setup wizard demo](docs/demos/setup-demo.gif)
 
 You'll be asked which mode you want:
 

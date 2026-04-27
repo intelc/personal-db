@@ -1,16 +1,14 @@
-# Hero demo — full install + setup arc.
+# Setup-wizard demo — full arc from `personal-db setup` to the try-it prompt.
 #
-# Shows: typing the one-line curl install → uv tool install pulls personal-db
-# from GitHub → setup wizard auto-launches → picker → Terminal mode → tracker
-# menu → install life_context → test sync + backfill spawn → finalize block
-# (scheduler skipped, MCP skipped, dashboard skipped) → try-it prompt.
+# Pairs with the Quick start section of the README. Assumes personal-db is
+# already installed (skip the curl install — that's covered in install-demo.tape).
 #
-# Side effects:
-#   - Installs personal-db globally via `uv tool install --force` (writes
-#     ~/.local/bin/personal-db). Run `uv tool uninstall personal-db` to undo.
-#   - Creates /tmp/personal_db_demo. Doesn't touch ~/personal_db.
+# Side effects: creates /tmp/personal_db_demo. Doesn't touch ~/personal_db
+# or the launchd plist.
 #
-# Re-record from the project root: `vhs docs/demos/setup-demo.tape`.
+# To re-record on a different machine: replace the alias path below with
+# wherever your `personal-db` binary lives (e.g. `which personal-db`).
+# Run from the project root: `vhs docs/demos/setup-demo.tape`.
 
 Output docs/demos/setup-demo.gif
 
@@ -24,11 +22,15 @@ Set TypingSpeed 50ms
 Set WindowBar Colorful
 
 # Hidden setup:
-#   - PERSONAL_DB_NO_SCHEDULER=1 keeps finalize from clobbering the real
+#   - Alias `personal-db` to the dev venv binary (skip activate to avoid
+#     "(personal_db)" prompt prefix).
+#   - PERSONAL_DB_NO_SCHEDULER=1 keeps the demo from clobbering the real
 #     ~/Library/LaunchAgents/com.personal_db.scheduler.plist.
 #   - PERSONAL_DB_ROOT=/tmp/personal_db_demo keeps wizard data out of
-#     ~/personal_db (the real user root).
+#     ~/personal_db.
 Hide
+Type "alias personal-db='/Users/yihengchen/codestuff/aiexperiments/personal_db/.venv/bin/personal-db'"
+Enter
 Type "export PERSONAL_DB_NO_SCHEDULER=1 PERSONAL_DB_ROOT=/tmp/personal_db_demo PS1='> '"
 Enter
 Type "rm -rf /tmp/personal_db_demo && clear"
@@ -36,14 +38,14 @@ Enter
 Sleep 500ms
 Show
 
-Type "bash <(curl -LsSf https://raw.githubusercontent.com/intelc/personal-db/main/install.sh)"
+Type "personal-db setup"
 Sleep 500ms
 Enter
 
-# uv tool install pulls from git; ~10-18s on a typical machine
-Sleep 18s
+# Init + picker render
+Sleep 3s
 
-# Picker auto-launches (post-install). Highlight Terminal.
+# Highlight Terminal (default is Browser, one Down)
 Down
 Sleep 800ms
 Enter
@@ -74,8 +76,7 @@ Enter
 Sleep 1s
 Enter
 
-# Test sync runs (no-op for life_context, manual capture), backfill spawns,
-# we land back at the menu with life_context now in the installed section
+# Test sync passes (no-op for life_context), backfill spawns, back at menu
 Sleep 4s
 
 # Up wraps to the bottom item (Done — exit wizard)
@@ -93,8 +94,6 @@ Enter
 Sleep 1s
 Enter
 
-# Try-it prompt — the money frame
+# Try-it prompt — the closing frame
 Sleep 6s
-
-# Hold the final frame
 Sleep 3s
