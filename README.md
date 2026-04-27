@@ -54,6 +54,8 @@ You'll be asked which mode you want:
 - **Terminal** — questionary-driven prompts in your shell.
 - **Skip** — exits cleanly; run `personal-db setup` again whenever you're ready.
 
+![browser setup wizard](docs/demos/screenshots/setup-overview.png)
+
 After you finish configuring trackers, finalize steps run automatically:
 
 1. **Scheduler** — installs a launchd job (`~/Library/LaunchAgents/com.personal_db.scheduler.plist`) that runs `personal-db sync --due` every 10 minutes.
@@ -78,6 +80,10 @@ personal-db ui
 personal-db mcp install              # interactive picker
 personal-db mcp install cursor       # non-interactive single target
 ```
+
+The dashboard is a small read-only view over your local data — handy for spot-checking sync state and logging quick entries. Agents read the same data over MCP whether or not the dashboard is open.
+
+![dashboard](docs/demos/screenshots/dashboard.png)
 
 ### Re-running setup
 
