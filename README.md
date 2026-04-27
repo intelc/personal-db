@@ -40,47 +40,46 @@ source .venv/bin/activate
 
 ## Quick start
 
+`personal-db setup` is the only command you need to run after install. It walks through tracker selection, configuration, scheduler install, and agent wire-up in one flow.
+
 ```bash
-# Initialize the data root (default ~/personal_db)
-personal-db init
+personal-db setup
+```
 
-# Install some built-in trackers
-personal-db tracker install github_commits
-personal-db tracker install whoop
-personal-db tracker install screen_time
-personal-db tracker install imessage
-personal-db tracker install habits
+You'll be asked which mode you want:
 
-# Configure each connector via the interactive wizard
-personal-db tracker setup
-# (Or set up one specific tracker: personal-db tracker setup whoop)
-#
-# The wizard:
-#   - prompts for env vars (GITHUB_TOKEN, GITHUB_AUTHOR_EMAILS, WHOOP_CLIENT_ID, etc.)
-#     and writes them to <root>/.env (mode 0600, gitignored)
-#   - optional fields (like GITHUB_AUTHOR_EMAILS) can be skipped with Enter
-#   - launches OAuth flows in your browser for OAuth-based connectors (whoop)
-#   - probes Full Disk Access for chat.db / knowledgeC.db and opens System
-#     Settings if needed
-#   - runs a test sync after each connector to confirm it's working
+- **Browser** (recommended) — opens a visual wizard at `http://127.0.0.1:8765/setup` with a tracker list, form-based per-tracker setup, and click-through buttons for finalize steps.
+- **Terminal** — questionary-driven prompts in your shell.
+- **Skip** — exits cleanly; run `personal-db setup` again whenever you're ready.
 
-# First run: backfill what's available
+After you finish configuring trackers, finalize steps run automatically:
+
+1. **Scheduler** — installs a launchd job (`~/Library/LaunchAgents/com.personal_db.scheduler.plist`) that runs `personal-db sync --due` every 10 minutes.
+2. **MCP server** — auto-installs `personal_db` into the agents you choose (Claude Code, Claude Desktop, Cursor). Behind the scenes this calls `claude mcp add` (Code), or merges into `~/Library/Application Support/Claude/claude_desktop_config.json` (Desktop), or `~/.cursor/mcp.json` (Cursor).
+3. **Dashboard** (optional) — offers to launch the menu bar + dashboard via `personal-db ui`. Default is skip; agents read your data over MCP regardless of the dashboard being open.
+
+### After setup
+
+```bash
+# Pull historical data once (the scheduler only handles incremental sync going forward)
 personal-db backfill github_commits
 personal-db backfill whoop
 
-# Install the launchd scheduler (runs `personal-db sync --due` every 10 min)
-personal-db scheduler install
-
-# Add the MCP server to Claude Code
-# (use the absolute path — Claude Code spawns MCP servers with a minimal
-# environment that does NOT inherit your shell's PATH, so a bare
-# "personal-db" reference will fail to connect)
-claude mcp add personal_db -- "$(which personal-db)" mcp
-
-# Install the /insights skill
+# Install the /insights skill into Claude Code (one-time)
 mkdir -p ~/.claude/skills/personal-db
 cp src/personal_db/templates/claude_skill/insights.md ~/.claude/skills/personal-db/
+
+# Open the dashboard whenever you want
+personal-db ui
+
+# Add MCP into another agent later
+personal-db mcp install              # interactive picker
+personal-db mcp install cursor       # non-interactive single target
 ```
+
+### Re-running setup
+
+`personal-db setup` is idempotent. Run it any time to add a new tracker, rotate a credential, or re-enable the scheduler. Existing values are shown as defaults (secrets masked) so you can press Enter to keep them.
 
 ## CLI argument order note
 
@@ -96,10 +95,9 @@ Credentials live in `<root>/.env` (default `~/personal_db/.env`, mode 0600).
 The file is loaded automatically on every `personal-db` invocation; shell
 environment variables override `.env` values (useful for debugging and tests).
 
-To rotate a credential or fix a misconfiguration, re-run
-`personal-db tracker setup <name>` — current values are shown as defaults
-(secrets are masked) so you can press Enter to keep them or type a new value
-to overwrite.
+To rotate a credential, re-run `personal-db setup` and reconfigure the
+relevant tracker — current values are shown as defaults (secrets are masked).
+Or jump straight to a single tracker via `personal-db tracker setup <name>`.
 
 ## Verify
 
@@ -111,9 +109,9 @@ In Claude Code:
 
 ## github_commits — capturing local-CLI commits
 
-The setup wizard (`personal-db tracker setup github_commits`) asks for your
-GitHub token and then optionally for the email addresses you commit with.
-You can also set or update `GITHUB_AUTHOR_EMAILS` manually at any time.
+The setup wizard asks for your GitHub token and then optionally for the email
+addresses you commit with. You can also set or update `GITHUB_AUTHOR_EMAILS`
+manually at any time.
 
 By default, `github_commits` matches commits via GitHub's standard email-to-user
 linkage (your GitHub login is derived automatically from the token). If you
