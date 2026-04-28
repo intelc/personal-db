@@ -15,7 +15,7 @@ setup_steps:
     client_secret_env: WHOOP_CLIENT_SECRET
     auth_url: "https://api.prod.whoop.com/oauth/oauth2/auth"
     token_url: "https://api.prod.whoop.com/oauth/oauth2/token"
-    scopes: ["read:profile", "read:cycles", "read:recovery", "read:sleep", "read:workout"]
+    scopes: ["offline", "read:profile", "read:cycles", "read:recovery", "read:sleep", "read:workout"]
     redirect_host: localhost
     redirect_port: 9876
 schedule:
