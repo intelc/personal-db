@@ -1,6 +1,6 @@
 import pytest
 
-from personal_db.transforms import TransformError, TransformSpec, topo_sort, transform
+from personal_db.transforms import TransformError, TransformSpec, topo_sort, transform, validate
 
 
 def _spec(name: str, writes: str, depends_on: list[str]) -> TransformSpec:
@@ -92,3 +92,42 @@ def test_topo_sort_external_deps_ignored():
 
 def test_topo_sort_empty_input():
     assert topo_sort([]) == []
+
+
+def test_validate_rejects_writes_not_in_schema():
+    spec = _spec("t", writes="nonexistent", depends_on=["raw"])
+    with pytest.raises(TransformError, match="writes"):
+        validate([spec], schema_tables={"raw"})
+
+
+def test_validate_rejects_dep_not_in_schema_and_not_a_transform_target():
+    spec = _spec("t", writes="enriched", depends_on=["does_not_exist"])
+    with pytest.raises(TransformError, match="depends_on"):
+        validate([spec], schema_tables={"enriched"})
+
+
+def test_validate_accepts_dep_satisfied_by_other_transform():
+    a = _spec("a", writes="mid", depends_on=["raw"])
+    b = _spec("b", writes="final", depends_on=["mid"])
+    # Neither depends on a table that isn't covered.
+    validate([a, b], schema_tables={"raw", "mid", "final"})
+
+
+def test_validate_rejects_duplicate_writes():
+    a = _spec("a", writes="t", depends_on=["raw"])
+    b = _spec("b", writes="t", depends_on=["raw"])
+    with pytest.raises(TransformError, match="duplicate"):
+        validate([a, b], schema_tables={"raw", "t"})
+
+
+def test_validate_rejects_cycle():
+    a = _spec("a", writes="ta", depends_on=["tb"])
+    b = _spec("b", writes="tb", depends_on=["ta"])
+    with pytest.raises(TransformError, match="cycle"):
+        validate([a, b], schema_tables={"ta", "tb"})
+
+
+def test_validate_passes_for_well_formed_dag():
+    a = _spec("a", writes="ta", depends_on=["raw"])
+    b = _spec("b", writes="tb", depends_on=["ta"])
+    validate([a, b], schema_tables={"raw", "ta", "tb"})  # no exception

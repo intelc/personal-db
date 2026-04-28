@@ -82,3 +82,46 @@ def topo_sort(specs: list[TransformSpec]) -> list[TransformSpec]:
             for other_deps in remaining.values():
                 other_deps.discard(name)
     return ordered
+
+
+def validate(specs: list[TransformSpec], *, schema_tables: set[str]) -> None:
+    """Run the 4 hard-error rules. Raises TransformError on first violation.
+
+    Rules:
+      1. Every `writes` target must exist in schema_tables.
+      2. Every `depends_on` entry must be in schema_tables OR be the writes
+         target of some other transform in the same set.
+      3. No two transforms may share the same `writes` target.
+      4. The DAG must be acyclic.
+    """
+    # Rule 3: duplicate writes
+    seen: dict[str, str] = {}
+    for s in specs:
+        if s.writes in seen:
+            raise TransformError(
+                f"duplicate writes target '{s.writes}': "
+                f"both '{seen[s.writes]}' and '{s.name}' write to it"
+            )
+        seen[s.writes] = s.name
+
+    # Rule 1: writes target exists
+    for s in specs:
+        if s.writes not in schema_tables:
+            raise TransformError(
+                f"transform '{s.name}' writes to '{s.writes}' "
+                f"which is not declared in schema.sql"
+            )
+
+    # Rule 2: deps satisfied
+    transform_outputs = {s.writes for s in specs}
+    available = schema_tables | transform_outputs
+    for s in specs:
+        for d in s.depends_on:
+            if d not in available:
+                raise TransformError(
+                    f"transform '{s.name}' depends_on '{d}' "
+                    f"which is neither in schema.sql nor written by another transform"
+                )
+
+    # Rule 4: acyclic (delegate to topo_sort, which raises on cycles)
+    topo_sort(specs)
