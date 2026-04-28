@@ -15,9 +15,9 @@ setup_steps:
         <root>/trackers/project_time/projects.yaml
 
       Each project lists the signals that count toward it:
-        - repos:       e.g. ["intelc/mosspath"]                (matches github_commits.repo)
-        - cwds:        e.g. ["/Users/.../codestuff/.../mosspath"] (matches codex cwd, claude project_slug)
-        - bundle_ids:  e.g. ["com.ableton.live"]               (matches screen_time_app_usage)
+        - repos:       e.g. ["your-username/example-repo"]   (matches github_commits.repo)
+        - cwds:        e.g. ["~/code/example-repo"]          (matches codex cwd, claude project_slug)
+        - bundle_ids:  e.g. ["com.ableton.live"]             (matches screen_time_app_usage)
 
       Single Claude/Codex sessions are capped at 4h (cap_session_hours in projects.yaml).
 

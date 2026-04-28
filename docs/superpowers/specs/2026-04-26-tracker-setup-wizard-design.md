@@ -2,13 +2,12 @@
 
 **Status:** Draft for review
 **Date:** 2026-04-26
-**Author:** intel + Claude (brainstorming session)
 
 ---
 
 ## 1. Problem
 
-v0 ships five connectors but assumes the user can read each manifest's `setup_steps: list[str]` (currently human prose) and execute it manually: export GITHUB_TOKEN, set up Whoop OAuth, grant Full Disk Access to the right terminal binary, edit `entities/people.yaml`. That's enough friction that a real user — including the author, on day 1 — will get one connector working and stall on the others. **Without data flowing, the rest of the system is empty infrastructure.**
+v0 ships five connectors but assumes the user can read each manifest's `setup_steps: list[str]` (currently human prose) and execute it manually: export GITHUB_TOKEN, set up Whoop OAuth, grant Full Disk Access to the right terminal binary, edit `entities/people.yaml`. That's enough friction that a real user — even the author — will get one connector working and stall on the others. **Without data flowing, the rest of the system is empty infrastructure.**
 
 The first user signal we have is one row: `habits.shower=1` logged from Claude Code via the MCP `log_event` tool. Logging worked because `habits` has zero setup. Every other connector is gated by manual configuration the user hasn't done.
 

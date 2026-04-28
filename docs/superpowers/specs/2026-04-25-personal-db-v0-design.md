@@ -2,7 +2,6 @@
 
 **Status:** Draft for review
 **Date:** 2026-04-25
-**Author:** intel + Claude (brainstorming session)
 
 ---
 

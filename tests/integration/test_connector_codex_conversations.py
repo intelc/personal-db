@@ -67,7 +67,7 @@ def test_codex_sync_inserts_session_with_correct_counts(tmp_path, monkeypatch):
     ) = rows[0]
 
     assert session_id == "550e8400-e29b-41d4-a716-446655440000"
-    assert cwd == "/Users/yihengchen/codestuff/aiexperiments/personal_db"
+    assert cwd == "/Users/test/code/example"
     assert started_at == "2026-04-26T10:00:00.000Z"
     # last_event_at should be the latest timestamp across all lines
     assert last_event_at == "2026-04-26T10:00:06.000Z"

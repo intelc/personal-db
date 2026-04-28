@@ -100,7 +100,7 @@ personal_db/                              # repo root (cwd)
 - [ ] **Step 1: Initialize git and uv project**
 
 ```bash
-cd /Users/yihengchen/codestuff/aiexperiments/personal_db
+cd ~/code/personal_db
 git init
 echo "3.11" > .python-version
 uv init --package personal_db --no-readme
@@ -2463,7 +2463,7 @@ def test_github_sync_inserts_rows_from_fixture(tmp_path, monkeypatch):
                    check=True, capture_output=True)
     fixture = json.loads(Path("tests/fixtures/github/commits_page1.json").read_text())
     monkeypatch.setenv("GITHUB_TOKEN", "fake")
-    monkeypatch.setenv("GITHUB_USER", "intel")
+    monkeypatch.setenv("GITHUB_USER", "octocat")
     # Patch requests.get used inside ingest
     with patch("requests.get") as mock_get:
         mock_get.return_value.status_code = 200

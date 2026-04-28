@@ -45,10 +45,10 @@ def _make_fake_get(repos, commits1, commits2):
         if "/user/repos" in url:
             return _make_response(repos)
         elif url.endswith("/user") or "/user?" in url:
-            return _make_response({"login": "intelc", "id": 1})
-        elif "/repos/intelc/repo1/commits" in url:
+            return _make_response({"login": "octocat", "id": 1})
+        elif "/repos/octocat/repo1/commits" in url:
             return _make_response(commits1)
-        elif "/repos/intelc/repo2/commits" in url:
+        elif "/repos/octocat/repo2/commits" in url:
             return _make_response(commits2)
         else:
             raise AssertionError(f"unexpected URL: {url}")
@@ -75,14 +75,14 @@ def test_github_sync_inserts_commits_from_active_repos(tmp_path, monkeypatch):
         .execute("SELECT sha, repo, committed_at FROM github_commits ORDER BY committed_at DESC")
         .fetchall()
     )
-    # aaaa1111 (login=intelc, repo1) + bbbb1111 (login=intelc, repo2)
+    # aaaa1111 (login=octocat, repo1) + bbbb1111 (login=octocat, repo2)
     # aaaa2222 (null login, local email) not matched without GITHUB_AUTHOR_EMAILS
     # aaaa3333 (login=someone-else) not matched
     assert len(rows) == 2
     # Newest first
     assert rows[0][0] == "aaaa1111"
     # Both repos populated
-    assert {r[1] for r in rows} == {"intelc/repo1", "intelc/repo2"}
+    assert {r[1] for r in rows} == {"octocat/repo1", "octocat/repo2"}
     # UTC normalization: stored with explicit +00:00 offset
     assert all(r[2].endswith("+00:00") for r in rows)
 
@@ -109,10 +109,10 @@ def test_github_sync_skips_repos_pushed_before_cursor(tmp_path, monkeypatch):
         if "/user/repos" in url:
             return _make_response(repos)
         elif url.endswith("/user") or "/user?" in url:
-            return _make_response({"login": "intelc", "id": 1})
-        elif "/repos/intelc/repo1/commits" in url:
+            return _make_response({"login": "octocat", "id": 1})
+        elif "/repos/octocat/repo1/commits" in url:
             return _make_response(commits1)
-        elif "/repos/intelc/repo2/commits" in url:
+        elif "/repos/octocat/repo2/commits" in url:
             repo2_fetched.append(url)
             return _make_response(commits2)
         else:
@@ -136,12 +136,12 @@ def test_github_sync_skips_repos_pushed_before_cursor(tmp_path, monkeypatch):
     )
     # Only repo1 login-matched commit (aaaa1111); aaaa2222 has null login and no emails set
     assert len(rows) == 1
-    assert all(r[1] == "intelc/repo1" for r in rows)
+    assert all(r[1] == "octocat/repo1" for r in rows)
 
 
 def test_github_sync_matches_login_only_when_emails_unset(tmp_path, monkeypatch):
     # Without GITHUB_AUTHOR_EMAILS, only commits where author.login == GITHUB_USER match.
-    # In the fixture: aaaa1111 (login=intelc) matches, aaaa2222 (no login, local email) does NOT,
+    # In the fixture: aaaa1111 (login=octocat) matches, aaaa2222 (no login, local email) does NOT,
     # aaaa3333 (other login) doesn't.
     root = tmp_path / "personal_db"
     _init_and_install(root)
@@ -177,7 +177,7 @@ def test_github_sync_includes_nested_email_when_emails_set(tmp_path, monkeypatch
     root = tmp_path / "personal_db"
     _init_and_install(root)
     monkeypatch.setenv("GITHUB_TOKEN", "fake")
-    monkeypatch.setenv("GITHUB_AUTHOR_EMAILS", "intel@intelchen.com")
+    monkeypatch.setenv("GITHUB_AUTHOR_EMAILS", "you@example.com")
 
     repos = json.loads(Path("tests/fixtures/github/repos.json").read_text())
     commits1 = json.loads(Path("tests/fixtures/github/commits_repo1.json").read_text())
@@ -201,11 +201,11 @@ def test_github_sync_includes_nested_email_when_emails_set(tmp_path, monkeypatch
 
 
 def test_github_sync_emails_set_is_case_insensitive(tmp_path, monkeypatch):
-    # Email matching is case-insensitive: INTEL@IntelChen.com matches intel@intelchen.com
+    # Email matching is case-insensitive: YOU@Example.com matches you@example.com
     root = tmp_path / "personal_db"
     _init_and_install(root)
     monkeypatch.setenv("GITHUB_TOKEN", "fake")
-    monkeypatch.setenv("GITHUB_AUTHOR_EMAILS", "INTEL@IntelChen.com")
+    monkeypatch.setenv("GITHUB_AUTHOR_EMAILS", "YOU@Example.com")
 
     repos = json.loads(Path("tests/fixtures/github/repos.json").read_text())
     commits1 = json.loads(Path("tests/fixtures/github/commits_repo1.json").read_text())

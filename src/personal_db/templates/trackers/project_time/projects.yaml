@@ -8,56 +8,25 @@
 #
 # Edits to this file only re-attribute the last 2 days on `sync`.
 # Run `personal-db backfill project_time` to recompute the full window.
+#
+# This file ships with a few illustrative entries — replace them with your own.
 
 cap_session_hours: 4.0    # max hours any single Claude/Codex session contributes
 
 projects:
-  - name: mosspath
-    repos:      [intelc/mosspath]
-    cwds:       [/Users/yihengchen/codestuff/aiexperiments/mosspath]
-    bundle_ids: [intelchen.mosspath]
-
-  - name: jarvis
-    repos:      [intelc/jarvis, intelc/jarvis_explore]
-    cwds:       [/Users/yihengchen/codestuff/aiexperiments/jarvis]
+  - name: example_web_app
+    repos:      [your-username/example-web-app]
+    cwds:       [~/code/example-web-app]
     bundle_ids: []
 
-  - name: agentbox
-    repos:      [intelc/agentbox]
-    cwds:       [/Users/yihengchen/codestuff/aiexperiments/agentbox]
-    bundle_ids: []
-
-  - name: content_pipeline
-    repos:      [intelc/content-ai-pipeline]
-    cwds:       [/Users/yihengchen/codestuff/content-ai-pipeline]
-    bundle_ids: []
-
-  - name: hackaithon_26
+  - name: example_research
     repos:      []
     cwds:
-      - /Users/yihengchen/codestuff/hackaithon-26
-      - /Users/yihengchen/codestuff2/hackaithon-26
+      - ~/code/research-notebooks
+      - ~/code/research-notebooks-archive
     bundle_ids: []
 
-  - name: memory_bench
-    repos:      [intelc/memorybench]
-    cwds:
-      - /Users/yihengchen/codestuff/aiexperiments/memory_bench
-      - /Users/yihengchen/codestuff/aiexperiments/memory-bench
-      - /Users/yihengchen/codestuff/aiexperiments/LCVB-generation-evaluation
-    bundle_ids: []
-
-  - name: school_bioDB
-    repos:      []
-    cwds:       [/Users/yihengchen/codestuff/aiexperiments/biolDB]
-    bundle_ids: []
-
-  - name: school_ableton
+  - name: music_production
     repos:      []
     cwds:       []
     bundle_ids: [com.ableton.live]
-
-  - name: personal_db
-    repos:      []
-    cwds:       [/Users/yihengchen/codestuff/aiexperiments/personal-db]
-    bundle_ids: []
