@@ -39,3 +39,45 @@ def transform(*, writes: str, depends_on: list[str]):
         return fn
 
     return deco
+
+
+class TransformError(Exception):
+    """Raised when transform discovery, validation, or sorting fails."""
+
+
+def topo_sort(specs: list[TransformSpec]) -> list[TransformSpec]:
+    """Return specs in dependency order using Kahn's algorithm.
+
+    Edges: a transform that `depends_on` table T comes after the transform
+    that `writes` T. Deps on tables not produced by any spec (i.e. raw
+    tables from `ingest.py` or `schema.sql`) are treated as already-satisfied.
+    """
+    if not specs:
+        return []
+
+    # Map writes-target → spec for quick lookup.
+    by_writes = {s.writes: s for s in specs}
+
+    # Build edges: spec → set of specs it depends on (within the input set).
+    deps: dict[str, set[str]] = {s.name: set() for s in specs}
+    for s in specs:
+        for d in s.depends_on:
+            if d in by_writes:
+                deps[s.name].add(by_writes[d].name)
+
+    # Kahn: start with nodes that have no in-set deps; produce stable order
+    # (sorted by name within each "ready" wave) so output is deterministic.
+    by_name = {s.name: s for s in specs}
+    ordered: list[TransformSpec] = []
+    remaining = dict(deps)
+    while remaining:
+        ready = sorted(name for name, d in remaining.items() if not d)
+        if not ready:
+            cycle_names = sorted(remaining.keys())
+            raise TransformError(f"cycle detected among transforms: {cycle_names}")
+        for name in ready:
+            ordered.append(by_name[name])
+            del remaining[name]
+            for other_deps in remaining.values():
+                other_deps.discard(name)
+    return ordered
