@@ -104,12 +104,15 @@ def validate(specs: list[TransformSpec], *, schema_tables: set[str]) -> None:
             )
         seen[s.writes] = s.name
 
-    # Rule 1: writes target exists
+    # Rule 1: writes target must be in schema_tables OR consumed as a dep by
+    # another transform (i.e. it is an intermediate table in the pipeline).
+    all_deps = {d for s in specs for d in s.depends_on}
     for s in specs:
-        if s.writes not in schema_tables:
+        if s.writes not in schema_tables and s.writes not in all_deps:
             raise TransformError(
                 f"transform '{s.name}' writes to '{s.writes}' "
-                f"which is not declared in schema.sql"
+                f"which is not declared in schema.sql and is not "
+                f"consumed by any other transform"
             )
 
     # Rule 2: deps satisfied

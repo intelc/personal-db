@@ -109,8 +109,8 @@ def test_validate_rejects_dep_not_in_schema_and_not_a_transform_target():
 def test_validate_accepts_dep_satisfied_by_other_transform():
     a = _spec("a", writes="mid", depends_on=["raw"])
     b = _spec("b", writes="final", depends_on=["mid"])
-    # Neither depends on a table that isn't covered.
-    validate([a, b], schema_tables={"raw", "mid", "final"})
+    # "mid" is NOT in schema — it must be satisfied by transform a's output
+    validate([a, b], schema_tables={"raw", "final"})
 
 
 def test_validate_rejects_duplicate_writes():
