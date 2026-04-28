@@ -9,6 +9,7 @@ from personal_db.cli import (
     mcp_cmd,
     permission_cmd,
     scheduler_cmd,
+    setup_cmd,
     sync_cmd,
     tracker_cmd,
     ui_cmd,
@@ -33,7 +34,8 @@ def _global(root: str = typer.Option(None, "--root", help="Override data root"))
 
 
 app.command("init")(init_cmd.run)
-app.command("mcp")(mcp_cmd.mcp)
+app.command("setup")(setup_cmd.run)
+app.add_typer(mcp_cmd.mcp_app, name="mcp")
 app.command("sync")(sync_cmd.sync)
 app.command("backfill")(sync_cmd.backfill)
 app.command("log")(log_cmd.log)
@@ -43,6 +45,7 @@ tracker_app = typer.Typer(no_args_is_help=True, help="Tracker management")
 tracker_app.command("new")(tracker_cmd.new)
 tracker_app.command("list")(tracker_cmd.list_cmd)
 tracker_app.command("install")(tracker_cmd.install)
+tracker_app.command("reinstall")(tracker_cmd.reinstall)
 tracker_app.command("setup")(tracker_cmd.setup)
 app.add_typer(tracker_app, name="tracker")
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from personal_db import backfill as backfill_mod
 from personal_db.config import Config
 from personal_db.manifest import (
     CommandTestStep,
@@ -73,4 +74,12 @@ def run_tracker(cfg: Config, name: str) -> RunResult:
     detail = "test sync passed"
     write_status(cfg, name, success=True, detail=detail)
     print(f"    ok: {detail}")
+
+    # Kick off historical backfill in a detached subprocess so the user
+    # doesn't wait. Manual-only trackers (habits, life_context) have no-op
+    # backfills that exit immediately; the small subprocess overhead is
+    # acceptable for the simpler code path.
+    log_path = backfill_mod.start_async(cfg, name)
+    print(f"    ✓ backfill running in background → {log_path}")
+
     return RunResult(success=True, detail=detail)

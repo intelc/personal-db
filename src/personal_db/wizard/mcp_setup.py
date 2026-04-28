@@ -31,23 +31,30 @@ def _personal_db_path() -> str:
 
 
 def _install_claude_code() -> tuple[bool, str]:
-    """`claude mcp add personal_db -- <abs-path> mcp`."""
+    """`claude mcp add -s user personal_db -- <abs-path> mcp`.
+
+    User scope = available in every project, not just the cwd Claude was launched
+    from. Without -s the default is `local` (project-specific to current dir),
+    which is surprising when installing from a UI server."""
     if not shutil.which("claude"):
         return False, "claude CLI not found on PATH"
     pdb = _personal_db_path()
-    # Remove existing if present (idempotent)
-    subprocess.run(
-        ["claude", "mcp", "remove", "personal_db", "-s", "local"],
-        capture_output=True,
-    )
+    # Remove from every scope so a stale entry at lower-precedence scope can't
+    # shadow the user-scope one we're about to write. Failures are expected and
+    # ignored (entry doesn't exist at that scope).
+    for scope in ("local", "project", "user"):
+        subprocess.run(
+            ["claude", "mcp", "remove", "personal_db", "-s", scope],
+            capture_output=True,
+        )
     r = subprocess.run(
-        ["claude", "mcp", "add", "personal_db", "--", pdb, "mcp"],
+        ["claude", "mcp", "add", "-s", "user", "personal_db", "--", pdb, "mcp"],
         capture_output=True,
         text=True,
     )
     if r.returncode != 0:
         return False, f"claude mcp add failed: {r.stderr.strip() or r.stdout.strip()}"
-    return True, f"registered with Claude Code (command: {pdb} mcp)"
+    return True, f"registered with Claude Code at user scope (command: {pdb} mcp)"
 
 
 def _upsert_json_mcp_server(path: Path, command: str, args: list[str]) -> tuple[bool, str]:
@@ -86,9 +93,10 @@ def _manual_claude_code() -> str:
     pdb = _personal_db_path()
     return (
         f"Run this command:\n\n"
-        f"    claude mcp add personal_db -- {pdb} mcp\n\n"
+        f"    claude mcp add -s user personal_db -- {pdb} mcp\n\n"
         f"(The absolute path is required — Claude Code spawns MCP servers with a\n"
-        f"minimal env that doesn't inherit your shell PATH.)"
+        f"minimal env that doesn't inherit your shell PATH. The -s user flag\n"
+        f"makes it available in every project, not just the current dir.)"
     )
 
 

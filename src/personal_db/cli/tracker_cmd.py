@@ -3,7 +3,7 @@ import typer
 from personal_db.cli.state import get_root
 from personal_db.config import Config
 from personal_db.db import apply_tracker_schema, init_db
-from personal_db.installer import install_template
+from personal_db.installer import install_template, update_template
 from personal_db.manifest import load_manifest
 from personal_db.wizard.menu import run_menu
 from personal_db.wizard.runner import run_tracker
@@ -94,6 +94,25 @@ def install(name: str) -> None:
     init_db(cfg.db_path)
     apply_tracker_schema(cfg.db_path, (dest / "schema.sql").read_text())
     typer.echo(f"Installed {name} -> {dest}")
+
+
+def reinstall(name: str) -> None:
+    """Overwrite an installed tracker's files from the bundled template.
+
+    Use this after editing a bundled template (manifest.yaml / ingest.py /
+    schema.sql / visualizations.py) — `personal-db sync` runs the *installed*
+    copy at <root>/trackers/<name>/, so template edits don't take effect until
+    the installed copy is refreshed. Re-applies schema.sql so additive column
+    changes land on the live DB."""
+    cfg = Config(root=get_root())
+    try:
+        dest = update_template(cfg, name)
+    except ValueError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from e
+    init_db(cfg.db_path)
+    apply_tracker_schema(cfg.db_path, (dest / "schema.sql").read_text())
+    typer.echo(f"Reinstalled {name} -> {dest}")
 
 
 def setup(name: str | None = typer.Argument(None)) -> None:
