@@ -235,3 +235,132 @@ def test_make_context_attaches_logger(tmp_root):
     # Logger name should identify both tracker and transform
     assert "mytracker" in ctx.log.name
     assert "geocoded" in ctx.log.name
+
+
+# ---------------------------------------------------------------------------
+# Task 6: enrich — basic (no dedup, no batching)
+# ---------------------------------------------------------------------------
+
+
+def _setup_db_with_source_table(tmp_root, rows: list[dict]) -> None:
+    """Create db.sqlite with a `raw` table populated and an empty `enriched` target."""
+    init_db(Config(root=tmp_root).db_path)
+    con = sqlite3.connect(Config(root=tmp_root).db_path)
+    con.execute("CREATE TABLE raw (id INTEGER PRIMARY KEY, val INTEGER)")
+    con.execute(
+        "CREATE TABLE enriched (source_id INTEGER PRIMARY KEY, doubled INTEGER)"
+    )
+    con.executemany("INSERT INTO raw (id, val) VALUES (:id, :val)", rows)
+    con.commit()
+    con.close()
+
+
+def test_enrich_processes_all_rows_when_cursor_empty(tmp_root):
+    _setup_db_with_source_table(
+        tmp_root, [{"id": 1, "val": 10}, {"id": 2, "val": 20}, {"id": 3, "val": 30}]
+    )
+    cfg = Config(root=tmp_root)
+    t = Tracker(name="tt", cfg=cfg, manifest=None)
+    ctx = make_context(t, _spec("doubler", "enriched", ["raw"]))
+
+    n = ctx.enrich(
+        source="raw",
+        target="enriched",
+        fn=lambda row: {"doubled": row["val"] * 2},
+    )
+
+    assert n == 3
+    con = sqlite3.connect(cfg.db_path)
+    out = con.execute("SELECT source_id, doubled FROM enriched ORDER BY source_id").fetchall()
+    assert out == [(1, 20), (2, 40), (3, 60)]
+
+
+def test_enrich_advances_cursor_to_last_processed(tmp_root):
+    _setup_db_with_source_table(tmp_root, [{"id": 1, "val": 10}, {"id": 2, "val": 20}])
+    cfg = Config(root=tmp_root)
+    t = Tracker(name="tt", cfg=cfg, manifest=None)
+    ctx = make_context(t, _spec("doubler", "enriched", ["raw"]))
+
+    ctx.enrich(source="raw", target="enriched", fn=lambda row: {"doubled": row["val"] * 2})
+
+    # Re-create the context and verify cursor persisted
+    ctx2 = make_context(t, _spec("doubler", "enriched", ["raw"]))
+    assert ctx2.cursor.get() == "2"
+
+
+def test_enrich_skips_already_processed_rows(tmp_root):
+    _setup_db_with_source_table(tmp_root, [{"id": 1, "val": 10}, {"id": 2, "val": 20}])
+    cfg = Config(root=tmp_root)
+    t = Tracker(name="tt", cfg=cfg, manifest=None)
+    ctx = make_context(t, _spec("doubler", "enriched", ["raw"]))
+
+    ctx.enrich(source="raw", target="enriched", fn=lambda row: {"doubled": row["val"] * 2})
+
+    # Insert a third row, run again
+    con = sqlite3.connect(cfg.db_path)
+    con.execute("INSERT INTO raw (id, val) VALUES (3, 30)")
+    con.commit()
+    con.close()
+
+    calls = []
+
+    def counting_fn(row):
+        calls.append(row["id"])
+        return {"doubled": row["val"] * 2}
+
+    ctx2 = make_context(t, _spec("doubler", "enriched", ["raw"]))
+    n = ctx2.enrich(source="raw", target="enriched", fn=counting_fn)
+
+    assert n == 1
+    assert calls == [3]  # only the new row
+
+
+def test_enrich_uses_explicit_source_key(tmp_root):
+    """source_key= overrides PK auto-detection."""
+    init_db(Config(root=tmp_root).db_path)
+    con = sqlite3.connect(Config(root=tmp_root).db_path)
+    con.execute("CREATE TABLE raw (rowid_alias INTEGER PRIMARY KEY, val INTEGER, ord INTEGER UNIQUE)")
+    con.execute("CREATE TABLE enriched (source_ord INTEGER PRIMARY KEY, doubled INTEGER)")
+    con.executemany(
+        "INSERT INTO raw (rowid_alias, val, ord) VALUES (:r, :v, :o)",
+        [{"r": 100, "v": 1, "o": 1}, {"r": 200, "v": 2, "o": 2}],
+    )
+    con.commit()
+    con.close()
+
+    cfg = Config(root=tmp_root)
+    t = Tracker(name="tt", cfg=cfg, manifest=None)
+    ctx = make_context(t, _spec("d", "enriched", ["raw"]))
+
+    ctx.enrich(
+        source="raw",
+        target="enriched",
+        fn=lambda row: {"doubled": row["val"] * 2},
+        source_key="ord",
+    )
+
+    con = sqlite3.connect(cfg.db_path)
+    out = con.execute("SELECT source_ord, doubled FROM enriched ORDER BY source_ord").fetchall()
+    assert out == [(1, 2), (2, 4)]
+    con.close()
+
+
+def test_enrich_respects_where_clause(tmp_root):
+    _setup_db_with_source_table(
+        tmp_root, [{"id": 1, "val": 10}, {"id": 2, "val": 20}, {"id": 3, "val": 30}]
+    )
+    cfg = Config(root=tmp_root)
+    t = Tracker(name="tt", cfg=cfg, manifest=None)
+    ctx = make_context(t, _spec("d", "enriched", ["raw"]))
+
+    n = ctx.enrich(
+        source="raw",
+        target="enriched",
+        fn=lambda row: {"doubled": row["val"] * 2},
+        where="val > 15",
+    )
+
+    assert n == 2
+    con = sqlite3.connect(cfg.db_path)
+    ids = [r[0] for r in con.execute("SELECT source_id FROM enriched ORDER BY source_id")]
+    assert ids == [2, 3]

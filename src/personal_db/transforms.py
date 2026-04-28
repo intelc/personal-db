@@ -175,7 +175,69 @@ class TransformContext:
     _tracker: Tracker = field(repr=False)
     _spec: TransformSpec = field(repr=False)
 
-    # `enrich` will be added as a method in Task 6.
+    def enrich(
+        self,
+        *,
+        source: str,
+        target: str,
+        fn: Callable[[sqlite3.Row], dict],
+        source_key: str | None = None,
+        dedup_key: Callable[[sqlite3.Row], str] | None = None,  # used in Task 7
+        batch_size: int = 1,  # used in Task 8
+        where: str | None = None,
+    ) -> int:
+        """Enrich `source` rows into `target`.
+
+        Opens a separate sqlite connection so per-row commits are independent
+        of any outer transaction on self.con.  Uses a cursor stored under
+        self.cursor to resume from where the last invocation left off.
+
+        Returns the number of source rows processed in this invocation.
+        """
+        # Open a separate connection so per-batch commits are independent of
+        # any outer transaction the framework may have opened on self.con.
+        con = connect(self._tracker.cfg.db_path)
+        try:
+            con.row_factory = sqlite3.Row
+            sk = source_key or _detect_pk(con, source)
+            tk = _detect_pk(con, target)
+
+            last = self.cursor.get()
+
+            # Detect source key column type to choose the right sentinel value.
+            type_row = next(
+                r for r in con.execute(f"PRAGMA table_info({source})") if r[1] == sk
+            )
+            col_type = type_row[2].upper()
+            if "INT" in col_type:
+                cursor_val: Any = int(last) if last else 0
+            else:
+                cursor_val = last if last is not None else ""
+
+            sql = f"SELECT * FROM {source} WHERE {sk} > ?"
+            params: list[Any] = [cursor_val]
+            if where:
+                sql += f" AND ({where})"
+            sql += f" ORDER BY {sk}"
+
+            processed = 0
+            for row in con.execute(sql, params):
+                result = fn(row)
+                cols = [tk, *result.keys()]
+                placeholders = ",".join("?" * len(cols))
+                update_clause = ", ".join(f"{c}=excluded.{c}" for c in result)
+                target_sql = (
+                    f"INSERT INTO {target} ({','.join(cols)}) VALUES ({placeholders}) "
+                    f"ON CONFLICT({tk}) DO UPDATE SET {update_clause}"
+                )
+                con.execute(target_sql, [row[sk], *result.values()])
+                # Per-row commit for now; Task 8 will add real batch_size handling.
+                con.commit()
+                self.cursor.set(str(row[sk]))
+                processed += 1
+            return processed
+        finally:
+            con.close()
 
 
 def make_context(t: Tracker, spec: TransformSpec) -> TransformContext:
