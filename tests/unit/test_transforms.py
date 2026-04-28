@@ -159,6 +159,12 @@ def test_detect_pk_named_column():
     assert _detect_pk(con, "t") == "uuid"
 
 
+def test_detect_pk_when_pk_is_not_first_column():
+    """Verify _detect_pk filters by pk>0, not just position 0."""
+    con = _make_db("CREATE TABLE t (val INTEGER, name TEXT, uuid TEXT PRIMARY KEY)")
+    assert _detect_pk(con, "t") == "uuid"
+
+
 def test_detect_pk_composite_raises():
     con = _make_db("CREATE TABLE t (a TEXT, b TEXT, val INTEGER, PRIMARY KEY (a, b))")
     with pytest.raises(TransformError, match="composite"):
