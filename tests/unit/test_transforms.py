@@ -1,3 +1,4 @@
+import json as _json
 import sqlite3
 import textwrap
 from pathlib import Path
@@ -680,3 +681,147 @@ def test_sync_one_skips_transforms_when_none_declared(tmp_root):
 
     con = sqlite3.connect(cfg.db_path)
     assert con.execute("SELECT val FROM raw WHERE id=1").fetchone()[0] == 99
+
+
+# ---------------------------------------------------------------------------
+# Task 10: error isolation contract tests
+# ---------------------------------------------------------------------------
+
+
+def test_failed_transform_does_not_break_sync_and_is_logged(tmp_root):
+    schema = textwrap.dedent("""
+        CREATE TABLE IF NOT EXISTS raw (id INTEGER PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS bad (source_id INTEGER PRIMARY KEY);
+    """).strip()
+
+    ingest = textwrap.dedent("""
+        from personal_db.transforms import transform
+
+        def sync(t):
+            t.upsert("raw", [{"id": 1}], key=["id"])
+
+        @transform(writes="bad", depends_on=["raw"])
+        def explode(t, ctx):
+            raise RuntimeError("kaboom")
+    """).strip()
+
+    manifest = textwrap.dedent("""
+        name: z
+        description: t
+        permission_type: none
+        time_column: ts
+        granularity: event
+        schema:
+          tables:
+            raw:
+              columns:
+                id: {type: INTEGER, semantic: pk}
+    """).strip()
+
+    _write_tracker(tmp_root, "z", schema, ingest, manifest)
+    cfg = Config(root=tmp_root)
+
+    # sync_one should NOT raise even though the transform did
+    sync_one(cfg, "z")
+
+    # Error logged to sync_errors.jsonl
+    err_path = cfg.state_dir / "sync_errors.jsonl"
+    assert err_path.exists()
+    lines = err_path.read_text().strip().splitlines()
+    parsed = [_json.loads(line) for line in lines]
+    matches = [p for p in parsed if p.get("tracker") == "z" and p.get("transform") == "explode"]
+    assert len(matches) == 1
+    assert "kaboom" in matches[0]["error"]
+
+
+def test_independent_branches_continue_when_sibling_fails(tmp_root):
+    """Two transforms both depending only on raw; one fails, the other still runs."""
+    schema = textwrap.dedent("""
+        CREATE TABLE IF NOT EXISTS raw (id INTEGER PRIMARY KEY, val INTEGER);
+        CREATE TABLE IF NOT EXISTS good (source_id INTEGER PRIMARY KEY, v INTEGER);
+        CREATE TABLE IF NOT EXISTS bad (source_id INTEGER PRIMARY KEY);
+    """).strip()
+
+    ingest = textwrap.dedent("""
+        from personal_db.transforms import transform
+
+        def sync(t):
+            t.upsert("raw", [{"id": 1, "val": 7}], key=["id"])
+
+        @transform(writes="good", depends_on=["raw"])
+        def good(t, ctx):
+            ctx.enrich(source="raw", target="good", fn=lambda r: {"v": r["val"]})
+
+        @transform(writes="bad", depends_on=["raw"])
+        def bad(t, ctx):
+            raise RuntimeError("planned failure")
+    """).strip()
+
+    manifest = textwrap.dedent("""
+        name: w
+        description: t
+        permission_type: none
+        time_column: ts
+        granularity: event
+        schema:
+          tables:
+            raw:
+              columns:
+                id: {type: INTEGER, semantic: pk}
+    """).strip()
+
+    _write_tracker(tmp_root, "w", schema, ingest, manifest)
+    cfg = Config(root=tmp_root)
+    sync_one(cfg, "w")
+
+    con = sqlite3.connect(cfg.db_path)
+    # `good` ran successfully even though `bad` failed
+    assert con.execute("SELECT v FROM good WHERE source_id=1").fetchone() == (7,)
+    # `bad` produced nothing
+    assert con.execute("SELECT count(*) FROM bad").fetchone()[0] == 0
+
+
+def test_downstream_transform_skipped_when_dep_fails(tmp_root):
+    """If A fails, B (which depends on A's output) should be skipped this tick."""
+    schema = textwrap.dedent("""
+        CREATE TABLE IF NOT EXISTS raw (id INTEGER PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS mid (source_id INTEGER PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS final (source_id INTEGER PRIMARY KEY);
+    """).strip()
+
+    ingest = textwrap.dedent("""
+        from personal_db.transforms import transform
+
+        def sync(t):
+            t.upsert("raw", [{"id": 1}], key=["id"])
+
+        @transform(writes="mid", depends_on=["raw"])
+        def step_a(t, ctx):
+            raise RuntimeError("upstream broke")
+
+        @transform(writes="final", depends_on=["mid"])
+        def step_b(t, ctx):
+            ctx.con.execute("INSERT INTO final (source_id) VALUES (1)")
+            ctx.con.commit()
+    """).strip()
+
+    manifest = textwrap.dedent("""
+        name: chain
+        description: t
+        permission_type: none
+        time_column: ts
+        granularity: event
+        schema:
+          tables:
+            raw:
+              columns:
+                id: {type: INTEGER, semantic: pk}
+    """).strip()
+
+    _write_tracker(tmp_root, "chain", schema, ingest, manifest)
+    cfg = Config(root=tmp_root)
+    sync_one(cfg, "chain")
+
+    con = sqlite3.connect(cfg.db_path)
+    assert con.execute("SELECT count(*) FROM mid").fetchone()[0] == 0
+    assert con.execute("SELECT count(*) FROM final").fetchone()[0] == 0  # skipped
