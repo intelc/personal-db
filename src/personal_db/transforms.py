@@ -222,6 +222,7 @@ class TransformContext:
             sql += f" ORDER BY {sk}"
 
             # Lazily ensure cache table exists when dedup is in play.
+            # Done outside the batch loop so creation is idempotent across runs.
             cache_table = f"_{target}_cache"
             if dedup_key is not None:
                 con.execute(
@@ -230,36 +231,51 @@ class TransformContext:
                 )
                 con.commit()
 
-            processed = 0
-            for row in con.execute(sql, params):
-                if dedup_key is not None:
-                    k = dedup_key(row)
-                    cached = con.execute(
-                        f"SELECT value FROM {cache_table} WHERE key=?", (k,)
-                    ).fetchone()
-                    if cached is not None:
-                        result = json.loads(cached[0])
-                    else:
-                        result = fn(row)
-                        con.execute(
-                            f"INSERT INTO {cache_table} (key, value) VALUES (?, ?)",
-                            (k, json.dumps(result)),
-                        )
-                else:
-                    result = fn(row)
+            # Pre-fetch ALL rows before the batch loop to avoid cursor
+            # invalidation when we BEGIN/COMMIT inside the iteration.
+            rows = list(con.execute(sql, params))
 
-                cols = [tk, *result.keys()]
-                placeholders = ",".join("?" * len(cols))
-                update_clause = ", ".join(f"{c}=excluded.{c}" for c in result)
-                target_sql = (
-                    f"INSERT INTO {target} ({','.join(cols)}) VALUES ({placeholders}) "
-                    f"ON CONFLICT({tk}) DO UPDATE SET {update_clause}"
-                )
-                con.execute(target_sql, [row[sk], *result.values()])
-                # Per-row commit for now; Task 8 will add real batch_size handling.
-                con.commit()
-                self.cursor.set(str(row[sk]))
-                processed += 1
+            processed = 0
+            for batch_start in range(0, len(rows), batch_size):
+                batch = rows[batch_start : batch_start + batch_size]
+                con.execute("BEGIN")
+                try:
+                    for row in batch:
+                        if dedup_key is not None:
+                            k = dedup_key(row)
+                            cached = con.execute(
+                                f"SELECT value FROM {cache_table} WHERE key=?", (k,)
+                            ).fetchone()
+                            if cached is not None:
+                                result = json.loads(cached[0])
+                            else:
+                                result = fn(row)
+                                con.execute(
+                                    f"INSERT INTO {cache_table} (key, value) VALUES (?, ?)",
+                                    (k, json.dumps(result)),
+                                )
+                        else:
+                            result = fn(row)
+
+                        cols = [tk, *result.keys()]
+                        placeholders = ",".join("?" * len(cols))
+                        update_clause = ", ".join(f"{c}=excluded.{c}" for c in result)
+                        target_sql = (
+                            f"INSERT INTO {target} ({','.join(cols)}) VALUES ({placeholders}) "
+                            f"ON CONFLICT({tk}) DO UPDATE SET {update_clause}"
+                        )
+                        con.execute(target_sql, [row[sk], *result.values()])
+                        processed += 1
+                    con.commit()
+                    # Cursor write happens AFTER con.commit() succeeds.
+                    # self.cursor writes to a separate sqlite file (state/cursors.sqlite),
+                    # so it cannot be part of the BEGIN/COMMIT transaction on `con`.
+                    # If cursor.set() fails here the batch is still persisted; on next
+                    # sync the batch will be reprocessed — harmless due to upsert.
+                    self.cursor.set(str(batch[-1][sk]))
+                except Exception:
+                    con.rollback()
+                    raise
             return processed
         finally:
             con.close()

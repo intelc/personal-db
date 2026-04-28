@@ -453,3 +453,100 @@ def test_enrich_dedup_creates_underscore_prefixed_cache_table(tmp_root):
     assert "_enriched_cache" in tables
     rows = con.execute("SELECT key, value FROM _enriched_cache").fetchall()
     assert rows == [("10", '{"doubled": 20}')]
+
+
+# ---------------------------------------------------------------------------
+# Task 8: enrich — per-batch atomic commits + failure recovery
+# ---------------------------------------------------------------------------
+
+
+def test_enrich_batch_atomic_rollback_on_failure(tmp_root):
+    """fn raises on row 5; rows 1-4 (one full batch of 4) should persist; rows 5-8 should not."""
+    _setup_db_with_source_table(
+        tmp_root, [{"id": i, "val": i * 10} for i in range(1, 9)]
+    )
+    cfg = Config(root=tmp_root)
+    t = Tracker(name="tt", cfg=cfg, manifest=None)
+    ctx = make_context(t, _spec("d", "enriched", ["raw"]))
+
+    def fn(row):
+        if row["id"] == 5:
+            raise RuntimeError("simulated API failure")
+        return {"doubled": row["val"] * 2}
+
+    with pytest.raises(RuntimeError, match="simulated"):
+        ctx.enrich(source="raw", target="enriched", fn=fn, batch_size=4)
+
+    # First batch (ids 1-4) committed; second batch (ids 5-8) rolled back.
+    con = sqlite3.connect(cfg.db_path)
+    rows = con.execute("SELECT source_id FROM enriched ORDER BY source_id").fetchall()
+    assert [r[0] for r in rows] == [1, 2, 3, 4]
+
+    # Cursor advanced to the last successful row (4), not past it.
+    ctx2 = make_context(t, _spec("d", "enriched", ["raw"]))
+    assert ctx2.cursor.get() == "4"
+
+
+def test_enrich_resumes_after_failure(tmp_root):
+    """A second sync after a failed first sync should pick up where it left off."""
+    _setup_db_with_source_table(
+        tmp_root, [{"id": i, "val": i * 10} for i in range(1, 5)]
+    )
+    cfg = Config(root=tmp_root)
+    t = Tracker(name="tt", cfg=cfg, manifest=None)
+
+    fail_on = {"id": 3}
+
+    def fn(row):
+        if row["id"] == fail_on["id"]:
+            raise RuntimeError("flake")
+        return {"doubled": row["val"] * 2}
+
+    ctx = make_context(t, _spec("d", "enriched", ["raw"]))
+    with pytest.raises(RuntimeError):
+        ctx.enrich(source="raw", target="enriched", fn=fn, batch_size=2)
+
+    # Batch of [1,2] committed; [3,4] rolled back.
+    con = sqlite3.connect(cfg.db_path)
+    assert [r[0] for r in con.execute("SELECT source_id FROM enriched ORDER BY source_id")] == [1, 2]
+    con.close()
+
+    # Now "fix" the API and re-run
+    fail_on["id"] = -1  # never fires
+    ctx2 = make_context(t, _spec("d", "enriched", ["raw"]))
+    n = ctx2.enrich(source="raw", target="enriched", fn=fn, batch_size=2)
+    assert n == 2  # rows 3 and 4
+
+    con = sqlite3.connect(cfg.db_path)
+    assert [r[0] for r in con.execute("SELECT source_id FROM enriched ORDER BY source_id")] == [1, 2, 3, 4]
+
+
+def test_enrich_dedup_cache_writes_rolled_back_with_batch(tmp_root):
+    """A cache write inside a failed batch should NOT persist."""
+    _setup_db_with_source_table(
+        tmp_root,
+        [{"id": 1, "val": 10}, {"id": 2, "val": 20}, {"id": 3, "val": 30}],
+    )
+    cfg = Config(root=tmp_root)
+    t = Tracker(name="tt", cfg=cfg, manifest=None)
+    ctx = make_context(t, _spec("d", "enriched", ["raw"]))
+
+    def fn(row):
+        if row["id"] == 2:
+            raise RuntimeError("flake")
+        return {"doubled": row["val"] * 2}
+
+    with pytest.raises(RuntimeError):
+        ctx.enrich(
+            source="raw", target="enriched", fn=fn,
+            dedup_key=lambda r: str(r["val"]), batch_size=3,
+        )
+
+    # The whole batch rolled back: no rows in target, no entries in cache.
+    con = sqlite3.connect(cfg.db_path)
+    assert con.execute("SELECT count(*) FROM enriched").fetchone()[0] == 0
+    # Cache table may or may not exist (depending on creation timing); if it
+    # exists, it should be empty.
+    tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if "_enriched_cache" in tables:
+        assert con.execute("SELECT count(*) FROM _enriched_cache").fetchone()[0] == 0
