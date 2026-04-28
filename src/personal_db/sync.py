@@ -75,6 +75,84 @@ def _ensure_schema(cfg: Config, tracker_dir: Path) -> None:
     apply_tracker_schema(cfg.db_path, schema_sql)
 
 
+def _extract_schema_tables(schema_sql: str) -> set[str]:
+    """Pull table names out of CREATE TABLE statements in schema.sql.
+
+    Used to validate that every @transform's `writes` and `depends_on` refer
+    to tables actually declared in the tracker's schema.
+    """
+    pattern = re.compile(
+        r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[\"`]?(\w+)[\"`]?",
+        re.IGNORECASE,
+    )
+    return set(pattern.findall(schema_sql))
+
+
+def _record_transform_error(cfg: Config, tracker: str, transform_name: str, err: Exception) -> None:
+    err_path = cfg.state_dir / "sync_errors.jsonl"
+    with err_path.open("a") as f:
+        f.write(
+            json.dumps(
+                {
+                    "ts": datetime.now(UTC).isoformat(),
+                    "tracker": tracker,
+                    "transform": transform_name,
+                    "error": str(err),
+                    "tb": traceback.format_exc(),
+                }
+            )
+            + "\n"
+        )
+
+
+def _run_transforms(cfg: Config, name: str, mod, tracker_dir: Path) -> None:
+    """Discover @transform functions in `mod`, validate the DAG, and run in topo order.
+
+    Errors per-transform are caught and logged to sync_errors.jsonl; downstream
+    transforms whose deps failed are skipped, but independent branches still run.
+    """
+    from personal_db.transforms import (
+        TransformError,
+        make_context,
+        topo_sort,
+        validate,
+    )
+
+    specs = [
+        v._transform_spec
+        for v in vars(mod).values()
+        if hasattr(v, "_transform_spec")
+    ]
+    if not specs:
+        return
+
+    schema_sql = (tracker_dir / "schema.sql").read_text()
+    schema_tables = _extract_schema_tables(schema_sql)
+
+    try:
+        validate(specs, schema_tables=schema_tables)
+    except TransformError as e:
+        _record_transform_error(cfg, name, "<validation>", e)
+        return
+
+    manifest = load_manifest(tracker_dir / "manifest.yaml")
+    t = Tracker(name=name, cfg=cfg, manifest=manifest)
+
+    failed_writes: set[str] = set()
+    for spec in topo_sort(specs):
+        if any(d in failed_writes for d in spec.depends_on):
+            # Upstream transform failed this tick; skip downstream.
+            continue
+        ctx = make_context(t, spec)
+        try:
+            spec.fn(t, ctx)
+        except Exception as e:
+            failed_writes.add(spec.writes)
+            _record_transform_error(cfg, name, spec.name, e)
+        finally:
+            ctx.con.close()
+
+
 def sync_one(cfg: Config, name: str) -> None:
     tracker_dir = cfg.trackers_dir / name
     manifest = load_manifest(tracker_dir / "manifest.yaml")
@@ -82,6 +160,7 @@ def sync_one(cfg: Config, name: str) -> None:
     mod = _load_ingest_module(tracker_dir, name)
     t = Tracker(name=name, cfg=cfg, manifest=manifest)
     mod.sync(t)
+    _run_transforms(cfg, name, mod, tracker_dir)
     _write_last_run(cfg, name, datetime.now(UTC).isoformat())
     _store_horizon(cfg, name, manifest)
 

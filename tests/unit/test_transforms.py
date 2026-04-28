@@ -1,9 +1,12 @@
 import sqlite3
+import textwrap
+from pathlib import Path
 
 import pytest
 
 from personal_db.config import Config
 from personal_db.db import init_db
+from personal_db.sync import sync_one
 from personal_db.tracker import Tracker
 from personal_db.transforms import (
     TransformContext,
@@ -20,6 +23,16 @@ from personal_db.transforms import (
 def _spec(name: str, writes: str, depends_on: list[str]) -> TransformSpec:
     """Build a spec without needing a real function."""
     return TransformSpec(name=name, fn=lambda t, ctx: None, writes=writes, depends_on=depends_on)
+
+
+def _write_tracker(tmp_root: Path, name: str, schema: str, ingest: str, manifest: str) -> Path:
+    """Create a fake tracker dir under tmp_root/trackers/<name>/."""
+    d = tmp_root / "trackers" / name
+    d.mkdir(parents=True)
+    (d / "schema.sql").write_text(schema)
+    (d / "ingest.py").write_text(ingest)
+    (d / "manifest.yaml").write_text(manifest)
+    return d
 
 
 def test_decorator_attaches_spec():
@@ -579,3 +592,91 @@ def test_enrich_target_writes_rolled_back_when_batch_fails_mid_batch(tmp_root):
     # Cursor should NOT have advanced (no batch committed).
     ctx2 = make_context(t, _spec("d", "enriched", ["raw"]))
     assert ctx2.cursor.get() in (None, "")
+
+
+# ---------------------------------------------------------------------------
+# Task 9: sync_one integration — _run_transforms called after ingest
+# ---------------------------------------------------------------------------
+
+
+def test_sync_one_runs_transforms_after_ingest(tmp_root):
+    schema = textwrap.dedent("""
+        CREATE TABLE IF NOT EXISTS raw (id INTEGER PRIMARY KEY, val INTEGER);
+        CREATE TABLE IF NOT EXISTS doubled (source_id INTEGER PRIMARY KEY, d INTEGER);
+        CREATE TABLE IF NOT EXISTS sum_t (k TEXT PRIMARY KEY, total INTEGER);
+    """).strip()
+
+    ingest = textwrap.dedent("""
+        from personal_db.tracker import Tracker
+        from personal_db.transforms import transform
+
+        def sync(t: Tracker) -> None:
+            t.upsert("raw", [{"id": 1, "val": 10}, {"id": 2, "val": 20}], key=["id"])
+
+        @transform(writes="doubled", depends_on=["raw"])
+        def double_them(t, ctx):
+            ctx.enrich(source="raw", target="doubled", fn=lambda r: {"d": r["val"] * 2})
+
+        @transform(writes="sum_t", depends_on=["doubled"])
+        def total(t, ctx):
+            ctx.con.execute("DELETE FROM sum_t")
+            ctx.con.execute("INSERT INTO sum_t (k, total) SELECT 'all', sum(d) FROM doubled")
+            ctx.con.commit()
+    """).strip()
+
+    manifest = textwrap.dedent("""
+        name: x
+        description: test
+        permission_type: none
+        time_column: ts
+        granularity: event
+        schema:
+          tables:
+            raw:
+              columns:
+                id: {type: INTEGER, semantic: pk}
+                val: {type: INTEGER, semantic: value}
+    """).strip()
+
+    _write_tracker(tmp_root, "x", schema, ingest, manifest)
+
+    cfg = Config(root=tmp_root)
+    sync_one(cfg, "x")
+
+    con = sqlite3.connect(cfg.db_path)
+    raw = con.execute("SELECT id, val FROM raw ORDER BY id").fetchall()
+    doubled = con.execute("SELECT source_id, d FROM doubled ORDER BY source_id").fetchall()
+    summed = con.execute("SELECT k, total FROM sum_t").fetchall()
+
+    assert raw == [(1, 10), (2, 20)]
+    assert doubled == [(1, 20), (2, 40)]
+    assert summed == [("all", 60)]
+
+
+def test_sync_one_skips_transforms_when_none_declared(tmp_root):
+    """A tracker with no @transform-decorated functions should still sync cleanly."""
+    schema = "CREATE TABLE IF NOT EXISTS raw (id INTEGER PRIMARY KEY, val INTEGER);"
+    ingest = textwrap.dedent("""
+        from personal_db.tracker import Tracker
+        def sync(t: Tracker) -> None:
+            t.upsert("raw", [{"id": 1, "val": 99}], key=["id"])
+    """).strip()
+    manifest = textwrap.dedent("""
+        name: y
+        description: test
+        permission_type: none
+        time_column: ts
+        granularity: event
+        schema:
+          tables:
+            raw:
+              columns:
+                id: {type: INTEGER, semantic: pk}
+    """).strip()
+
+    _write_tracker(tmp_root, "y", schema, ingest, manifest)
+    cfg = Config(root=tmp_root)
+    sync_one(cfg, "y")  # must not raise
+
+    con = sqlite3.connect(cfg.db_path)
+    assert con.execute("SELECT val FROM raw WHERE id=1").fetchone()[0] == 99
