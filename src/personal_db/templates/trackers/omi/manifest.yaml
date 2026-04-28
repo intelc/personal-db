@@ -1,0 +1,36 @@
+name: omi
+description: Omi wearable conversations — transcripts, summaries, action items
+permission_type: api_key
+setup_steps:
+  - type: instructions
+    text: |
+      Get an Omi API key:
+
+        1. Open the Omi app on your phone
+        2. Settings → Developer → Personal API Key
+        3. Copy the key (you'll paste it in the next step)
+
+      Docs: https://docs.omi.me/docs/developer/api/apps
+  - type: env_var
+    name: OMI_API_KEY
+    prompt: "Omi personal API key (Settings → Developer in the Omi app)"
+    secret: true
+schedule:
+  every: 30m
+time_column: started_at
+granularity: event
+schema:
+  tables:
+    omi_conversations:
+      columns:
+        id:               {type: TEXT,    semantic: "Omi conversation id, primary key"}
+        started_at:       {type: TEXT,    semantic: "ISO-8601 conversation start (UTC)"}
+        finished_at:      {type: TEXT,    semantic: "ISO-8601 conversation end (UTC)"}
+        duration_seconds: {type: INTEGER, semantic: "wall-clock duration"}
+        title:            {type: TEXT,    semantic: "short Omi-generated title"}
+        overview:         {type: TEXT,    semantic: "Omi-generated one-paragraph summary"}
+        transcript:       {type: TEXT,    semantic: "full transcript, one line per segment: 'User: ...' / 'Other: ...'"}
+        action_items:     {type: TEXT,    semantic: "JSON array of {description, completed} items extracted by Omi"}
+        category:         {type: TEXT,    semantic: "Omi category tag (e.g. work, personal, health)"}
+        source:           {type: TEXT,    semantic: "capture source (omi device / friend / external_integration)"}
+related_entities: []
