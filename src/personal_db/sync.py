@@ -13,6 +13,7 @@ from personal_db.data_horizon import compute_and_store as _store_horizon
 from personal_db.db import apply_tracker_schema, init_db
 from personal_db.manifest import load_manifest
 from personal_db.tracker import Tracker
+from personal_db.transforms import TransformError, make_context, topo_sort, validate
 
 _EVERY_RE = re.compile(r"^(\d+)\s*([smhd])$")
 
@@ -111,13 +112,6 @@ def _run_transforms(cfg: Config, name: str, mod, tracker_dir: Path) -> None:
     Errors per-transform are caught and logged to sync_errors.jsonl; downstream
     transforms whose deps failed are skipped, but independent branches still run.
     """
-    from personal_db.transforms import (
-        TransformError,
-        make_context,
-        topo_sort,
-        validate,
-    )
-
     specs = [
         v._transform_spec
         for v in vars(mod).values()

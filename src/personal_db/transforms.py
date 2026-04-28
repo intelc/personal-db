@@ -183,8 +183,8 @@ class TransformContext:
         target: str,
         fn: Callable[[sqlite3.Row], dict],
         source_key: str | None = None,
-        dedup_key: Callable[[sqlite3.Row], str] | None = None,  # used in Task 7
-        batch_size: int = 1,  # used in Task 8
+        dedup_key: Callable[[sqlite3.Row], str] | None = None,
+        batch_size: int = 1,
         where: str | None = None,
     ) -> int:
         """Enrich `source` rows into `target`.
