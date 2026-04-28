@@ -15,6 +15,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from personal_db.db import connect
+from personal_db.tracker import Cursor, Tracker
+
 
 @dataclass
 class TransformSpec:
@@ -152,10 +155,6 @@ def _detect_pk(con: sqlite3.Connection, table: str) -> str:
             f"specify source_key= explicitly in enrich()"
         )
     return pk_cols[0]
-
-
-from personal_db.db import connect  # noqa: E402
-from personal_db.tracker import Cursor, Tracker  # noqa: E402
 
 
 @dataclass
