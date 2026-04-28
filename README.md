@@ -1,59 +1,93 @@
 # personal_db
 
-Personal data layer for AI agents. SQLite + per-tracker scripts + MCP server. macOS only in v0.
+The missing open-source database + data-sync piece for self-hosted agentic second-brain systems.
+
+Where Obsidian holds your notes, `personal_db` holds your structured data — sleep, code, messages, screen time, contacts, calendar — in a local SQLite file, and exposes it to AI agents over MCP so they have persistent memory of you across tools (Claude Desktop, Claude Code, OpenClaw, Cursor, …).
+
+SQLite + per-tracker ingest scripts + MCP server. macOS only in v0.
 
 ## Install
 
 ```bash
-git clone <this repo>
-cd personal_db
+bash <(curl -LsSf https://raw.githubusercontent.com/intelc/personal-db/main/install.sh)
+```
+
+![install demo](docs/demos/install-demo.gif)
+
+This installs [`uv`](https://github.com/astral-sh/uv) if you don't have it, then `uv tool install`s `personal-db` and launches the setup wizard.
+
+The wizard initializes the data root, then asks how you want to configure trackers — **Browser** (visual wizard at http://127.0.0.1:8765/setup), **Terminal** (questionary prompts), or **Skip**.
+
+**Why `bash <(...)` instead of `curl ... | bash`?** Process substitution keeps your terminal connected as stdin, so the interactive wizard launches automatically after install. The `curl | bash` form pipes the script *into* bash's stdin, which means there's no TTY left for an interactive prompt. Both forms install the binary correctly; only the first auto-launches the wizard.
+
+**Non-interactive install** (CI, headless servers — wizard skipped):
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/intelc/personal-db/main/install.sh | bash
+# then run `personal-db setup` whenever you're ready
+```
+
+`PERSONAL_DB_NO_SETUP=1` also opts out of the wizard if you piped via `bash <(...)` and want install-only.
+
+### From source (for development)
+
+```bash
+git clone https://github.com/intelc/personal-db
+cd personal-db
 ./scripts/install_dev.sh
 source .venv/bin/activate
 ```
 
 ## Quick start
 
+`personal-db setup` is the only command you need to run after install. It walks through tracker selection, configuration, scheduler install, and agent wire-up in one flow.
+
 ```bash
-# Initialize the data root (default ~/personal_db)
-personal-db init
+personal-db setup
+```
 
-# Install some built-in trackers
-personal-db tracker install github_commits
-personal-db tracker install whoop
-personal-db tracker install screen_time
-personal-db tracker install imessage
-personal-db tracker install habits
+![setup wizard demo](docs/demos/setup-demo.gif)
 
-# Configure each connector via the interactive wizard
-personal-db tracker setup
-# (Or set up one specific tracker: personal-db tracker setup whoop)
-#
-# The wizard:
-#   - prompts for env vars (GITHUB_TOKEN, GITHUB_AUTHOR_EMAILS, WHOOP_CLIENT_ID, etc.)
-#     and writes them to <root>/.env (mode 0600, gitignored)
-#   - optional fields (like GITHUB_AUTHOR_EMAILS) can be skipped with Enter
-#   - launches OAuth flows in your browser for OAuth-based connectors (whoop)
-#   - probes Full Disk Access for chat.db / knowledgeC.db and opens System
-#     Settings if needed
-#   - runs a test sync after each connector to confirm it's working
+You'll be asked which mode you want:
 
-# First run: backfill what's available
+- **Browser** (recommended) — opens a visual wizard at `http://127.0.0.1:8765/setup` with a tracker list, form-based per-tracker setup, and click-through buttons for finalize steps.
+- **Terminal** — questionary-driven prompts in your shell.
+- **Skip** — exits cleanly; run `personal-db setup` again whenever you're ready.
+
+![browser setup wizard](docs/demos/screenshots/setup-overview.png)
+
+After you finish configuring trackers, finalize steps run automatically:
+
+1. **Scheduler** — installs a launchd job (`~/Library/LaunchAgents/com.personal_db.scheduler.plist`) that runs `personal-db sync --due` every 10 minutes.
+2. **MCP server** — auto-installs `personal_db` into the agents you choose (Claude Code, Claude Desktop, Cursor). Behind the scenes this calls `claude mcp add` (Code), or merges into `~/Library/Application Support/Claude/claude_desktop_config.json` (Desktop), or `~/.cursor/mcp.json` (Cursor).
+3. **Dashboard** (optional) — offers to launch the menu bar + dashboard via `personal-db ui`. Default is skip; agents read your data over MCP regardless of the dashboard being open.
+
+### After setup
+
+```bash
+# Pull historical data once (the scheduler only handles incremental sync going forward)
 personal-db backfill github_commits
 personal-db backfill whoop
 
-# Install the launchd scheduler (runs `personal-db sync --due` every 10 min)
-personal-db scheduler install
-
-# Add the MCP server to Claude Code
-# (use the absolute path — Claude Code spawns MCP servers with a minimal
-# environment that does NOT inherit your shell's PATH, so a bare
-# "personal-db" reference will fail to connect)
-claude mcp add personal_db -- "$(which personal-db)" mcp
-
-# Install the /insights skill
+# Install the /insights skill into Claude Code (one-time)
 mkdir -p ~/.claude/skills/personal-db
 cp src/personal_db/templates/claude_skill/insights.md ~/.claude/skills/personal-db/
+
+# Open the dashboard whenever you want
+personal-db ui
+
+# Add MCP into another agent later
+personal-db mcp install              # interactive picker
+personal-db mcp install cursor       # non-interactive single target
 ```
+
+The dashboard is a small read-only view over your local data — handy for spot-checking sync state and logging quick entries. Agents read the same data over MCP whether or not the dashboard is open.
+
+![dashboard](docs/demos/screenshots/dashboard.png)
+
+### Re-running setup
+
+`personal-db setup` is idempotent. Run it any time to add a new tracker, rotate a credential, or re-enable the scheduler. Existing values are shown as defaults (secrets masked) so you can press Enter to keep them.
 
 ## CLI argument order note
 
@@ -69,10 +103,9 @@ Credentials live in `<root>/.env` (default `~/personal_db/.env`, mode 0600).
 The file is loaded automatically on every `personal-db` invocation; shell
 environment variables override `.env` values (useful for debugging and tests).
 
-To rotate a credential or fix a misconfiguration, re-run
-`personal-db tracker setup <name>` — current values are shown as defaults
-(secrets are masked) so you can press Enter to keep them or type a new value
-to overwrite.
+To rotate a credential, re-run `personal-db setup` and reconfigure the
+relevant tracker — current values are shown as defaults (secrets are masked).
+Or jump straight to a single tracker via `personal-db tracker setup <name>`.
 
 ## Verify
 
@@ -82,32 +115,18 @@ In Claude Code:
 - "Log that I meditated today" → calls `log_event("habits", …)`
 - "/insights weekly review" → runs the skill, writes `notes/YYYY-MM-DD-weekly-review.md`
 
-## github_commits — capturing local-CLI commits
+## Creating your own tracker
 
-The setup wizard (`personal-db tracker setup github_commits`) asks for your
-GitHub token and then optionally for the email addresses you commit with.
-You can also set or update `GITHUB_AUTHOR_EMAILS` manually at any time.
+`personal-db` ships with a starter set of trackers (GitHub, Whoop, Screen Time, iMessage, …), but the most useful data is usually idiosyncratic to you. Three ways to add a new one:
 
-By default, `github_commits` matches commits via GitHub's standard email-to-user
-linkage (your GitHub login is derived automatically from the token). If you
-commit locally with an email that isn't on your GitHub account
-(`git config user.email`), those commits won't be attributed to you on GitHub
-and won't be captured.
+1. **Ask Claude.** Once MCP is wired up, ask Claude to use the `create_tracker` prompt — it walks through the design Q&A and writes all four files. Fastest path.
+2. **`personal-db tracker new <name>`** scaffolds a stub at `~/personal_db/trackers/<name>/`.
+3. **Copy a bundled tracker** under `src/personal_db/templates/trackers/` and adapt.
 
-To include them, set `GITHUB_AUTHOR_EMAILS` in `<root>/.env` (the wizard also
-prompts for this during setup):
-
-```bash
-echo 'GITHUB_AUTHOR_EMAILS=intel@intelchen.com,me@work.com' >> ~/personal_db/.env
-```
-
-Comma-separated; case-insensitive. Find your local email with:
-
-```bash
-git config user.email
-```
+A tracker is just four files: `manifest.yaml`, `schema.sql`, `ingest.py`, and an optional `visualizations.py`. Full guide with a worked example: **[docs/creating-trackers.md](docs/creating-trackers.md)**.
 
 ## Layout
 
+See `docs/creating-trackers.md` for the tracker-authoring guide.
 See `docs/superpowers/specs/2026-04-25-personal-db-v0-design.md` for the full design.
 See `docs/superpowers/plans/2026-04-25-personal-db-v0.md` for the implementation plan.
