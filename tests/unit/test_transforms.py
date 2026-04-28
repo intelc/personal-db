@@ -1,6 +1,15 @@
+import sqlite3
+
 import pytest
 
-from personal_db.transforms import TransformError, TransformSpec, topo_sort, transform, validate
+from personal_db.transforms import (
+    TransformError,
+    TransformSpec,
+    _detect_pk,
+    topo_sort,
+    transform,
+    validate,
+)
 
 
 def _spec(name: str, writes: str, depends_on: list[str]) -> TransformSpec:
@@ -131,3 +140,38 @@ def test_validate_passes_for_well_formed_dag():
     a = _spec("a", writes="ta", depends_on=["raw"])
     b = _spec("b", writes="tb", depends_on=["ta"])
     validate([a, b], schema_tables={"raw", "ta", "tb"})  # no exception
+
+
+def _make_db(*ddls: str) -> sqlite3.Connection:
+    con = sqlite3.connect(":memory:")
+    for ddl in ddls:
+        con.execute(ddl)
+    return con
+
+
+def test_detect_pk_single_column():
+    con = _make_db("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)")
+    assert _detect_pk(con, "t") == "id"
+
+
+def test_detect_pk_named_column():
+    con = _make_db("CREATE TABLE t (uuid TEXT PRIMARY KEY, val INTEGER)")
+    assert _detect_pk(con, "t") == "uuid"
+
+
+def test_detect_pk_composite_raises():
+    con = _make_db("CREATE TABLE t (a TEXT, b TEXT, val INTEGER, PRIMARY KEY (a, b))")
+    with pytest.raises(TransformError, match="composite"):
+        _detect_pk(con, "t")
+
+
+def test_detect_pk_no_pk_raises():
+    con = _make_db("CREATE TABLE t (a TEXT, b TEXT)")
+    with pytest.raises(TransformError, match="no primary key"):
+        _detect_pk(con, "t")
+
+
+def test_detect_pk_unknown_table_raises():
+    con = _make_db()
+    with pytest.raises(TransformError, match="unknown"):
+        _detect_pk(con, "nonexistent")

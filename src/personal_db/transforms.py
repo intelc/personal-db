@@ -9,6 +9,7 @@ declared (writes, depends_on) edges, and runs them in order after `sync()`.
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -125,3 +126,28 @@ def validate(specs: list[TransformSpec], *, schema_tables: set[str]) -> None:
 
     # Rule 4: acyclic (delegate to topo_sort, which raises on cycles)
     topo_sort(specs)
+
+
+def _detect_pk(con: sqlite3.Connection, table: str) -> str:
+    """Return the single-column primary key of `table`.
+
+    Uses `PRAGMA table_info(table)`. Each row has columns
+    (cid, name, type, notnull, dflt_value, pk). pk > 0 means the column
+    participates in the primary key (the value indicates position in a
+    composite PK; 0 means not part of any PK).
+    """
+    rows = list(con.execute(f"PRAGMA table_info({table})"))
+    if not rows:
+        raise TransformError(f"unknown table: {table}")
+    pk_cols = [r[1] for r in rows if r[5] > 0]  # r[1] is name, r[5] is pk position
+    if len(pk_cols) == 0:
+        raise TransformError(
+            f"table '{table}' has no primary key; "
+            f"specify source_key= explicitly in enrich()"
+        )
+    if len(pk_cols) > 1:
+        raise TransformError(
+            f"table '{table}' has a composite primary key {pk_cols}; "
+            f"specify source_key= explicitly in enrich()"
+        )
+    return pk_cols[0]
