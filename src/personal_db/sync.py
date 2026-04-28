@@ -172,6 +172,7 @@ def backfill_one(cfg: Config, name: str, start: str | None, end: str | None) -> 
     mod = _load_ingest_module(tracker_dir, name)
     t = Tracker(name=name, cfg=cfg, manifest=manifest)
     mod.backfill(t, start, end)
+    _run_transforms(cfg, name, mod, tracker_dir)
     _store_horizon(cfg, name, manifest)
 
 

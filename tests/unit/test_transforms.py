@@ -7,7 +7,7 @@ import pytest
 
 from personal_db.config import Config
 from personal_db.db import init_db
-from personal_db.sync import sync_one
+from personal_db.sync import backfill_one, sync_one
 from personal_db.tracker import Tracker
 from personal_db.transforms import (
     TransformContext,
@@ -825,3 +825,56 @@ def test_downstream_transform_skipped_when_dep_fails(tmp_root):
     con = sqlite3.connect(cfg.db_path)
     assert con.execute("SELECT count(*) FROM mid").fetchone()[0] == 0
     assert con.execute("SELECT count(*) FROM final").fetchone()[0] == 0  # skipped
+
+
+# ---------------------------------------------------------------------------
+# Task 11: backfill_one integration — _run_transforms called after backfill
+# ---------------------------------------------------------------------------
+
+
+def test_backfill_one_also_runs_transforms(tmp_root):
+    schema = textwrap.dedent("""
+        CREATE TABLE IF NOT EXISTS raw (id INTEGER PRIMARY KEY, val INTEGER);
+        CREATE TABLE IF NOT EXISTS enriched (source_id INTEGER PRIMARY KEY, doubled INTEGER);
+    """).strip()
+
+    ingest = textwrap.dedent("""
+        from personal_db.tracker import Tracker
+        from personal_db.transforms import transform
+
+        def backfill(t: Tracker, start, end) -> None:
+            t.upsert("raw", [{"id": 1, "val": 5}, {"id": 2, "val": 10}], key=["id"])
+
+        def sync(t: Tracker) -> None:
+            pass
+
+        @transform(writes="enriched", depends_on=["raw"])
+        def double_them(t, ctx):
+            ctx.enrich(source="raw", target="enriched", fn=lambda r: {"doubled": r["val"] * 2})
+    """).strip()
+
+    manifest = textwrap.dedent("""
+        name: bf
+        description: backfill transform test
+        permission_type: none
+        time_column: ts
+        granularity: event
+        schema:
+          tables:
+            raw:
+              columns:
+                id: {type: INTEGER, semantic: pk}
+                val: {type: INTEGER, semantic: value}
+    """).strip()
+
+    _write_tracker(tmp_root, "bf", schema, ingest, manifest)
+
+    cfg = Config(root=tmp_root)
+    backfill_one(cfg, "bf", start=None, end=None)
+
+    con = sqlite3.connect(cfg.db_path)
+    raw = con.execute("SELECT id, val FROM raw ORDER BY id").fetchall()
+    enriched = con.execute("SELECT source_id, doubled FROM enriched ORDER BY source_id").fetchall()
+
+    assert raw == [(1, 5), (2, 10)]
+    assert enriched == [(1, 10), (2, 20)]
