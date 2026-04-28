@@ -1,4 +1,11 @@
-from personal_db.transforms import TransformSpec, transform
+import pytest
+
+from personal_db.transforms import TransformError, TransformSpec, topo_sort, transform
+
+
+def _spec(name: str, writes: str, depends_on: list[str]) -> TransformSpec:
+    """Build a spec without needing a real function."""
+    return TransformSpec(name=name, fn=lambda t, ctx: None, writes=writes, depends_on=depends_on)
 
 
 def test_decorator_attaches_spec():
@@ -34,16 +41,6 @@ def test_decorator_copies_depends_on_list():
 
     deps.append("c")
     assert f._transform_spec.depends_on == ["a", "b"]
-
-
-import pytest
-
-from personal_db.transforms import TransformError, topo_sort
-
-
-def _spec(name: str, writes: str, depends_on: list[str]) -> TransformSpec:
-    """Build a spec without needing a real function."""
-    return TransformSpec(name=name, fn=lambda t, ctx: None, writes=writes, depends_on=depends_on)
 
 
 def test_topo_sort_linear_chain():
