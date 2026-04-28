@@ -364,3 +364,92 @@ def test_enrich_respects_where_clause(tmp_root):
     con = sqlite3.connect(cfg.db_path)
     ids = [r[0] for r in con.execute("SELECT source_id FROM enriched ORDER BY source_id")]
     assert ids == [2, 3]
+
+
+# ---------------------------------------------------------------------------
+# Task 7: enrich — content-addressed dedup cache
+# ---------------------------------------------------------------------------
+
+
+def test_enrich_dedup_calls_fn_once_per_unique_key(tmp_root):
+    """Two source rows with the same dedup_key should result in one fn call."""
+    _setup_db_with_source_table(
+        tmp_root,
+        [
+            {"id": 1, "val": 10},
+            {"id": 2, "val": 10},  # same val → same dedup key
+            {"id": 3, "val": 20},
+        ],
+    )
+    cfg = Config(root=tmp_root)
+    t = Tracker(name="tt", cfg=cfg, manifest=None)
+    ctx = make_context(t, _spec("d", "enriched", ["raw"]))
+
+    calls = []
+
+    def fn(row):
+        calls.append(row["id"])
+        return {"doubled": row["val"] * 2}
+
+    n = ctx.enrich(
+        source="raw",
+        target="enriched",
+        fn=fn,
+        dedup_key=lambda r: str(r["val"]),
+    )
+
+    assert n == 3
+    assert sorted(calls) == [1, 3]  # row 2 reused row 1's cached result
+
+    # All three target rows present
+    con = sqlite3.connect(cfg.db_path)
+    out = con.execute("SELECT source_id, doubled FROM enriched ORDER BY source_id").fetchall()
+    assert out == [(1, 20), (2, 20), (3, 40)]
+
+
+def test_enrich_dedup_cache_persists_across_invocations(tmp_root):
+    _setup_db_with_source_table(tmp_root, [{"id": 1, "val": 10}])
+    cfg = Config(root=tmp_root)
+    t = Tracker(name="tt", cfg=cfg, manifest=None)
+
+    calls = []
+
+    def fn(row):
+        calls.append(row["id"])
+        return {"doubled": row["val"] * 2}
+
+    ctx = make_context(t, _spec("d", "enriched", ["raw"]))
+    ctx.enrich(source="raw", target="enriched", fn=fn, dedup_key=lambda r: str(r["val"]))
+    assert calls == [1]
+
+    # Insert another row with the same val and re-run
+    con = sqlite3.connect(cfg.db_path)
+    con.execute("INSERT INTO raw (id, val) VALUES (2, 10)")
+    con.commit()
+    con.close()
+
+    ctx2 = make_context(t, _spec("d", "enriched", ["raw"]))
+    ctx2.enrich(source="raw", target="enriched", fn=fn, dedup_key=lambda r: str(r["val"]))
+
+    # fn was NOT called again — the cache survived
+    assert calls == [1]
+
+
+def test_enrich_dedup_creates_underscore_prefixed_cache_table(tmp_root):
+    _setup_db_with_source_table(tmp_root, [{"id": 1, "val": 10}])
+    cfg = Config(root=tmp_root)
+    t = Tracker(name="tt", cfg=cfg, manifest=None)
+    ctx = make_context(t, _spec("d", "enriched", ["raw"]))
+
+    ctx.enrich(
+        source="raw",
+        target="enriched",
+        fn=lambda r: {"doubled": r["val"] * 2},
+        dedup_key=lambda r: str(r["val"]),
+    )
+
+    con = sqlite3.connect(cfg.db_path)
+    tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert "_enriched_cache" in tables
+    rows = con.execute("SELECT key, value FROM _enriched_cache").fetchall()
+    assert rows == [("10", '{"doubled": 20}')]

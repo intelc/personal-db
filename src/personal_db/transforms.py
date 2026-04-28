@@ -9,6 +9,7 @@ declared (writes, depends_on) edges, and runs them in order after `sync()`.
 
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 from collections.abc import Callable
@@ -220,9 +221,33 @@ class TransformContext:
                 sql += f" AND ({where})"
             sql += f" ORDER BY {sk}"
 
+            # Lazily ensure cache table exists when dedup is in play.
+            cache_table = f"_{target}_cache"
+            if dedup_key is not None:
+                con.execute(
+                    f"CREATE TABLE IF NOT EXISTS {cache_table} "
+                    f"(key TEXT PRIMARY KEY, value TEXT)"
+                )
+                con.commit()
+
             processed = 0
             for row in con.execute(sql, params):
-                result = fn(row)
+                if dedup_key is not None:
+                    k = dedup_key(row)
+                    cached = con.execute(
+                        f"SELECT value FROM {cache_table} WHERE key=?", (k,)
+                    ).fetchone()
+                    if cached is not None:
+                        result = json.loads(cached[0])
+                    else:
+                        result = fn(row)
+                        con.execute(
+                            f"INSERT INTO {cache_table} (key, value) VALUES (?, ?)",
+                            (k, json.dumps(result)),
+                        )
+                else:
+                    result = fn(row)
+
                 cols = [tk, *result.keys()]
                 placeholders = ",".join("?" * len(cols))
                 update_clause = ", ".join(f"{c}=excluded.{c}" for c in result)
