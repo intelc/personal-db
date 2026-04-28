@@ -550,3 +550,32 @@ def test_enrich_dedup_cache_writes_rolled_back_with_batch(tmp_root):
     tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     if "_enriched_cache" in tables:
         assert con.execute("SELECT count(*) FROM _enriched_cache").fetchone()[0] == 0
+
+
+def test_enrich_target_writes_rolled_back_when_batch_fails_mid_batch(tmp_root):
+    """Rows 1-2 of a 4-row batch must NOT persist to target if row 3 fails."""
+    _setup_db_with_source_table(
+        tmp_root,
+        [{"id": i, "val": i * 10} for i in range(1, 5)],  # 4 rows: ids 1-4
+    )
+    cfg = Config(root=tmp_root)
+    t = Tracker(name="tt", cfg=cfg, manifest=None)
+    ctx = make_context(t, _spec("d", "enriched", ["raw"]))
+
+    def fn(row):
+        if row["id"] == 3:
+            raise RuntimeError("boom")
+        return {"doubled": row["val"] * 2}
+
+    with pytest.raises(RuntimeError, match="boom"):
+        ctx.enrich(source="raw", target="enriched", fn=fn, batch_size=4)
+
+    # Rows 1 and 2 were processed inside the same batch as the failed row 3.
+    # Per-batch atomicity: they must be rolled back, NOT persisted.
+    con = sqlite3.connect(cfg.db_path)
+    rows = con.execute("SELECT source_id FROM enriched").fetchall()
+    assert rows == [], f"expected empty target after mid-batch failure, got {rows}"
+
+    # Cursor should NOT have advanced (no batch committed).
+    ctx2 = make_context(t, _spec("d", "enriched", ["raw"]))
+    assert ctx2.cursor.get() in (None, "")
