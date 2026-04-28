@@ -9,9 +9,10 @@ declared (writes, depends_on) edges, and runs them in order after `sync()`.
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -151,3 +152,37 @@ def _detect_pk(con: sqlite3.Connection, table: str) -> str:
             f"specify source_key= explicitly in enrich()"
         )
     return pk_cols[0]
+
+
+from personal_db.db import connect  # noqa: E402
+from personal_db.tracker import Cursor, Tracker  # noqa: E402
+
+
+@dataclass
+class TransformContext:
+    """Per-transform invocation context.
+
+    `con` is a fresh sqlite3.Connection with row_factory=Row, used by SQL
+    transforms. `cursor` is a per-transform Cursor namespaced as
+    "<tracker>:<transform>" so each transform tracks its own progress
+    independently of the tracker's own cursor and other transforms.
+    `enrich` is a bound method (added in Task 6+) that handles incremental
+    enrichment with optional content-addressed caching.
+    """
+
+    con: sqlite3.Connection
+    cursor: Cursor
+    log: logging.Logger
+    _tracker: Tracker = field(repr=False)
+    _spec: TransformSpec = field(repr=False)
+
+    # `enrich` will be added as a method in Task 6.
+
+
+def make_context(t: Tracker, spec: TransformSpec) -> TransformContext:
+    """Build a TransformContext for a single transform invocation."""
+    con = connect(t.cfg.db_path)
+    con.row_factory = sqlite3.Row
+    cursor = Cursor(name=f"{t.name}:{spec.name}", state_dir=t.cfg.state_dir)
+    log = logging.getLogger(f"personal_db.tracker.{t.name}.transform.{spec.name}")
+    return TransformContext(con=con, cursor=cursor, log=log, _tracker=t, _spec=spec)

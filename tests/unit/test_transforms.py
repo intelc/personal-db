@@ -2,10 +2,15 @@ import sqlite3
 
 import pytest
 
+from personal_db.config import Config
+from personal_db.db import init_db
+from personal_db.tracker import Tracker
 from personal_db.transforms import (
+    TransformContext,
     TransformError,
     TransformSpec,
     _detect_pk,
+    make_context,
     topo_sort,
     transform,
     validate,
@@ -181,3 +186,52 @@ def test_detect_pk_unknown_table_raises():
     con = _make_db()
     with pytest.raises(TransformError, match="unknown"):
         _detect_pk(con, "nonexistent")
+
+
+def test_make_context_returns_namespaced_cursor(tmp_root):
+    """Two transforms in the same tracker get independent cursor state."""
+    cfg = Config(root=tmp_root)
+    spec_a = _spec("a", writes="ta", depends_on=["raw"])
+    spec_b = _spec("b", writes="tb", depends_on=["raw"])
+    t = Tracker(name="mytracker", cfg=cfg, manifest=None)
+
+    ctx_a = make_context(t, spec_a)
+    ctx_b = make_context(t, spec_b)
+
+    ctx_a.cursor.set("100")
+    ctx_b.cursor.set("200")
+
+    # Each transform's cursor is independent
+    assert ctx_a.cursor.get() == "100"
+    assert ctx_b.cursor.get() == "200"
+
+    # And the tracker's own cursor is independent of both
+    assert t.cursor.get() is None
+
+
+def test_make_context_provides_sqlite_connection_with_row_factory(tmp_root):
+    cfg = Config(root=tmp_root)
+    # init_db so cfg.db_path is a valid sqlite file
+    init_db(cfg.db_path)
+
+    t = Tracker(name="mytracker", cfg=cfg, manifest=None)
+    spec = _spec("a", writes="ta", depends_on=["raw"])
+    ctx = make_context(t, spec)
+
+    assert isinstance(ctx, TransformContext)
+    assert ctx.con.row_factory is sqlite3.Row
+    # Cursor query returns Row objects (which support both index and key access)
+    row = ctx.con.execute("SELECT 1 AS x").fetchone()
+    assert row["x"] == 1
+    assert row[0] == 1
+
+
+def test_make_context_attaches_logger(tmp_root):
+    cfg = Config(root=tmp_root)
+    t = Tracker(name="mytracker", cfg=cfg, manifest=None)
+    spec = _spec("geocoded", writes="geocoded_locations", depends_on=["raw_locations"])
+    ctx = make_context(t, spec)
+
+    # Logger name should identify both tracker and transform
+    assert "mytracker" in ctx.log.name
+    assert "geocoded" in ctx.log.name
