@@ -44,7 +44,7 @@ def _auth_headers(cfg, cid: str, cs: str) -> dict:
     token = refresh_if_needed(
         cfg,
         "whoop",
-        token_url=f"{WHOOP_API}/oauth/oauth2/token",
+        token_url="https://api.prod.whoop.com/oauth/oauth2/token",
         client_id=cid,
         client_secret=cs,
     )
