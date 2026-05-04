@@ -325,5 +325,16 @@ def backfill(t: Tracker, start: str | None, end: str | None) -> None:
 
     if fetched:
         t.upsert("granola_documents", fetched, key=["id"])
-        t.cursor.set(max(r["updated_at"] for r in fetched))
-    t.log.info("granola: backfilled %d documents", len(fetched))
+        # Cursor only advances — never regresses. Backfill called after sync
+        # has already advanced the cursor must not pull it back below where
+        # sync left off, or the next sync would re-fetch already-known docs.
+        max_backfilled = max(r["updated_at"] for r in fetched)
+        existing_cursor = t.cursor.get() or ""
+        t.cursor.set(max(existing_cursor, max_backfilled))
+    new_cursor = t.cursor.get()
+    t.log.info(
+        "granola: backfilled %d documents (start=%s, cursor → %s)",
+        len(fetched),
+        start or "all-time",
+        new_cursor or "(unset)",
+    )

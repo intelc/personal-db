@@ -531,3 +531,18 @@ def test_backfill_normalizes_z_suffix_in_start_comparison(fake_tracker, monkeypa
     granola_ingest.backfill(fake_tracker, start="2026-02-01T00:00:00+00:00", end=None)
     # Doc.created_at == start → NOT older than start → fetched.
     assert calls["transcript_ids"] == ["d_at_boundary"]
+
+
+def test_backfill_does_not_regress_cursor_below_sync_value(fake_tracker, monkeypatch):
+    """Backfill of old data must not pull cursor back below where sync left it."""
+    # Sync had already advanced the cursor to a recent timestamp.
+    fake_tracker.cursor.set("2026-04-15T00:00:00+00:00")
+    # Backfill returns an OLDER doc (max updated_at < cursor).
+    page1 = [
+        {"id": "old_doc", "title": "old", "content": None, "participants": [],
+         "created_at": "2026-01-10T00:00:00Z", "updated_at": "2026-01-10T00:00:00Z"},
+    ]
+    _install_fake_http(monkeypatch, [page1])
+    granola_ingest.backfill(fake_tracker, start=None, end=None)
+    # Cursor must remain at the sync value, not be regressed to the old doc's updated_at.
+    assert fake_tracker.cursor.get() == "2026-04-15T00:00:00+00:00"
