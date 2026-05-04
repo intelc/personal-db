@@ -435,9 +435,12 @@ def test_sync_breaks_when_full_page_is_older_than_cursor(fake_tracker, monkeypat
         for i in range(25)
     ]
     # Page 2 is fully older — triggers the cursor-based break.
+    # Use a FULL 25-doc page so only the cursor break can stop the loop —
+    # otherwise the partial-page break would mask cursor-break regressions.
     page2_all_older = [
-        {"id": "d_old", "title": "old", "content": None, "participants": [],
-         "created_at": "2026-04-05T10:00:00Z", "updated_at": "2026-04-05T10:00:00Z"},
+        {"id": f"old{i:02d}", "title": "old", "content": None, "participants": [],
+         "created_at": "2026-04-05T10:00:00Z", "updated_at": "2026-04-05T10:00:00Z"}
+        for i in range(25)
     ]
     page3_should_not_be_fetched = [
         {"id": "d_x", "title": "x", "content": None, "participants": [],
@@ -447,8 +450,8 @@ def test_sync_breaks_when_full_page_is_older_than_cursor(fake_tracker, monkeypat
     granola_ingest.sync(fake_tracker)
 
     # All 25 page-1 docs are new → 25 transcript fetches.
-    # Page 2 has no new docs → 0 additional transcript fetches.
-    # Page 3 must not be fetched at all.
+    # Page 2 is a full page of docs all older than the cursor →
+    # cursor break fires, 0 additional transcript fetches, page 3 never requested.
     assert len(calls["transcript_ids"]) == 25
     assert calls["list_offsets"] == [0, 25]
 
@@ -458,4 +461,19 @@ def test_sync_no_results_no_cursor_change(fake_tracker, monkeypatch):
     calls = _install_fake_http(monkeypatch, [[]])
     granola_ingest.sync(fake_tracker)
     assert fake_tracker.cursor.get() == "2026-04-09T12:00:00+00:00"
+    assert calls["transcript_ids"] == []
+
+
+def test_sync_normalizes_z_suffix_in_cursor_comparison(fake_tracker, monkeypatch):
+    """API returns Z-suffixed timestamps; cursor uses +00:00. Same instant
+    must compare equal so docs at the cursor boundary aren't re-fetched."""
+    # Cursor matches the doc's updated_at instant (in +00:00 form).
+    fake_tracker.cursor.set("2026-04-10T10:00:00+00:00")
+    page1 = [
+        {"id": "d_at_cursor", "title": "boundary", "content": None, "participants": [],
+         "created_at": "2026-04-10T10:00:00Z", "updated_at": "2026-04-10T10:00:00Z"},
+    ]
+    calls = _install_fake_http(monkeypatch, [page1])
+    granola_ingest.sync(fake_tracker)
+    # Doc is exactly at the cursor → must be skipped, no transcript fetch.
     assert calls["transcript_ids"] == []

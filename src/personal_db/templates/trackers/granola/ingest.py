@@ -259,24 +259,36 @@ def sync(t: Tracker) -> None:
         docs = _list_documents(token, offset=page * PAGE_SIZE)
         if not docs:
             break
-        page_max_updated = max(d.get("updated_at") or "" for d in docs)
+        # Granola's API returns Z-suffixed ISO strings; the cursor (from
+        # _to_utc_iso) is +00:00-suffixed. Normalize before string-comparing
+        # so the same instant compares equal in both forms.
+        page_max_updated = max(
+            (d.get("updated_at") or "").replace("Z", "+00:00") for d in docs
+        )
         for doc in docs:
-            if cursor and (doc.get("updated_at") or "") <= cursor:
+            doc_updated = (doc.get("updated_at") or "").replace("Z", "+00:00")
+            if cursor and doc_updated <= cursor:
                 continue
             transcript_data = _fetch_transcript(token, doc["id"])
             row = _flatten(doc, transcript_data)
             if row is not None:
                 fetched.append(row)
+            # Note: if _flatten returns None (no id, or unparseable started_at),
+            # the doc is omitted from `fetched` and the cursor doesn't advance
+            # past it. It will be re-fetched on every sync. This is intentional —
+            # silently advancing past a malformed doc could cause data loss if
+            # the missing field is transient.
         if cursor and page_max_updated <= cursor:
             break
         if len(docs) < PAGE_SIZE:
             break
         page += 1
 
+    new_cursor = max(r["updated_at"] for r in fetched) if fetched else cursor
     if fetched:
         t.upsert("granola_documents", fetched, key=["id"])
-        t.cursor.set(max(r["updated_at"] for r in fetched))
-    t.log.info("granola: ingested %d documents", len(fetched))
+        t.cursor.set(new_cursor)
+    t.log.info("granola: ingested %d documents (cursor → %s)", len(fetched), new_cursor)
 
 
 def backfill(t: Tracker, start: str | None, end: str | None) -> None:
