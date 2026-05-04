@@ -477,3 +477,57 @@ def test_sync_normalizes_z_suffix_in_cursor_comparison(fake_tracker, monkeypatch
     granola_ingest.sync(fake_tracker)
     # Doc is exactly at the cursor → must be skipped, no transcript fetch.
     assert calls["transcript_ids"] == []
+
+
+def test_backfill_walks_all_pages_when_start_none(fake_tracker, monkeypatch):
+    page1 = [
+        {"id": "d1", "title": "t1", "content": None, "participants": [],
+         "created_at": "2026-04-10T10:00:00Z", "updated_at": "2026-04-10T10:00:00Z"},
+    ]
+    page2 = [
+        {"id": "d2", "title": "t2", "content": None, "participants": [],
+         "created_at": "2026-03-10T10:00:00Z", "updated_at": "2026-03-10T10:00:00Z"},
+    ]
+    calls = _install_fake_http(monkeypatch, [page1 + [{"id": f"f{i}", "title": "filler",
+                                                       "content": None, "participants": [],
+                                                       "created_at": f"2026-04-{i+1:02d}T00:00:00Z",
+                                                       "updated_at": f"2026-04-{i+1:02d}T00:00:00Z"}
+                                                       for i in range(24)],
+                                              page2])
+    granola_ingest.backfill(fake_tracker, start=None, end=None)
+    # Both pages walked (page1 was full, so we advance)
+    assert calls["list_offsets"] == [0, 25]
+    assert "d1" in calls["transcript_ids"] and "d2" in calls["transcript_ids"]
+
+
+def test_backfill_stops_at_start_window(fake_tracker, monkeypatch):
+    page1 = [
+        {"id": "d_new", "title": "new", "content": None, "participants": [],
+         "created_at": "2026-04-10T10:00:00Z", "updated_at": "2026-04-10T10:00:00Z"},
+        {"id": "d_old", "title": "old", "content": None, "participants": [],
+         "created_at": "2026-01-05T10:00:00Z", "updated_at": "2026-01-05T10:00:00Z"},
+    ]
+    calls = _install_fake_http(monkeypatch, [page1])
+    granola_ingest.backfill(fake_tracker, start="2026-02-01", end=None)
+    # d_old.created_at < start → loop returns; only d_new gets a transcript fetch
+    assert calls["transcript_ids"] == ["d_new"]
+
+
+def test_backfill_ignores_end(fake_tracker, monkeypatch):
+    """end is accepted for interface compatibility but ignored, like omi's backfill."""
+    calls = _install_fake_http(monkeypatch, [[]])
+    granola_ingest.backfill(fake_tracker, start=None, end="2026-04-01")
+    # No crash, no calls beyond an empty first page
+    assert calls["list_offsets"] == [0]
+
+
+def test_backfill_normalizes_z_suffix_in_start_comparison(fake_tracker, monkeypatch):
+    """A +00:00 start value should match Z-form API timestamps at the boundary."""
+    page1 = [
+        {"id": "d_at_boundary", "title": "boundary", "content": None, "participants": [],
+         "created_at": "2026-02-01T00:00:00Z", "updated_at": "2026-02-01T00:00:00Z"},
+    ]
+    calls = _install_fake_http(monkeypatch, [page1])
+    granola_ingest.backfill(fake_tracker, start="2026-02-01T00:00:00+00:00", end=None)
+    # Doc.created_at == start → NOT older than start → fetched.
+    assert calls["transcript_ids"] == ["d_at_boundary"]

@@ -292,4 +292,38 @@ def sync(t: Tracker) -> None:
 
 
 def backfill(t: Tracker, start: str | None, end: str | None) -> None:
-    raise NotImplementedError
+    """Backfill Granola docs.
+
+    `start` (ISO date or datetime) bounds the walk by `created_at`. `end` is
+    accepted for interface compatibility but ignored — the API has no upper
+    bound and we always page from newest.
+    """
+    del end
+    token = _read_access_token()
+    fetched: list[dict] = []
+    page = 0
+    stop = False
+    # Normalize start the same way we normalize updated_at in sync, so a
+    # user-supplied "+00:00" start matches the API's "Z"-suffixed created_at.
+    start_normalized = start.replace("Z", "+00:00") if start else None
+    while not stop:
+        docs = _list_documents(token, offset=page * PAGE_SIZE)
+        if not docs:
+            break
+        for doc in docs:
+            doc_created = (doc.get("created_at") or "").replace("Z", "+00:00")
+            if start_normalized and doc_created < start_normalized:
+                stop = True
+                break
+            transcript_data = _fetch_transcript(token, doc["id"])
+            row = _flatten(doc, transcript_data)
+            if row is not None:
+                fetched.append(row)
+        if len(docs) < PAGE_SIZE:
+            break
+        page += 1
+
+    if fetched:
+        t.upsert("granola_documents", fetched, key=["id"])
+        t.cursor.set(max(r["updated_at"] for r in fetched))
+    t.log.info("granola: backfilled %d documents", len(fetched))
