@@ -246,7 +246,37 @@ def _fetch_transcript(token: str, document_id: str) -> tuple[str, str, str]:
 
 
 def sync(t: Tracker) -> None:
-    raise NotImplementedError
+    """Pull new/edited Granola docs since the cursor.
+
+    Cursor: max(updated_at) of stored docs. Pages newest-first; stops when a
+    full page is older than the cursor.
+    """
+    token = _read_access_token()
+    cursor = t.cursor.get()
+    fetched: list[dict] = []
+    page = 0
+    while True:
+        docs = _list_documents(token, offset=page * PAGE_SIZE)
+        if not docs:
+            break
+        page_max_updated = max(d.get("updated_at") or "" for d in docs)
+        for doc in docs:
+            if cursor and (doc.get("updated_at") or "") <= cursor:
+                continue
+            transcript_data = _fetch_transcript(token, doc["id"])
+            row = _flatten(doc, transcript_data)
+            if row is not None:
+                fetched.append(row)
+        if cursor and page_max_updated <= cursor:
+            break
+        if len(docs) < PAGE_SIZE:
+            break
+        page += 1
+
+    if fetched:
+        t.upsert("granola_documents", fetched, key=["id"])
+        t.cursor.set(max(r["updated_at"] for r in fetched))
+    t.log.info("granola: ingested %d documents", len(fetched))
 
 
 def backfill(t: Tracker, start: str | None, end: str | None) -> None:

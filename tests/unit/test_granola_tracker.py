@@ -341,3 +341,121 @@ def test_fetch_transcript_whitespace_only_text_preserves_timestamps(monkeypatch)
     assert transcript == ""
     assert start == "2026-01-01T10:00:00Z"
     assert end == "2026-01-01T10:00:05Z"
+
+
+@pytest.fixture
+def fake_tracker(tmp_path, monkeypatch):
+    """Build a Tracker pointing at a temp DB + state dir."""
+    from personal_db.config import Config
+    from personal_db.tracker import Tracker
+
+    cfg = Config(root=tmp_path)
+    cfg.state_dir.mkdir(parents=True, exist_ok=True)
+    cfg.db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    import sqlite3
+    schema = (Path(__file__).resolve().parents[2]
+              / "src/personal_db/templates/trackers/granola/schema.sql").read_text()
+    con = sqlite3.connect(cfg.db_path)
+    con.executescript(schema)
+    con.commit()
+    con.close()
+
+    return Tracker(name="granola", cfg=cfg, manifest=None)
+
+
+def _install_fake_http(monkeypatch, pages, transcript=("", "", "")):
+    """Make _list_documents return successive `pages`, _fetch_transcript return `transcript`."""
+    calls = {"list_offsets": [], "transcript_ids": []}
+    pages_iter = iter(pages)
+
+    def fake_list(token, offset):
+        calls["list_offsets"].append(offset)
+        try:
+            return next(pages_iter)
+        except StopIteration:
+            return []
+
+    def fake_transcript(token, doc_id):
+        calls["transcript_ids"].append(doc_id)
+        return transcript
+
+    monkeypatch.setattr(granola_ingest, "_list_documents", fake_list)
+    monkeypatch.setattr(granola_ingest, "_fetch_transcript", fake_transcript)
+    monkeypatch.setattr(granola_ingest, "_read_access_token", lambda: "TOK")
+    return calls
+
+
+def test_sync_empty_store_fetches_all_pages(fake_tracker, monkeypatch):
+    page1 = [
+        {"id": "d1", "title": "t1", "content": None, "participants": [],
+         "created_at": "2026-04-10T10:00:00Z", "updated_at": "2026-04-10T10:00:00Z"},
+        {"id": "d2", "title": "t2", "content": None, "participants": [],
+         "created_at": "2026-04-09T10:00:00Z", "updated_at": "2026-04-09T10:00:00Z"},
+    ]
+    calls = _install_fake_http(monkeypatch, [page1])
+    granola_ingest.sync(fake_tracker)
+
+    import sqlite3
+    con = sqlite3.connect(fake_tracker.cfg.db_path)
+    rows = con.execute("SELECT id FROM granola_documents ORDER BY id").fetchall()
+    con.close()
+    assert [r[0] for r in rows] == ["d1", "d2"]
+    assert fake_tracker.cursor.get() == "2026-04-10T10:00:00+00:00"
+    assert calls["transcript_ids"] == ["d1", "d2"]
+
+
+def test_sync_skips_older_docs_within_partial_page(fake_tracker, monkeypatch):
+    """A partial page (< PAGE_SIZE) terminates the loop, but per-doc cursor filtering still applies."""
+    fake_tracker.cursor.set("2026-04-09T12:00:00+00:00")
+    page1 = [
+        {"id": "d_new", "title": "new", "content": None, "participants": [],
+         "created_at": "2026-04-10T10:00:00Z", "updated_at": "2026-04-10T10:00:00Z"},
+        {"id": "d_old", "title": "old", "content": None, "participants": [],
+         "created_at": "2026-04-08T10:00:00Z", "updated_at": "2026-04-08T10:00:00Z"},
+    ]
+    calls = _install_fake_http(monkeypatch, [page1])
+    granola_ingest.sync(fake_tracker)
+
+    # Only d_new is past the cursor; d_old is skipped.
+    # Loop exits via `len(docs) < PAGE_SIZE` after this single page.
+    assert calls["transcript_ids"] == ["d_new"]
+    assert calls["list_offsets"] == [0]
+
+
+def test_sync_breaks_when_full_page_is_older_than_cursor(fake_tracker, monkeypatch):
+    """When page 1 is full of new docs (so the loop advances) but page 2 is fully older,
+    we fetch page 2 once to confirm it's older, then stop without fetching page 3."""
+    fake_tracker.cursor.set("2026-04-09T12:00:00+00:00")
+    # 25 new docs — all past the cursor; this fills the page so the loop advances.
+    page1 = [
+        {"id": f"new{i:02d}", "title": "n", "content": None, "participants": [],
+         "created_at": f"2026-04-{15 + i:02d}T10:00:00Z",
+         "updated_at": f"2026-04-{15 + i:02d}T10:00:00Z"}
+        for i in range(25)
+    ]
+    # Page 2 is fully older — triggers the cursor-based break.
+    page2_all_older = [
+        {"id": "d_old", "title": "old", "content": None, "participants": [],
+         "created_at": "2026-04-05T10:00:00Z", "updated_at": "2026-04-05T10:00:00Z"},
+    ]
+    page3_should_not_be_fetched = [
+        {"id": "d_x", "title": "x", "content": None, "participants": [],
+         "created_at": "2026-04-01T10:00:00Z", "updated_at": "2026-04-01T10:00:00Z"},
+    ]
+    calls = _install_fake_http(monkeypatch, [page1, page2_all_older, page3_should_not_be_fetched])
+    granola_ingest.sync(fake_tracker)
+
+    # All 25 page-1 docs are new → 25 transcript fetches.
+    # Page 2 has no new docs → 0 additional transcript fetches.
+    # Page 3 must not be fetched at all.
+    assert len(calls["transcript_ids"]) == 25
+    assert calls["list_offsets"] == [0, 25]
+
+
+def test_sync_no_results_no_cursor_change(fake_tracker, monkeypatch):
+    fake_tracker.cursor.set("2026-04-09T12:00:00+00:00")
+    calls = _install_fake_http(monkeypatch, [[]])
+    granola_ingest.sync(fake_tracker)
+    assert fake_tracker.cursor.get() == "2026-04-09T12:00:00+00:00"
+    assert calls["transcript_ids"] == []
