@@ -19,11 +19,6 @@ def test_list_bundled_returns_known_templates():
     } <= names
 
 
-def test_granola_is_bundled():
-    names = set(list_bundled())
-    assert "granola" in names
-
-
 def test_granola_manifest_loads():
     from pathlib import Path
     from personal_db.manifest import load_manifest

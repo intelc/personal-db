@@ -240,6 +240,9 @@ def _fetch_transcript(token: str, document_id: str) -> tuple[str, str, str]:
         source = u.get("source") or "unknown"
         lines.append(f"[{source}] {text}")
     transcript = "\n".join(lines)
+    # Timestamps come from raw first/last utterance bounds, not the filtered
+    # lines — so started_at reflects when recording began even if the first
+    # segment was silence/empty.
     start = utterances[0].get("start_timestamp") or ""
     end = utterances[-1].get("end_timestamp") or ""
     return (transcript, start, end)
