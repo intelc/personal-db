@@ -86,9 +86,32 @@ def test_prosemirror_to_text_bullet_list():
             ]},
         ]},
     ]}
+    # Pin exact output: each block-level node closes with "\n"; outer .strip()
+    # only trims edges. Locks in the current separator behavior.
+    assert granola_ingest._prosemirror_to_text(doc) == "a\n\nb"
+
+
+def test_prosemirror_to_text_non_list_content_silently_dropped():
+    """A node where `content` is a string/dict/etc. (malformed) yields "" with no crash."""
+    assert granola_ingest._prosemirror_to_text(
+        {"type": "paragraph", "content": "literal text"}
+    ) == ""
+    assert granola_ingest._prosemirror_to_text(
+        {"type": "doc", "content": {"nested": "dict, not a list"}}
+    ) == ""
+
+
+def test_prosemirror_to_text_blockquote():
+    doc = {"type": "doc", "content": [
+        {"type": "blockquote", "content": [
+            {"type": "paragraph", "content": [{"type": "text", "text": "quoted"}]}
+        ]},
+        {"type": "paragraph", "content": [{"type": "text", "text": "after"}]},
+    ]}
     out = granola_ingest._prosemirror_to_text(doc)
-    assert "a" in out and "b" in out
-    assert out.index("a") < out.index("b")
+    assert "quoted" in out
+    assert "after" in out
+    assert out.index("quoted") < out.index("after")
 
 
 def test_prosemirror_to_text_none():

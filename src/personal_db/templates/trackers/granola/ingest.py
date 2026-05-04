@@ -94,8 +94,10 @@ def _prosemirror_to_text(node: object) -> str:
         if "text" in n and isinstance(n["text"], str):
             out.append(n["text"])
             return
-        for child in n.get("content") or []:
-            walk(child)
+        children = n.get("content")
+        if isinstance(children, list):
+            for child in children:
+                walk(child)
         if n.get("type") in _BLOCK_TYPES:
             out.append("\n")
 
