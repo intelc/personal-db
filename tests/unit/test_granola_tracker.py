@@ -233,6 +233,7 @@ def test_list_documents_array_response(monkeypatch):
     assert captured["headers"]["Authorization"] == "Bearer TOK"
     assert captured["json"]["offset"] == 0
     assert captured["json"]["include_content"] is True
+    assert captured["json"]["limit"] == 25  # PAGE_SIZE
 
 
 def test_list_documents_object_response(monkeypatch):
@@ -294,3 +295,14 @@ def test_fetch_transcript_skips_empty_text(monkeypatch):
     )
     transcript, _, _ = granola_ingest._fetch_transcript("TOK", "doc1")
     assert transcript == "[me] hi"
+
+
+def test_fetch_transcript_network_error_returns_empty(monkeypatch):
+    """A connection error / timeout / etc. is swallowed, not propagated."""
+    import requests as _requests
+
+    def boom(*a, **k):
+        raise _requests.ConnectionError("network down")
+
+    monkeypatch.setattr(granola_ingest.requests, "post", boom)
+    assert granola_ingest._fetch_transcript("TOK", "doc1") == ("", "", "")
