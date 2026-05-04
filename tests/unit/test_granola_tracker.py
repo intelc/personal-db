@@ -48,3 +48,55 @@ def test_read_access_token_corrupt_json(tmp_path):
     p.write_text("{ this is not json")
     with pytest.raises(RuntimeError, match="not valid JSON"):
         granola_ingest._read_access_token(p)
+
+
+def test_prosemirror_to_text_single_paragraph():
+    doc = {"type": "doc", "content": [
+        {"type": "paragraph", "content": [
+            {"type": "text", "text": "hello world"}
+        ]}
+    ]}
+    assert granola_ingest._prosemirror_to_text(doc) == "hello world"
+
+
+def test_prosemirror_to_text_two_paragraphs():
+    doc = {"type": "doc", "content": [
+        {"type": "paragraph", "content": [{"type": "text", "text": "first"}]},
+        {"type": "paragraph", "content": [{"type": "text", "text": "second"}]},
+    ]}
+    assert granola_ingest._prosemirror_to_text(doc) == "first\nsecond"
+
+
+def test_prosemirror_to_text_heading_and_body():
+    doc = {"type": "doc", "content": [
+        {"type": "heading", "content": [{"type": "text", "text": "Title"}]},
+        {"type": "paragraph", "content": [{"type": "text", "text": "body"}]},
+    ]}
+    assert granola_ingest._prosemirror_to_text(doc) == "Title\nbody"
+
+
+def test_prosemirror_to_text_bullet_list():
+    doc = {"type": "doc", "content": [
+        {"type": "bullet_list", "content": [
+            {"type": "list_item", "content": [
+                {"type": "paragraph", "content": [{"type": "text", "text": "a"}]}
+            ]},
+            {"type": "list_item", "content": [
+                {"type": "paragraph", "content": [{"type": "text", "text": "b"}]}
+            ]},
+        ]},
+    ]}
+    out = granola_ingest._prosemirror_to_text(doc)
+    assert "a" in out and "b" in out
+    assert out.index("a") < out.index("b")
+
+
+def test_prosemirror_to_text_none():
+    assert granola_ingest._prosemirror_to_text(None) == ""
+
+
+def test_prosemirror_to_text_malformed():
+    # String, list at top level, dict missing "content" — none should crash
+    assert granola_ingest._prosemirror_to_text("not a node") == ""
+    assert granola_ingest._prosemirror_to_text([]) == ""
+    assert granola_ingest._prosemirror_to_text({"type": "doc"}) == ""

@@ -69,6 +69,40 @@ def _read_access_token(path: Path = SUPABASE_PATH) -> str:
     return token
 
 
+_BLOCK_TYPES = {
+    "paragraph", "heading", "blockquote",
+    "list_item", "code_block", "bullet_list", "ordered_list",
+}
+
+
+def _prosemirror_to_text(node: object) -> str:
+    """Best-effort plaintext extraction from a ProseMirror node tree.
+
+    Recursively concatenates `text` fields. Inserts a newline after each
+    block-level node so paragraphs/headings/list-items don't run together.
+    Returns "" for None or malformed input rather than raising — the caller
+    keeps the raw `content` JSON for fidelity.
+    """
+    if not isinstance(node, dict):
+        return ""
+
+    out: list[str] = []
+
+    def walk(n) -> None:
+        if not isinstance(n, dict):
+            return
+        if "text" in n and isinstance(n["text"], str):
+            out.append(n["text"])
+            return
+        for child in n.get("content") or []:
+            walk(child)
+        if n.get("type") in _BLOCK_TYPES:
+            out.append("\n")
+
+    walk(node)
+    return "".join(out).strip()
+
+
 def sync(t: Tracker) -> None:
     raise NotImplementedError
 
