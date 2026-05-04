@@ -546,3 +546,13 @@ def test_backfill_does_not_regress_cursor_below_sync_value(fake_tracker, monkeyp
     granola_ingest.backfill(fake_tracker, start=None, end=None)
     # Cursor must remain at the sync value, not be regressed to the old doc's updated_at.
     assert fake_tracker.cursor.get() == "2026-04-15T00:00:00+00:00"
+
+
+def test_visualizations_listed():
+    from personal_db.templates.trackers.granola import visualizations as viz
+    out = viz.list_visualizations()
+    slugs = [v["slug"] for v in out]
+    assert "activity_calendar" in slugs
+    assert "recent" in slugs
+    for v in out:
+        assert callable(v["render"])
