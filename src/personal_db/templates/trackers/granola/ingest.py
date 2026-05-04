@@ -8,6 +8,7 @@ user must open the Granola desktop app to refresh it.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 from personal_db.tracker import Tracker
@@ -103,6 +104,59 @@ def _prosemirror_to_text(node: object) -> str:
 
     walk(node)
     return "".join(out).strip()
+
+
+def _parse_iso(s: str | None) -> datetime | None:
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _to_utc_iso(s: str | None) -> str | None:
+    dt = _parse_iso(s)
+    return dt.astimezone(UTC).isoformat() if dt else None
+
+
+def _duration_seconds(start: str | None, end: str | None) -> int | None:
+    s, e = _parse_iso(start), _parse_iso(end)
+    if not s or not e:
+        return None
+    return int((e - s).total_seconds())
+
+
+def _flatten(doc: dict, transcript_data: tuple[str, str, str]) -> dict | None:
+    """Combine a Granola doc with its fetched transcript into a row.
+
+    Returns None if the doc has neither a transcript nor a created_at —
+    we'd have nothing to anchor `started_at` to, and the schema requires it.
+    """
+    transcript, transcript_start, transcript_end = transcript_data
+    started_raw = transcript_start or doc.get("created_at") or ""
+    if not started_raw:
+        return None
+
+    finished_raw = transcript_end or None
+    content_obj = doc.get("content")
+    content_json = json.dumps(content_obj) if content_obj else ""
+    overview = _prosemirror_to_text(content_obj) if content_obj else ""
+    participants = json.dumps(doc.get("participants") or [])
+
+    return {
+        "id": doc["id"],
+        "started_at": _to_utc_iso(started_raw),
+        "finished_at": _to_utc_iso(finished_raw),
+        "duration_seconds": _duration_seconds(started_raw, finished_raw),
+        "title": (doc.get("title") or "")[:500],
+        "overview": overview,
+        "content": content_json,
+        "transcript": transcript,
+        "participants": participants,
+        "created_at": _to_utc_iso(doc.get("created_at")),
+        "updated_at": _to_utc_iso(doc.get("updated_at")),
+    }
 
 
 def sync(t: Tracker) -> None:

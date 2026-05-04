@@ -123,3 +123,62 @@ def test_prosemirror_to_text_malformed():
     assert granola_ingest._prosemirror_to_text("not a node") == ""
     assert granola_ingest._prosemirror_to_text([]) == ""
     assert granola_ingest._prosemirror_to_text({"type": "doc"}) == ""
+
+
+def _make_doc(**overrides) -> dict:
+    base = {
+        "id": "doc1",
+        "title": "Quarterly review",
+        "content": {"type": "doc", "content": [
+            {"type": "paragraph", "content": [{"type": "text", "text": "notes here"}]}
+        ]},
+        "participants": [{"name": "Alice"}, {"name": "Bob"}],
+        "created_at": "2026-04-01T15:00:00Z",
+        "updated_at": "2026-04-01T16:00:00Z",
+    }
+    base.update(overrides)
+    return base
+
+
+def test_flatten_with_transcript():
+    doc = _make_doc()
+    transcript_data = (
+        "[me] hi\n[them] hello",
+        "2026-04-01T15:01:00Z",
+        "2026-04-01T15:31:00Z",
+    )
+    row = granola_ingest._flatten(doc, transcript_data)
+    assert row["id"] == "doc1"
+    assert row["started_at"] == "2026-04-01T15:01:00+00:00"
+    assert row["finished_at"] == "2026-04-01T15:31:00+00:00"
+    assert row["duration_seconds"] == 30 * 60
+    assert row["title"] == "Quarterly review"
+    assert row["overview"] == "notes here"
+    assert json.loads(row["content"])["type"] == "doc"
+    assert row["transcript"] == "[me] hi\n[them] hello"
+    assert json.loads(row["participants"]) == [{"name": "Alice"}, {"name": "Bob"}]
+    assert row["created_at"] == "2026-04-01T15:00:00+00:00"
+    assert row["updated_at"] == "2026-04-01T16:00:00+00:00"
+
+
+def test_flatten_without_transcript_falls_back_to_created_at():
+    doc = _make_doc()
+    row = granola_ingest._flatten(doc, ("", "", ""))
+    assert row["transcript"] == ""
+    assert row["started_at"] == "2026-04-01T15:00:00+00:00"  # falls back to created_at
+    assert row["finished_at"] is None
+    assert row["duration_seconds"] is None
+
+
+def test_flatten_drops_doc_with_no_anchor():
+    """No transcript and no created_at means there's no way to anchor the doc in time."""
+    doc = _make_doc(created_at=None)
+    assert granola_ingest._flatten(doc, ("", "", "")) is None
+
+
+def test_flatten_handles_empty_content_and_participants():
+    doc = _make_doc(content=None, participants=None)
+    row = granola_ingest._flatten(doc, ("", "", ""))
+    assert row["content"] == ""
+    assert row["overview"] == ""
+    assert row["participants"] == "[]"
