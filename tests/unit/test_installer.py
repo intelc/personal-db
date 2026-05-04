@@ -9,6 +9,7 @@ def test_list_bundled_returns_known_templates():
     # These connectors ship with the package; new ones extend this set.
     assert {
         "github_commits",
+        "granola",
         "whoop",
         "screen_time",
         "imessage",
@@ -16,6 +17,22 @@ def test_list_bundled_returns_known_templates():
         "claude_conversations",
         "codex_conversations",
     } <= names
+
+
+def test_granola_is_bundled():
+    names = set(list_bundled())
+    assert "granola" in names
+
+
+def test_granola_manifest_loads():
+    from pathlib import Path
+    from personal_db.manifest import load_manifest
+
+    here = Path(__file__).resolve().parents[2]
+    m = load_manifest(here / "src/personal_db/templates/trackers/granola/manifest.yaml")
+    assert m.name == "granola"
+    assert m.permission_type == "api_key"
+    assert "granola_documents" in m.schema.tables
 
 
 def test_install_template_copies_tree(tmp_root):
@@ -78,22 +95,6 @@ def test_update_template_overwrites_files(tmp_root):
     # Should be restored from bundle
     assert "hacked" not in p.read_text()
     assert p.read_text().startswith("name: habits")
-
-
-def test_granola_is_bundled():
-    names = set(list_bundled())
-    assert "granola" in names
-
-
-def test_granola_manifest_loads():
-    from pathlib import Path
-    from personal_db.manifest import load_manifest
-
-    here = Path(__file__).resolve().parents[2]
-    m = load_manifest(here / "src/personal_db/templates/trackers/granola/manifest.yaml")
-    assert m.name == "granola"
-    assert m.permission_type == "api_key"
-    assert "granola_documents" in m.schema.tables
 
 
 def test_update_template_preserves_other_files(tmp_root):
