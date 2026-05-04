@@ -200,3 +200,97 @@ def test_flatten_drops_doc_with_unparseable_started_at():
 def test_duration_seconds_clamps_negative_to_zero():
     """End before start (clock skew, DST) must not produce negative durations."""
     assert granola_ingest._duration_seconds("2026-04-01T15:30:00Z", "2026-04-01T15:00:00Z") == 0
+
+
+class _FakeResponse:
+    def __init__(self, status_code: int, payload):
+        self.status_code = status_code
+        self._payload = payload
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            import requests
+            err = requests.HTTPError(f"{self.status_code}", response=self)
+            raise err
+
+    def json(self):
+        return self._payload
+
+
+def test_list_documents_array_response(monkeypatch):
+    captured = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["json"] = json
+        return _FakeResponse(200, [{"id": "d1", "updated_at": "2026-04-01T00:00:00Z"}])
+
+    monkeypatch.setattr(granola_ingest.requests, "post", fake_post)
+    docs = granola_ingest._list_documents("TOK", offset=0)
+    assert docs == [{"id": "d1", "updated_at": "2026-04-01T00:00:00Z"}]
+    assert captured["url"] == "https://api.granola.ai/v2/get-documents"
+    assert captured["headers"]["Authorization"] == "Bearer TOK"
+    assert captured["json"]["offset"] == 0
+    assert captured["json"]["include_content"] is True
+
+
+def test_list_documents_object_response(monkeypatch):
+    monkeypatch.setattr(
+        granola_ingest.requests, "post",
+        lambda *a, **k: _FakeResponse(200, {"docs": [{"id": "d2", "updated_at": "x"}]}),
+    )
+    assert granola_ingest._list_documents("TOK", offset=25) == [{"id": "d2", "updated_at": "x"}]
+
+
+def test_list_documents_401_raises_expired(monkeypatch):
+    monkeypatch.setattr(
+        granola_ingest.requests, "post",
+        lambda *a, **k: _FakeResponse(401, {"error": "unauthorized"}),
+    )
+    with pytest.raises(RuntimeError, match="access token expired"):
+        granola_ingest._list_documents("TOK", offset=0)
+
+
+def test_fetch_transcript_basic(monkeypatch):
+    payload = [
+        {"text": "hi", "source": "me", "start_timestamp": "2026-04-01T15:00:00Z", "end_timestamp": "2026-04-01T15:00:05Z"},
+        {"text": "hello", "source": "them", "start_timestamp": "2026-04-01T15:00:06Z", "end_timestamp": "2026-04-01T15:00:10Z"},
+    ]
+    monkeypatch.setattr(
+        granola_ingest.requests, "post",
+        lambda *a, **k: _FakeResponse(200, payload),
+    )
+    transcript, start, end = granola_ingest._fetch_transcript("TOK", "doc1")
+    assert transcript == "[me] hi\n[them] hello"
+    assert start == "2026-04-01T15:00:00Z"
+    assert end == "2026-04-01T15:00:10Z"
+
+
+def test_fetch_transcript_404_returns_empty(monkeypatch):
+    monkeypatch.setattr(
+        granola_ingest.requests, "post",
+        lambda *a, **k: _FakeResponse(404, {"error": "no transcript"}),
+    )
+    assert granola_ingest._fetch_transcript("TOK", "doc1") == ("", "", "")
+
+
+def test_fetch_transcript_empty_array(monkeypatch):
+    monkeypatch.setattr(
+        granola_ingest.requests, "post",
+        lambda *a, **k: _FakeResponse(200, []),
+    )
+    assert granola_ingest._fetch_transcript("TOK", "doc1") == ("", "", "")
+
+
+def test_fetch_transcript_skips_empty_text(monkeypatch):
+    payload = [
+        {"text": "hi", "source": "me", "start_timestamp": "s", "end_timestamp": "e"},
+        {"text": "", "source": "them", "start_timestamp": "s2", "end_timestamp": "e2"},
+    ]
+    monkeypatch.setattr(
+        granola_ingest.requests, "post",
+        lambda *a, **k: _FakeResponse(200, payload),
+    )
+    transcript, _, _ = granola_ingest._fetch_transcript("TOK", "doc1")
+    assert transcript == "[me] hi"

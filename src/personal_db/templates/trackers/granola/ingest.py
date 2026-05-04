@@ -11,9 +11,15 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+import requests
+
 from personal_db.tracker import Tracker
 
 SUPABASE_PATH = Path.home() / "Library/Application Support/Granola/supabase.json"
+
+LIST_URL = "https://api.granola.ai/v2/get-documents"
+TRANSCRIPT_URL = "https://api.granola.ai/v1/get-document-transcript"
+PAGE_SIZE = 25
 
 
 def _extract_workos_access_token(node: object) -> str | None:
@@ -164,6 +170,71 @@ def _flatten(doc: dict, transcript_data: tuple[str, str, str]) -> dict | None:
         "created_at": _to_utc_iso(doc.get("created_at")),
         "updated_at": _to_utc_iso(doc.get("updated_at")),
     }
+
+
+def _list_documents(token: str, offset: int) -> list[dict]:
+    """POST /v2/get-documents. Returns the doc array (handles both response shapes).
+
+    Raises RuntimeError on 401 with the user-facing "expired" instruction.
+    Other HTTP errors propagate via requests.HTTPError.
+    """
+    body = {"limit": PAGE_SIZE, "offset": offset, "include_content": True}
+    r = requests.post(
+        LIST_URL,
+        headers={"Authorization": f"Bearer {token}"},
+        json=body,
+        timeout=30,
+    )
+    if r.status_code == 401:
+        raise RuntimeError(
+            "Granola access token expired. Open the Granola desktop app to "
+            "refresh, then re-run."
+        )
+    r.raise_for_status()
+    payload = r.json()
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        return payload.get("docs") or []
+    return []
+
+
+def _fetch_transcript(token: str, document_id: str) -> tuple[str, str, str]:
+    """POST /v1/get-document-transcript. Returns (transcript, start, end).
+
+    Returns ("", "", "") on 404, network error, or empty result. Granola has
+    docs without transcripts (manual notes, missed recordings); they're stored
+    with no transcript and `started_at` falls back to `created_at`.
+    """
+    try:
+        r = requests.post(
+            TRANSCRIPT_URL,
+            headers={"Authorization": f"Bearer {token}"},
+            json={"document_id": document_id},
+            timeout=30,
+        )
+    except requests.RequestException:
+        return ("", "", "")
+    if r.status_code != 200:
+        return ("", "", "")
+    try:
+        utterances = r.json()
+    except ValueError:
+        return ("", "", "")
+    if not isinstance(utterances, list) or not utterances:
+        return ("", "", "")
+
+    lines = []
+    for u in utterances:
+        text = (u.get("text") or "").strip()
+        if not text:
+            continue
+        source = u.get("source") or "unknown"
+        lines.append(f"[{source}] {text}")
+    transcript = "\n".join(lines)
+    start = utterances[0].get("start_timestamp") or ""
+    end = utterances[-1].get("end_timestamp") or ""
+    return (transcript, start, end)
 
 
 def sync(t: Tracker) -> None:
