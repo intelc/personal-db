@@ -1,0 +1,7 @@
+{
+  "https://abc123.supabase.co": {
+    "session": {
+      "workos_tokens": "{\"access_token\":\"AT_STRING_FORM\",\"refresh_token\":\"RT_STRING_FORM\"}"
+    }
+  }
+}

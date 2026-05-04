@@ -1,0 +1,10 @@
+{
+  "https://abc123.supabase.co": {
+    "session": {
+      "workos_tokens": {
+        "access_token": "AT_DICT_FORM",
+        "refresh_token": "RT_DICT_FORM"
+      }
+    }
+  }
+}
