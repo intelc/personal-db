@@ -124,19 +124,26 @@ def _duration_seconds(start: str | None, end: str | None) -> int | None:
     s, e = _parse_iso(start), _parse_iso(end)
     if not s or not e:
         return None
-    return int((e - s).total_seconds())
+    return max(0, int((e - s).total_seconds()))
 
 
 def _flatten(doc: dict, transcript_data: tuple[str, str, str]) -> dict | None:
     """Combine a Granola doc with its fetched transcript into a row.
 
-    Returns None if the doc has neither a transcript nor a created_at —
-    we'd have nothing to anchor `started_at` to, and the schema requires it.
+    `started_at` falls back through: transcript_start → doc.created_at.
+    Returns None if the doc has no `id`, or if neither candidate parses as
+    a valid ISO timestamp — the schema requires `started_at NOT NULL`.
     """
     transcript, transcript_start, transcript_end = transcript_data
-    started_raw = transcript_start or doc.get("created_at") or ""
-    if not started_raw:
+    doc_id = doc.get("id")
+    if not doc_id:
         return None
+
+    started_raw = transcript_start or doc.get("created_at") or ""
+    started_dt = _parse_iso(started_raw)
+    if not started_dt:
+        return None
+    started_iso = started_dt.astimezone(UTC).isoformat()
 
     finished_raw = transcript_end or None
     content_obj = doc.get("content")
@@ -145,8 +152,8 @@ def _flatten(doc: dict, transcript_data: tuple[str, str, str]) -> dict | None:
     participants = json.dumps(doc.get("participants") or [])
 
     return {
-        "id": doc["id"],
-        "started_at": _to_utc_iso(started_raw),
+        "id": doc_id,
+        "started_at": started_iso,
         "finished_at": _to_utc_iso(finished_raw),
         "duration_seconds": _duration_seconds(started_raw, finished_raw),
         "title": (doc.get("title") or "")[:500],

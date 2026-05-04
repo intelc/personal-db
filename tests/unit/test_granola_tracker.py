@@ -182,3 +182,21 @@ def test_flatten_handles_empty_content_and_participants():
     assert row["content"] == ""
     assert row["overview"] == ""
     assert row["participants"] == "[]"
+
+
+def test_flatten_drops_doc_with_missing_id():
+    """No id means we can't dedupe — and the schema PK forbids it anyway."""
+    doc = _make_doc()
+    doc.pop("id")
+    assert granola_ingest._flatten(doc, ("[me] hi", "2026-04-01T15:00:00Z", "2026-04-01T15:30:00Z")) is None
+
+
+def test_flatten_drops_doc_with_unparseable_started_at():
+    """Non-empty but malformed timestamps don't sneak past the anchor guard."""
+    doc = _make_doc(created_at="not a real timestamp")
+    assert granola_ingest._flatten(doc, ("", "", "")) is None
+
+
+def test_duration_seconds_clamps_negative_to_zero():
+    """End before start (clock skew, DST) must not produce negative durations."""
+    assert granola_ingest._duration_seconds("2026-04-01T15:30:00Z", "2026-04-01T15:00:00Z") == 0
