@@ -237,11 +237,15 @@ def test_list_documents_array_response(monkeypatch):
 
 
 def test_list_documents_object_response(monkeypatch):
-    monkeypatch.setattr(
-        granola_ingest.requests, "post",
-        lambda *a, **k: _FakeResponse(200, {"docs": [{"id": "d2", "updated_at": "x"}]}),
-    )
+    captured = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured["json"] = json
+        return _FakeResponse(200, {"docs": [{"id": "d2", "updated_at": "x"}]})
+
+    monkeypatch.setattr(granola_ingest.requests, "post", fake_post)
     assert granola_ingest._list_documents("TOK", offset=25) == [{"id": "d2", "updated_at": "x"}]
+    assert captured["json"]["offset"] == 25
 
 
 def test_list_documents_401_raises_expired(monkeypatch):
@@ -258,14 +262,18 @@ def test_fetch_transcript_basic(monkeypatch):
         {"text": "hi", "source": "me", "start_timestamp": "2026-04-01T15:00:00Z", "end_timestamp": "2026-04-01T15:00:05Z"},
         {"text": "hello", "source": "them", "start_timestamp": "2026-04-01T15:00:06Z", "end_timestamp": "2026-04-01T15:00:10Z"},
     ]
-    monkeypatch.setattr(
-        granola_ingest.requests, "post",
-        lambda *a, **k: _FakeResponse(200, payload),
-    )
+    captured = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured["json"] = json
+        return _FakeResponse(200, payload)
+
+    monkeypatch.setattr(granola_ingest.requests, "post", fake_post)
     transcript, start, end = granola_ingest._fetch_transcript("TOK", "doc1")
     assert transcript == "[me] hi\n[them] hello"
     assert start == "2026-04-01T15:00:00Z"
     assert end == "2026-04-01T15:00:10Z"
+    assert captured["json"]["document_id"] == "doc1"
 
 
 def test_fetch_transcript_404_returns_empty(monkeypatch):
@@ -306,3 +314,30 @@ def test_fetch_transcript_network_error_returns_empty(monkeypatch):
 
     monkeypatch.setattr(granola_ingest.requests, "post", boom)
     assert granola_ingest._fetch_transcript("TOK", "doc1") == ("", "", "")
+
+
+def test_fetch_transcript_401_raises_expired(monkeypatch):
+    """A 401 on the transcript endpoint surfaces just like the list endpoint."""
+    monkeypatch.setattr(
+        granola_ingest.requests, "post",
+        lambda *a, **k: _FakeResponse(401, {"error": "unauthorized"}),
+    )
+    with pytest.raises(RuntimeError, match="access token expired"):
+        granola_ingest._fetch_transcript("TOK", "doc1")
+
+
+def test_fetch_transcript_whitespace_only_text_preserves_timestamps(monkeypatch):
+    """Utterances with strip()-empty text leave transcript empty but keep timestamps."""
+    payload = [
+        {"text": "   ", "source": "me",
+         "start_timestamp": "2026-01-01T10:00:00Z",
+         "end_timestamp": "2026-01-01T10:00:05Z"},
+    ]
+    monkeypatch.setattr(
+        granola_ingest.requests, "post",
+        lambda *a, **k: _FakeResponse(200, payload),
+    )
+    transcript, start, end = granola_ingest._fetch_transcript("TOK", "doc1")
+    assert transcript == ""
+    assert start == "2026-01-01T10:00:00Z"
+    assert end == "2026-01-01T10:00:05Z"

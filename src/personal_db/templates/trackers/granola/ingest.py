@@ -205,6 +205,9 @@ def _fetch_transcript(token: str, document_id: str) -> tuple[str, str, str]:
     Returns ("", "", "") on 404, network error, or empty result. Granola has
     docs without transcripts (manual notes, missed recordings); they're stored
     with no transcript and `started_at` falls back to `created_at`.
+
+    A 401 is NOT swallowed — it's the same expired-token signal as the list
+    endpoint, surfaced as a RuntimeError so the user knows to re-auth.
     """
     try:
         r = requests.post(
@@ -215,6 +218,11 @@ def _fetch_transcript(token: str, document_id: str) -> tuple[str, str, str]:
         )
     except requests.RequestException:
         return ("", "", "")
+    if r.status_code == 401:
+        raise RuntimeError(
+            "Granola access token expired. Open the Granola desktop app to "
+            "refresh, then re-run."
+        )
     if r.status_code != 200:
         return ("", "", "")
     try:
