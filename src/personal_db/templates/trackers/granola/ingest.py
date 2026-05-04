@@ -15,7 +15,7 @@ from personal_db.tracker import Tracker
 SUPABASE_PATH = Path.home() / "Library/Application Support/Granola/supabase.json"
 
 
-def _extract_workos_access_token(node) -> str | None:
+def _extract_workos_access_token(node: object) -> str | None:
     """Walk a JSON tree looking for workos_tokens.access_token.
 
     `workos_tokens` may be a JSON-encoded string or a dict — handle both.
@@ -47,8 +47,8 @@ def _extract_workos_access_token(node) -> str | None:
 def _read_access_token(path: Path = SUPABASE_PATH) -> str:
     """Read the current Granola access token from the desktop app's local store.
 
-    Raises RuntimeError with a user-facing instruction when the file is missing
-    or no token can be extracted.
+    Raises RuntimeError with a user-facing instruction when the file is missing,
+    the file contains invalid JSON, or no token can be extracted.
     """
     if not path.exists():
         raise RuntimeError(

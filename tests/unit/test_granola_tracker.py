@@ -41,3 +41,10 @@ def test_read_access_token_no_workos_tokens(tmp_path):
     p.write_text(json.dumps({"session": {"other_key": "value"}}))
     with pytest.raises(RuntimeError, match="access token not found"):
         granola_ingest._read_access_token(p)
+
+
+def test_read_access_token_corrupt_json(tmp_path):
+    p = tmp_path / "supabase.json"
+    p.write_text("{ this is not json")
+    with pytest.raises(RuntimeError, match="not valid JSON"):
+        granola_ingest._read_access_token(p)
