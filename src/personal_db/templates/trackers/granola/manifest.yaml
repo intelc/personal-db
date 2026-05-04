@@ -1,0 +1,34 @@
+name: granola
+description: Granola meeting notes — title, content, transcript, participants
+permission_type: api_key
+setup_steps:
+  - type: instructions
+    text: |
+      Granola tokens are read from the desktop app on every sync.
+
+        1. Install Granola: https://www.granola.ai
+        2. Sign in to the desktop app
+        3. Keep the app installed and open Granola occasionally so its token stays fresh
+
+      No keys to paste. If syncs start failing with "access token expired",
+      just open the Granola desktop app and re-run.
+schedule:
+  every: 30m
+time_column: started_at
+granularity: event
+schema:
+  tables:
+    granola_documents:
+      columns:
+        id:               {type: TEXT,    semantic: "Granola document id, primary key"}
+        started_at:       {type: TEXT,    semantic: "ISO-8601 meeting start (UTC), from first transcript utterance, falls back to created_at"}
+        finished_at:      {type: TEXT,    semantic: "ISO-8601 meeting end (UTC), from last transcript utterance"}
+        duration_seconds: {type: INTEGER, semantic: "wall-clock duration"}
+        title:            {type: TEXT,    semantic: "Granola-generated meeting title"}
+        overview:         {type: TEXT,    semantic: "plaintext extract of content (Granola notes)"}
+        content:          {type: TEXT,    semantic: "raw Granola notes JSON (ProseMirror-style)"}
+        transcript:       {type: TEXT,    semantic: "speaker-attributed transcript, one line per utterance: '[me] ...' / '[them] ...'"}
+        participants:     {type: TEXT,    semantic: "JSON array of meeting participants"}
+        created_at:       {type: TEXT,    semantic: "ISO-8601 doc creation (≠ meeting start)"}
+        updated_at:       {type: TEXT,    semantic: "ISO-8601 last edit"}
+related_entities: []

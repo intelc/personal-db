@@ -80,6 +80,22 @@ def test_update_template_overwrites_files(tmp_root):
     assert p.read_text().startswith("name: habits")
 
 
+def test_granola_is_bundled():
+    names = set(list_bundled())
+    assert "granola" in names
+
+
+def test_granola_manifest_loads():
+    from pathlib import Path
+    from personal_db.manifest import load_manifest
+
+    here = Path(__file__).resolve().parents[2]
+    m = load_manifest(here / "src/personal_db/templates/trackers/granola/manifest.yaml")
+    assert m.name == "granola"
+    assert m.permission_type == "api_key"
+    assert "granola_documents" in m.schema.tables
+
+
 def test_update_template_preserves_other_files(tmp_root):
     """If the user has a side file (e.g., notes) in the tracker dir, update doesn't touch it."""
     cfg = Config(root=tmp_root)
