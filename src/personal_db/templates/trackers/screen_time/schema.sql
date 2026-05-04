@@ -7,3 +7,9 @@ CREATE TABLE IF NOT EXISTS screen_time_app_usage (
   UNIQUE(bundle_id, start_at)
 );
 CREATE INDEX IF NOT EXISTS idx_screen_time_start ON screen_time_app_usage(start_at);
+
+CREATE TABLE IF NOT EXISTS screen_time_app_names (
+  bundle_id   TEXT PRIMARY KEY,
+  app_name    TEXT NOT NULL,
+  resolved_at TEXT NOT NULL
+);

@@ -3,11 +3,14 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from personal_db.app_names import resolve_app_name
+from personal_db.db import connect
 from personal_db.tracker import Tracker
 
 # Apple Cocoa epoch: 2001-01-01 UTC
 COCOA_EPOCH = datetime(2001, 1, 1, tzinfo=UTC)
 DEFAULT_DB = Path("~/Library/Application Support/Knowledge/knowledgeC.db").expanduser()
+MOSSPATH_DB = Path("~/Library/Application Support/Mosspath/store/events.sqlite").expanduser()
 
 
 def _cocoa_to_iso(seconds: float) -> str:
@@ -57,3 +60,52 @@ def sync(t: Tracker) -> None:
         t.upsert("screen_time_app_usage", rows, key=["bundle_id", "start_at"])
         t.cursor.set(rows[-1]["start_at"])
     t.log.info("screen_time: ingested %d rows", len(rows))
+    _populate_app_name_cache(t)
+
+
+def _populate_app_name_cache(t: Tracker) -> None:
+    """Resolve any new bundle_ids seen locally or in Mosspath sessions into screen_time_app_names.
+
+    Renders read from this cache only; resolution stays on the sync path so the
+    UI never blocks on mdfind/iTunes lookups.
+    """
+    con = connect(t.cfg.db_path)
+    try:
+        bundles: set[str] = {
+            row[0]
+            for row in con.execute("SELECT DISTINCT bundle_id FROM screen_time_app_usage")
+        }
+        if MOSSPATH_DB.exists():
+            try:
+                mp = sqlite3.connect(f"file:{MOSSPATH_DB}?mode=ro", uri=True)
+                bundles.update(
+                    row[0]
+                    for row in mp.execute(
+                        "SELECT DISTINCT bundle_id FROM screen_time_sessions "
+                        "WHERE bundle_id IS NOT NULL"
+                    )
+                )
+                mp.close()
+            except sqlite3.OperationalError:
+                pass
+
+        cached = {
+            row[0] for row in con.execute("SELECT bundle_id FROM screen_time_app_names")
+        }
+        missing = bundles - cached
+        if not missing:
+            return
+
+        cache_path = t.cfg.state_dir / "screen_time_app_name_cache.json"
+        now_iso = datetime.now(UTC).isoformat()
+        for bundle in missing:
+            name = resolve_app_name(bundle, cache_path=cache_path)
+            con.execute(
+                "INSERT OR REPLACE INTO screen_time_app_names "
+                "(bundle_id, app_name, resolved_at) VALUES (?, ?, ?)",
+                (bundle, name, now_iso),
+            )
+        con.commit()
+        t.log.info("screen_time: cached %d new app names", len(missing))
+    finally:
+        con.close()
