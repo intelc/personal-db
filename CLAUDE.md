@@ -32,6 +32,23 @@ This pattern is what fixed the omi `structured.title` / `structured.category` pa
 - **Credentials:** `<root>/.env` (mode 0600, auto-loaded on every CLI invocation).
 - **DB:** `<root>/db.sqlite` (single file, all tracker tables).
 
+## The sync daemon
+
+`personal-db sync <tracker>` and the MCP `sync` tool both delegate to a long-running daemon at `http://127.0.0.1:8765`. The daemon is launchd-managed (`com.personal_db.daemon`) and holds the macOS Full Disk Access grant via the Python interpreter, so sync works regardless of which process triggered it.
+
+```bash
+# install (auto-migrates from the old scheduler plist)
+personal-db daemon install
+
+# check status
+personal-db daemon status
+
+# manually run in foreground (debugging)
+personal-db daemon run --port 8766
+```
+
+If sync prints `personal-db daemon not running`, the fix is `personal-db daemon install`.
+
 ## Useful one-liners
 
 ```bash
@@ -40,6 +57,9 @@ This pattern is what fixed the omi `structured.title` / `structured.category` pa
 
 # Confirm a tracker is auto-discovered
 .venv/bin/python -c "from personal_db.installer import list_bundled; print(list_bundled())"
+
+# Check daemon health
+curl -s http://127.0.0.1:8765/api/health | python3 -m json.tool
 
 # Tail the live UI log
 tail -f /tmp/pdb-ui.log
