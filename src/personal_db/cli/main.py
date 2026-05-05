@@ -8,6 +8,7 @@ from personal_db.cli import (
     log_cmd,
     mcp_cmd,
     permission_cmd,
+    query_cmd,
     scheduler_cmd,
     setup_cmd,
     sync_cmd,
@@ -39,6 +40,7 @@ app.add_typer(mcp_cmd.mcp_app, name="mcp")
 app.command("sync")(sync_cmd.sync)
 app.command("backfill")(sync_cmd.backfill)
 app.command("log")(log_cmd.log)
+app.command("query")(query_cmd.query)
 app.command("ui")(ui_cmd.ui)
 
 tracker_app = typer.Typer(no_args_is_help=True, help="Tracker management")

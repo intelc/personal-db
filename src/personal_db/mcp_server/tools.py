@@ -14,6 +14,12 @@ from personal_db.db import connect
 from personal_db.log_event import log_event
 from personal_db.manifest import load_manifest
 from personal_db.notes import list_notes, read_note
+from personal_db.sync import (
+    _read_last_run,
+    backfill_one,
+    sync_due,
+    sync_one,
+)
 
 # Cap file writes to keep the tool from being a foot-gun. Real tracker files
 # are well under 100 KB; 1 MiB leaves plenty of headroom.
@@ -261,6 +267,37 @@ def write_tracker_file(cfg: Config, path: str, content: str) -> dict[str, Any]:
         tmp_path = Path(tmp.name)
     tmp_path.replace(target)
     return {"path": path, "bytes_written": len(encoded), "created": created}
+
+
+def sync_tool(cfg: Config, name: str) -> dict[str, Any]:
+    if not _TRACKER_NAME_RE.match(name):
+        raise ValueError(f"invalid tracker name: {name!r}")
+    if not (cfg.trackers_dir / name).is_dir():
+        raise FileNotFoundError(f"no such tracker: {name}")
+    sync_one(cfg, name)
+    return {
+        "ok": True,
+        "tracker": name,
+        "last_run": _read_last_run(cfg).get(name),
+    }
+
+
+def sync_due_tool(cfg: Config) -> dict[str, Any]:
+    return {"results": sync_due(cfg)}
+
+
+def backfill_tool(
+    cfg: Config,
+    name: str,
+    start: str | None = None,
+    end: str | None = None,
+) -> dict[str, Any]:
+    if not _TRACKER_NAME_RE.match(name):
+        raise ValueError(f"invalid tracker name: {name!r}")
+    if not (cfg.trackers_dir / name).is_dir():
+        raise FileNotFoundError(f"no such tracker: {name}")
+    backfill_one(cfg, name, start, end)
+    return {"ok": True, "tracker": name, "from": start, "to": end}
 
 
 def validate_tracker(cfg: Config, name: str) -> dict[str, Any]:

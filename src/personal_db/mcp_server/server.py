@@ -169,6 +169,48 @@ def build_server(cfg: Config) -> Server:
                 },
             ),
             Tool(
+                name="sync",
+                description=(
+                    "Run an incremental sync for one tracker (equivalent to "
+                    "`personal-db sync <name>`). Pulls new rows from the source "
+                    "since the stored cursor and runs registered transforms. "
+                    "May take seconds to minutes depending on the tracker."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                    "required": ["name"],
+                },
+            ),
+            Tool(
+                name="sync_due",
+                description=(
+                    "Run sync for every tracker whose schedule.every interval "
+                    "has elapsed since its last run (equivalent to "
+                    "`personal-db sync --due`). Returns a per-tracker status "
+                    "map: 'ok', 'skip', or 'error: <msg>'."
+                ),
+                inputSchema={"type": "object", "properties": {}},
+            ),
+            Tool(
+                name="backfill",
+                description=(
+                    "Run a historical backfill for one tracker over an optional "
+                    "date range (equivalent to `personal-db backfill <name> "
+                    "[--from] [--to]`). Use this after fixing an ingest parser "
+                    "or when first installing a tracker. Dates are YYYY-MM-DD."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "from": {"type": "string", "description": "YYYY-MM-DD"},
+                        "to": {"type": "string", "description": "YYYY-MM-DD"},
+                    },
+                    "required": ["name"],
+                },
+            ),
+            Tool(
                 name="validate_tracker",
                 description=(
                     "Run lint checks on a tracker dir: YAML parse, Pydantic manifest "
@@ -215,6 +257,17 @@ def build_server(cfg: Config) -> Server:
             result = T.write_tracker_file(cfg, arguments["path"], arguments["content"])
         elif name == "validate_tracker":
             result = T.validate_tracker(cfg, arguments["name"])
+        elif name == "sync":
+            result = T.sync_tool(cfg, arguments["name"])
+        elif name == "sync_due":
+            result = T.sync_due_tool(cfg)
+        elif name == "backfill":
+            result = T.backfill_tool(
+                cfg,
+                arguments["name"],
+                arguments.get("from"),
+                arguments.get("to"),
+            )
         elif name == "log_life_context":
             result = T.log_life_context(
                 cfg,

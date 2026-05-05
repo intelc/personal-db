@@ -4,11 +4,14 @@ import yaml
 from personal_db.config import Config
 from personal_db.db import apply_tracker_schema, connect, init_db
 from personal_db.mcp_server.tools import (
+    backfill_tool,
     describe_tracker,
     get_series,
     list_trackers,
     log_event_tool,
     query,
+    sync_due_tool,
+    sync_tool,
 )
 
 
@@ -106,3 +109,77 @@ def test_log_event_tool(tmp_root):
     cfg = _make_demo(tmp_root)
     rid = log_event_tool(cfg, "demo", {"id": "z", "ts": "2026-04-27", "value": 5})
     assert rid is not None
+
+
+def _make_runnable_tracker(tmp_root, name="runnable"):
+    cfg = Config(root=tmp_root)
+    init_db(cfg.db_path)
+    d = tmp_root / "trackers" / name
+    d.mkdir(parents=True)
+    (d / "manifest.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": name,
+                "description": "runnable",
+                "permission_type": "none",
+                "setup_steps": [],
+                "schedule": {"every": "1h"},
+                "time_column": "ts",
+                "granularity": "event",
+                "schema": {
+                    "tables": {
+                        name: {
+                            "columns": {
+                                "id": {"type": "TEXT", "semantic": "id"},
+                                "ts": {"type": "TEXT", "semantic": "ts"},
+                            }
+                        }
+                    }
+                },
+            }
+        )
+    )
+    (d / "schema.sql").write_text(
+        f"CREATE TABLE IF NOT EXISTS {name} (id TEXT PRIMARY KEY, ts TEXT);"
+    )
+    (d / "ingest.py").write_text(
+        "def backfill(t, start, end):\n"
+        "    t.upsert(t.name, [{'id': 'b1', 'ts': '2026-04-01'}], key=['id'])\n"
+        "def sync(t):\n"
+        "    t.upsert(t.name, [{'id': 's1', 'ts': '2026-04-25'}], key=['id'])\n"
+    )
+    return cfg
+
+
+def test_sync_tool_runs_and_records_last_run(tmp_root):
+    cfg = _make_runnable_tracker(tmp_root)
+    out = sync_tool(cfg, "runnable")
+    assert out["ok"] is True
+    assert out["tracker"] == "runnable"
+    assert out["last_run"]
+
+
+def test_sync_tool_rejects_unknown_tracker(tmp_root):
+    cfg = _make_runnable_tracker(tmp_root)
+    with pytest.raises(FileNotFoundError):
+        sync_tool(cfg, "nope")
+
+
+def test_sync_tool_rejects_invalid_name(tmp_root):
+    cfg = _make_runnable_tracker(tmp_root)
+    with pytest.raises(ValueError):
+        sync_tool(cfg, "../escape")
+
+
+def test_sync_due_tool_runs_pending(tmp_root):
+    cfg = _make_runnable_tracker(tmp_root)
+    out = sync_due_tool(cfg)
+    assert out["results"]["runnable"] == "ok"
+
+
+def test_backfill_tool_invokes_ingest_backfill(tmp_root):
+    cfg = _make_runnable_tracker(tmp_root)
+    out = backfill_tool(cfg, "runnable", "2026-04-01", "2026-04-02")
+    assert out["ok"] is True
+    rows = query(cfg, "SELECT id FROM runnable ORDER BY id")
+    assert any(r["id"] == "b1" for r in rows)
