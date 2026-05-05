@@ -8,7 +8,7 @@ import yaml
 from fastapi.testclient import TestClient
 
 from personal_db.config import Config
-from personal_db.ui.server import build_app
+from personal_db.daemon.http import build_app
 from personal_db.ui.viz import discover, list_trackers_with_viz, load_dashboard_slugs
 
 
@@ -193,14 +193,14 @@ def test_refresh_endpoint_swallows_sync_errors(tmp_path):
 
 
 def test_nav_split_under_limit_returns_all_visible():
-    from personal_db.ui.server import _split_nav
+    from personal_db.daemon.http import _split_nav
     visible, overflow = _split_nav(["a", "b", "c"], active=None, limit=6)
     assert visible == ["a", "b", "c"]
     assert overflow == []
 
 
 def test_nav_split_over_limit_pushes_extras_to_dropdown():
-    from personal_db.ui.server import _split_nav
+    from personal_db.daemon.http import _split_nav
     trackers = ["a", "b", "c", "d", "e", "f", "g", "h"]
     visible, overflow = _split_nav(trackers, active=None, limit=6)
     assert visible == ["a", "b", "c", "d", "e", "f"]
@@ -210,7 +210,7 @@ def test_nav_split_over_limit_pushes_extras_to_dropdown():
 def test_nav_split_swaps_active_into_visible():
     """If the active tracker would be hidden in overflow, swap it into the
     last visible slot so the highlighted tab stays on screen."""
-    from personal_db.ui.server import _split_nav
+    from personal_db.daemon.http import _split_nav
     trackers = ["a", "b", "c", "d", "e", "f", "g", "h"]
     visible, overflow = _split_nav(trackers, active="h", limit=6)
     assert "h" in visible
@@ -220,7 +220,7 @@ def test_nav_split_swaps_active_into_visible():
 
 
 def test_nav_split_active_already_visible_unchanged():
-    from personal_db.ui.server import _split_nav
+    from personal_db.daemon.http import _split_nav
     trackers = ["a", "b", "c", "d", "e", "f", "g", "h"]
     visible, overflow = _split_nav(trackers, active="b", limit=6)
     assert visible == ["a", "b", "c", "d", "e", "f"]

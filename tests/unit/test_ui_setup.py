@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from personal_db.config import Config
-from personal_db.ui.server import build_app
+from personal_db.daemon.http import build_app
 
 
 @pytest.fixture(autouse=True)

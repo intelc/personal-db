@@ -72,7 +72,7 @@ def _launch_browser_wizard(cfg: Config, port: int) -> None:
 
     import uvicorn
 
-    from personal_db.ui.server import build_app
+    from personal_db.daemon.http import build_app
 
     try:
         uvicorn.run(build_app(cfg), host="127.0.0.1", port=port, log_level="warning")

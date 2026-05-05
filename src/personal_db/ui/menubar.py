@@ -24,7 +24,7 @@ import uvicorn
 from personal_db.config import Config
 from personal_db.mcp_server.tools import log_life_context
 from personal_db.sync import sync_due
-from personal_db.ui.server import build_app
+from personal_db.daemon.http import build_app
 
 # Color → text mapping. macOS renders these emojis as native menu bar glyphs.
 _HEALTHY = "🟢"

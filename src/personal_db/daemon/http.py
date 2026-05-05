@@ -34,7 +34,7 @@ from personal_db.ui.setup_runner import list_overview, list_step_views, process_
 from personal_db.ui.viz import discover, list_trackers_with_viz, load_dashboard_slugs
 from personal_db.wizard.mcp_setup import _TARGETS as _MCP_TARGETS
 
-_HERE = Path(__file__).parent
+_HERE = Path(__file__).parent.parent / "ui"
 
 _NAV_VISIBLE_LIMIT = 6
 
