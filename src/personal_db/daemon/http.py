@@ -66,27 +66,25 @@ def _backfill_locked(cfg: Config, tracker: str, start: str | None, end: str | No
         backfill_one(cfg, tracker, start, end)
 
 
-def _install_scheduler_safe(cfg: Config) -> str:
-    """Install the launchd scheduler. Returns a one-line status string for the
-    finalize page. Idempotent (the underlying scheduler.install overwrites the
-    plist if it already exists). macOS-only.
+def _install_daemon_safe(cfg: Config) -> str:
+    """Install the launchd daemon plist. Returns a one-line status string for the
+    finalize page. Idempotent. macOS-only.
 
-    Honors PERSONAL_DB_NO_SCHEDULER=1 — the launchd plist lives at a global
-    path (~/Library/LaunchAgents/...), so writing it from tests or demos would
-    clobber the real install. The env var lets those contexts opt out cleanly."""
+    Honors PERSONAL_DB_NO_DAEMON=1 (and the deprecated PERSONAL_DB_NO_SCHEDULER=1)
+    so tests/demos can opt out of clobbering the user's real install."""
     import os
 
-    if os.environ.get("PERSONAL_DB_NO_SCHEDULER") == "1":
-        return "✓ scheduler skipped (PERSONAL_DB_NO_SCHEDULER=1)"
+    if os.environ.get("PERSONAL_DB_NO_DAEMON") == "1" or os.environ.get("PERSONAL_DB_NO_SCHEDULER") == "1":
+        return "✓ daemon skipped (PERSONAL_DB_NO_DAEMON=1)"
     if sys.platform != "darwin":
-        return f"⚠ scheduler is macOS-only (detected {sys.platform}); periodic sync skipped"
+        return f"⚠ daemon is macOS-only (detected {sys.platform}); periodic sync skipped"
     try:
-        from personal_db import scheduler
+        from personal_db.daemon import install as di
 
-        plist = scheduler.install(cfg.root, 600)
-        return f"✓ scheduler installed → {plist} (sync every 10 min)"
+        plist = di.install(cfg.root)
+        return f"✓ daemon installed → {plist} (long-running, KeepAlive)"
     except Exception as e:  # noqa: BLE001
-        return f"⚠ scheduler install failed: {e}"
+        return f"⚠ daemon install failed: {e}"
 
 
 def _split_nav(trackers: list[str], active: str | None,
@@ -247,7 +245,7 @@ def build_app(cfg: Config) -> FastAPI:
 
         Registered BEFORE /setup/{name} so `finish` doesn't get matched as a
         tracker name parameter."""
-        scheduler_msg = _install_scheduler_safe(cfg)
+        scheduler_msg = _install_daemon_safe(cfg)
         reg = _registry()
         targets = [
             {"key": key, "label": tgt.label}
