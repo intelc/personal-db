@@ -1,4 +1,4 @@
-"""`personal-db ui` — launch the menu bar app + dashboard server."""
+"""`personal-db ui` — launch the menubar shell. The dashboard is served by the daemon."""
 
 from __future__ import annotations
 
@@ -9,24 +9,11 @@ from personal_db.config import Config
 
 
 def ui(
-    port: int = typer.Option(8765, "--port", help="Dashboard port"),
-    no_menubar: bool = typer.Option(
-        False, "--no-menubar", help="Run only the dashboard server, no menu bar (useful in tmux)"
-    ),
+    port: int = typer.Option(8765, "--port", help="Daemon dashboard port (for the 'Open dashboard' menu item)"),
 ) -> None:
-    """Launch the personal_db menu bar app + dashboard.
+    """Launch the menubar shell. The dashboard runs in the daemon at
+    http://127.0.0.1:<port>/ — make sure `personal-db daemon install` was run."""
+    from personal_db.ui.menubar import run_menubar
 
-    The menu bar lives in the macOS status bar (rumps); the dashboard runs at
-    http://127.0.0.1:<port>/. Use --no-menubar to skip rumps and serve only
-    the dashboard (e.g. when running headless or over SSH).
-    """
     cfg = Config(root=get_root())
-    if no_menubar:
-        from personal_db.ui.menubar import _start_server
-
-        typer.echo(f"dashboard at http://127.0.0.1:{port}/  (Ctrl+C to stop)")
-        _start_server(cfg, port)
-    else:
-        from personal_db.ui.menubar import run_menubar
-
-        run_menubar(cfg, port=port)
+    run_menubar(cfg, port=port)
