@@ -4,12 +4,12 @@ import typer
 from dotenv import load_dotenv
 
 from personal_db.cli import (
+    daemon_cmd,
     init_cmd,
     log_cmd,
     mcp_cmd,
     permission_cmd,
     query_cmd,
-    scheduler_cmd,
     setup_cmd,
     sync_cmd,
     tracker_cmd,
@@ -55,11 +55,13 @@ permission_app = typer.Typer(no_args_is_help=True, help="OS permission helpers")
 permission_app.command("check")(permission_cmd.check)
 app.add_typer(permission_app, name="permission")
 
-sched_app = typer.Typer(no_args_is_help=True, help="Background scheduler")
-sched_app.command("install")(scheduler_cmd.install)
-sched_app.command("uninstall")(scheduler_cmd.uninstall)
-sched_app.command("status")(scheduler_cmd.status)
-app.add_typer(sched_app, name="scheduler")
+daemon_app = typer.Typer(no_args_is_help=True, help="Long-running sync daemon")
+daemon_app.command("install")(daemon_cmd.install)
+daemon_app.command("uninstall")(daemon_cmd.uninstall)
+daemon_app.command("status")(daemon_cmd.status)
+daemon_app.command("restart")(daemon_cmd.restart)
+daemon_app.command("run")(daemon_cmd.run)
+app.add_typer(daemon_app, name="daemon")
 
 if __name__ == "__main__":
     app()
