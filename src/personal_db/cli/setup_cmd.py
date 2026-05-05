@@ -4,7 +4,7 @@ Called by install.sh after `uv tool install`. Idempotent: re-running re-prompts
 for the wizard mode but skips already-done init steps.
 
 After the terminal wizard exits, runs three finalize steps:
-  1. Install the launchd scheduler (silent, macOS only)
+  1. Install the launchd daemon (silent, macOS only)
   2. Offer to install the MCP server into an agent (Claude Code / Desktop / Cursor)
   3. Optionally launch the menu bar + dashboard
 
@@ -63,7 +63,7 @@ def _launch_browser_wizard(cfg: Config, port: int) -> None:
     url = f"http://127.0.0.1:{port}/setup"
     typer.echo(f"Starting wizard at {url}")
     typer.echo(
-        "When you click 'Finish setup' in the browser we'll wire up the scheduler "
+        "When you click 'Finish setup' in the browser we'll wire up the daemon "
         "and offer to install the MCP server into an agent."
     )
     typer.echo("Press Ctrl+C in this terminal when you're done to stop the server.")
@@ -120,7 +120,7 @@ def _finalize_terminal(cfg: Config) -> None:
     typer.echo("  personal-db ui                # menu bar + dashboard")
     typer.echo("  personal-db setup             # add or reconfigure trackers")
     typer.echo("  personal-db mcp install       # add MCP into another agent")
-    typer.echo("  personal-db scheduler status  # check periodic sync")
+    typer.echo("  personal-db daemon status     # check periodic sync")
 
 
 def install_scheduler(cfg: Config) -> None:
@@ -132,17 +132,17 @@ def install_scheduler(cfg: Config) -> None:
     or demo would clobber the real install — the env var prevents that.
     """
     if os.environ.get("PERSONAL_DB_NO_SCHEDULER") == "1":
-        typer.echo("✓ scheduler skipped (PERSONAL_DB_NO_SCHEDULER=1)")
+        typer.echo("✓ daemon skipped (PERSONAL_DB_NO_SCHEDULER=1)")
         return
     if sys.platform != "darwin":
         typer.echo(
-            f"⚠ scheduler is macOS-only (detected {sys.platform}); periodic sync skipped"
+            f"⚠ daemon is macOS-only (detected {sys.platform}); periodic sync skipped"
         )
         return
     try:
-        from personal_db import scheduler
+        from personal_db.daemon import install as di
 
-        plist = scheduler.install(cfg.root, 600)
-        typer.echo(f"✓ scheduler installed → {plist} (sync every 10 min)")
+        plist = di.install(cfg.root)
+        typer.echo(f"✓ daemon installed → {plist} (sync every 10 min)")
     except Exception as e:  # noqa: BLE001
-        typer.echo(f"⚠ scheduler install failed: {e}")
+        typer.echo(f"⚠ daemon install failed: {e}")
