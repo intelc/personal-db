@@ -1,6 +1,9 @@
 import subprocess
 import sys
 
+from personal_db.config import Config
+from personal_db.sync import sync_one
+
 
 def _run(*args, root=None):
     cmd = [sys.executable, "-m", "personal_db.cli.main"]
@@ -17,7 +20,8 @@ def test_e2e_init_install_log_query(tmp_path):
 
     _run("init", root=root)
     _run("tracker", "install", "habits", root=root)
-    _run("sync", "habits", root=root)  # applies schema
+    # CLI sync now delegates to daemon (not running in tests); call sync_one directly to apply schema
+    sync_one(Config(root=root), "habits")
     _run("log", "habits", "name=meditate", "value=1", "ts=2026-04-25T08:00", root=root)
     _run("log", "habits", "name=meditate", "value=1", "ts=2026-04-26T08:00", root=root)
 
@@ -26,7 +30,6 @@ def test_e2e_init_install_log_query(tmp_path):
     assert "habits" in r.stdout
 
     # Direct SQL via MCP query path
-    from personal_db.config import Config
     from personal_db.mcp_server.tools import get_series, list_trackers, query
 
     cfg = Config(root=root)

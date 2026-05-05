@@ -4,6 +4,9 @@ import sys
 
 import yaml
 
+from personal_db.config import Config
+from personal_db.sync import sync_one
+
 
 def test_imessage_sync_resolves_people(tmp_path, monkeypatch):
     root = tmp_path / "personal_db"
@@ -38,20 +41,8 @@ def test_imessage_sync_resolves_people(tmp_path, monkeypatch):
         capture_output=True,
     )
     monkeypatch.setenv("PERSONAL_DB_IMESSAGE_DB", "tests/fixtures/imessage/chat_mini.sqlite")
-    r = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "personal_db.cli.main",
-            "--root",
-            str(root),
-            "sync",
-            "imessage",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    assert r.returncode == 0, r.stderr
+    # CLI sync now delegates to daemon (not running in tests); call sync_one directly.
+    sync_one(Config(root=root), "imessage")
     con = sqlite3.connect(root / "db.sqlite")
     rows = con.execute(
         "SELECT person_id, COUNT(*) FROM imessage_messages "

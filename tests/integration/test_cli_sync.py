@@ -1,7 +1,11 @@
+import sqlite3
 import subprocess
 import sys
 
 import yaml
+
+from personal_db.config import Config
+from personal_db.sync import sync_one
 
 
 def _init_with_tracker(tmp_path, ingest_body: str):
@@ -47,13 +51,8 @@ def test_pdb_sync_runs_ingest(tmp_path):
         "def backfill(t,start,end): pass\n"
         "def sync(t): t.upsert('demo', [{'id':'a','ts':'2026-04-25'}], key=['id'])\n",
     )
-    r = subprocess.run(
-        [sys.executable, "-m", "personal_db.cli.main", "--root", str(root), "sync", "demo"],
-        capture_output=True,
-        text=True,
-    )
-    assert r.returncode == 0, r.stderr
-    import sqlite3
+    # Call sync_one directly (CLI sync now delegates to daemon, which isn't running in tests)
+    sync_one(Config(root=root), "demo")
 
     con = sqlite3.connect(root / "db.sqlite")
     assert con.execute("SELECT id FROM demo").fetchone() == ("a",)
