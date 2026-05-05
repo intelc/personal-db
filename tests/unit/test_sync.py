@@ -5,7 +5,7 @@ import yaml
 
 from personal_db.config import Config
 from personal_db.db import init_db
-from personal_db.sync import _is_due, sync_one
+from personal_db.sync import _is_due, sync_due, sync_one
 
 
 def _make_tracker_dir(tmp_root: Path, name: str, schedule_every: str = "1h"):
@@ -69,3 +69,23 @@ def test_sync_due_skips_recent(tmp_root):
     sync_one(cfg, "demo")
     # Immediately due-check should be false
     assert _is_due(cfg, "demo") is False
+
+
+def test_sync_due_uses_provided_sync_one_fn(tmp_root):
+    """sync_due should invoke the optional sync_one_fn callable instead of
+    the built-in sync_one when one is supplied."""
+    cfg = Config(root=tmp_root)
+    init_db(cfg.db_path)
+    _make_tracker_dir(tmp_root, "demo", schedule_every="1h")
+
+    called_with: list[tuple] = []
+
+    def custom_sync_one(c, name):
+        called_with.append((c, name))
+        # Delegate to the real implementation so last_run is recorded.
+        sync_one(c, name)
+
+    results = sync_due(cfg, sync_one_fn=custom_sync_one)
+    assert results.get("demo") == "ok"
+    assert len(called_with) == 1
+    assert called_with[0] == (cfg, "demo")

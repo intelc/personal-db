@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pytest
 
 from personal_db.daemon import install as di
@@ -40,8 +38,10 @@ def test_install_migrates_old_scheduler_plist(tmp_path, monkeypatch):
         return R()
     monkeypatch.setattr(di.subprocess, "run", fake_run)
 
-    di.install(root=tmp_path / "personal_db")
+    result = di.install(root=tmp_path / "personal_db")
 
+    assert result["migrated_old_scheduler"] is True
+    assert result["plist"] == new_plist
     assert not old_plist.exists(), "old scheduler plist should be deleted"
     assert new_plist.exists(), "new daemon plist should be written"
     cmds = [" ".join(c) for c in calls]
@@ -55,9 +55,10 @@ def test_install_when_no_old_plist(tmp_path, monkeypatch):
     monkeypatch.setattr(di, "_LAUNCHAGENTS_DIR", fake_la)
     monkeypatch.setattr(di.subprocess, "run", lambda *a, **k: type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})())
 
-    p = di.install(root=tmp_path / "personal_db")
-    assert p == fake_la / "com.personal_db.daemon.plist"
-    assert p.exists()
+    result = di.install(root=tmp_path / "personal_db")
+    assert result["migrated_old_scheduler"] is False
+    assert result["plist"] == fake_la / "com.personal_db.daemon.plist"
+    assert result["plist"].exists()
 
 
 def test_uninstall_removes_plist(tmp_path, monkeypatch):
@@ -91,4 +92,55 @@ def test_install_raises_if_personal_db_not_on_path(tmp_path, monkeypatch):
     monkeypatch.setattr(di, "_LAUNCHAGENTS_DIR", fake_la)
     monkeypatch.setattr(di.shutil, "which", lambda _: None)
     with pytest.raises(RuntimeError, match="not found on PATH"):
+        di.install(root=tmp_path / "personal_db")
+
+
+def test_install_raises_runtime_error_on_launchctl_load_failure(tmp_path, monkeypatch):
+    """When launchctl load exits non-zero, install() should raise RuntimeError
+    with a clear message pointing the user to re-run after fixing the issue."""
+    import subprocess as _sp
+
+    fake_la = tmp_path / "LaunchAgents"
+    fake_la.mkdir()
+    monkeypatch.setattr(di, "_LAUNCHAGENTS_DIR", fake_la)
+
+    def fake_run(cmd, **kw):
+        # Raise CalledProcessError only on the "load" call.
+        if "load" in cmd and kw.get("check"):
+            raise _sp.CalledProcessError(1, cmd)
+        class R:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+        return R()
+
+    monkeypatch.setattr(di.subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="launchctl failed to load"):
+        di.install(root=tmp_path / "personal_db")
+
+
+def test_install_load_failure_with_migration_mentions_scheduler(tmp_path, monkeypatch):
+    """When migration happened AND load fails, the RuntimeError should mention
+    the old scheduler plist was already removed."""
+    import subprocess as _sp
+
+    fake_la = tmp_path / "LaunchAgents"
+    fake_la.mkdir()
+    old_plist = fake_la / "com.personal_db.scheduler.plist"
+    old_plist.write_text("<plist/>")
+    monkeypatch.setattr(di, "_LAUNCHAGENTS_DIR", fake_la)
+
+    def fake_run(cmd, **kw):
+        if "load" in cmd and kw.get("check"):
+            raise _sp.CalledProcessError(1, cmd)
+        class R:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+        return R()
+
+    monkeypatch.setattr(di.subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match=r"com\.personal_db\.scheduler\.plist was already removed"):
         di.install(root=tmp_path / "personal_db")

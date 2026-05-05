@@ -8,8 +8,8 @@ import threading
 import uvicorn
 
 from personal_db.config import Config
+from personal_db.daemon._locks import sync_due_locked as sync_due
 from personal_db.daemon.http import build_app
-from personal_db.sync import sync_due
 
 log = logging.getLogger("personal_db.daemon")
 

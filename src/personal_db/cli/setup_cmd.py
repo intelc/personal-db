@@ -131,8 +131,8 @@ def install_scheduler(cfg: Config) -> None:
     location is global (~/Library/LaunchAgents/...), so writing it from a test
     or demo would clobber the real install — the env var prevents that.
     """
-    if os.environ.get("PERSONAL_DB_NO_SCHEDULER") == "1":
-        typer.echo("✓ daemon skipped (PERSONAL_DB_NO_SCHEDULER=1)")
+    if os.environ.get("PERSONAL_DB_NO_DAEMON") == "1" or os.environ.get("PERSONAL_DB_NO_SCHEDULER") == "1":
+        typer.echo("✓ daemon skipped (PERSONAL_DB_NO_DAEMON=1)")
         return
     if sys.platform != "darwin":
         typer.echo(
@@ -142,7 +142,9 @@ def install_scheduler(cfg: Config) -> None:
     try:
         from personal_db.daemon import install as di
 
-        plist = di.install(cfg.root)
-        typer.echo(f"✓ daemon installed → {plist} (sync every 10 min)")
+        result = di.install(cfg.root)
+        if result["migrated_old_scheduler"]:
+            typer.echo("note: removed old com.personal_db.scheduler.plist")
+        typer.echo(f"✓ daemon installed → {result['plist']} (sync every 10 min)")
     except Exception as e:  # noqa: BLE001
         typer.echo(f"⚠ daemon install failed: {e}")

@@ -14,8 +14,10 @@ def install() -> None:
 
     Auto-migrates the old `com.personal_db.scheduler.plist` if present.
     """
-    p = di.install(get_root())
-    typer.echo(f"installed: {p}")
+    result = di.install(get_root())
+    if result["migrated_old_scheduler"]:
+        typer.echo("note: removed old com.personal_db.scheduler.plist")
+    typer.echo(f"installed: {result['plist']}")
 
 
 def uninstall() -> None:
@@ -32,8 +34,10 @@ def status() -> None:
 def restart() -> None:
     """Reinstall the plist (unload + load). Equivalent to `uninstall && install`."""
     di.uninstall()
-    p = di.install(get_root())
-    typer.echo(f"restarted: {p}")
+    result = di.install(get_root())
+    if result["migrated_old_scheduler"]:
+        typer.echo("note: removed old com.personal_db.scheduler.plist")
+    typer.echo(f"restarted: {result['plist']}")
 
 
 def run(

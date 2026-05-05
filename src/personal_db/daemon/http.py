@@ -19,9 +19,7 @@ from __future__ import annotations
 import asyncio
 import re
 import sys
-import threading
 import time as _time
-from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +29,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from personal_db.config import Config
+from personal_db.daemon._locks import backfill_locked, sync_due_locked, sync_one_locked
 from personal_db.db import apply_tracker_schema, init_db
 from personal_db.installer import install_template
 from personal_db.manifest import load_manifest
@@ -45,25 +44,12 @@ _HERE = Path(__file__).parent.parent / "ui"
 _NAV_VISIBLE_LIMIT = 6
 
 _TRACKER_NAME_RE = re.compile(r"^[a-z0-9_]+$")
-_tracker_locks: dict[str, threading.Lock] = defaultdict(threading.Lock)
 _DAEMON_START_TS: float = _time.time()
 
 
 def _validate_name(name: str) -> None:
     if not _TRACKER_NAME_RE.match(name):
         raise HTTPException(status_code=400, detail=f"invalid tracker name: {name!r}")
-
-
-def _sync_one_locked(cfg: Config, tracker: str) -> None:
-    with _tracker_locks[tracker]:
-        from personal_db.sync import sync_one
-        sync_one(cfg, tracker)
-
-
-def _backfill_locked(cfg: Config, tracker: str, start: str | None, end: str | None) -> None:
-    with _tracker_locks[tracker]:
-        from personal_db.sync import backfill_one
-        backfill_one(cfg, tracker, start, end)
 
 
 def _install_daemon_safe(cfg: Config) -> str:
@@ -81,8 +67,8 @@ def _install_daemon_safe(cfg: Config) -> str:
     try:
         from personal_db.daemon import install as di
 
-        plist = di.install(cfg.root)
-        return f"✓ daemon installed → {plist} (long-running, KeepAlive)"
+        result = di.install(cfg.root)
+        return f"✓ daemon installed → {result['plist']} (long-running, KeepAlive)"
     except Exception as e:  # noqa: BLE001
         return f"⚠ daemon install failed: {e}"
 
@@ -357,15 +343,14 @@ def build_app(cfg: Config) -> FastAPI:
         if not (cfg.trackers_dir / tracker).is_dir():
             raise HTTPException(status_code=404, detail=f"no such tracker: {tracker}")
         try:
-            await asyncio.to_thread(_sync_one_locked, cfg, tracker)
+            await asyncio.to_thread(sync_one_locked, cfg, tracker)
         except Exception as e:  # noqa: BLE001 — surface to client
             raise HTTPException(status_code=500, detail=f"sync failed: {e}") from e
         return {"ok": True, "tracker": tracker}
 
     @app.post("/api/sync_due")
     async def api_sync_due() -> dict[str, Any]:
-        from personal_db.sync import sync_due
-        results = await asyncio.to_thread(sync_due, cfg)
+        results = await asyncio.to_thread(sync_due_locked, cfg)
         return {"results": results}
 
     @app.post("/api/backfill/{tracker}")
@@ -376,7 +361,7 @@ def build_app(cfg: Config) -> FastAPI:
         start = request.query_params.get("from")
         end = request.query_params.get("to")
         try:
-            await asyncio.to_thread(_backfill_locked, cfg, tracker, start, end)
+            await asyncio.to_thread(backfill_locked, cfg, tracker, start, end)
         except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=500, detail=f"backfill failed: {e}") from e
         return {"ok": True, "tracker": tracker, "from": start, "to": end}

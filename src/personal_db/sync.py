@@ -170,8 +170,15 @@ def backfill_one(cfg: Config, name: str, start: str | None, end: str | None) -> 
     _store_horizon(cfg, name, manifest)
 
 
-def sync_due(cfg: Config) -> dict[str, str]:
-    """Run every due tracker. Returns {name: 'ok'|'<error>'}."""
+def sync_due(cfg: Config, sync_one_fn=None) -> dict[str, str]:
+    """Run every due tracker. Returns {name: 'ok'|'<error>'}.
+
+    ``sync_one_fn`` defaults to :func:`sync_one`. Pass a wrapper (e.g. a
+    lock-acquiring variant) to intercept each per-tracker call without
+    changing the scheduling or error-recording logic.
+    """
+    if sync_one_fn is None:
+        sync_one_fn = sync_one
     results: dict[str, str] = {}
     for tracker_dir in sorted(cfg.trackers_dir.iterdir()):
         if not tracker_dir.is_dir():
@@ -179,7 +186,7 @@ def sync_due(cfg: Config) -> dict[str, str]:
         name = tracker_dir.name
         try:
             if _is_due(cfg, name):
-                sync_one(cfg, name)
+                sync_one_fn(cfg, name)
                 results[name] = "ok"
             else:
                 results[name] = "skip"
