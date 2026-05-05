@@ -16,8 +16,14 @@ Routes:
 
 from __future__ import annotations
 
+import asyncio
+import re
 import sys
+import threading
+import time as _time
+from collections import defaultdict
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -37,6 +43,27 @@ from personal_db.wizard.mcp_setup import _TARGETS as _MCP_TARGETS
 _HERE = Path(__file__).parent.parent / "ui"
 
 _NAV_VISIBLE_LIMIT = 6
+
+_TRACKER_NAME_RE = re.compile(r"^[a-z0-9_]+$")
+_tracker_locks: dict[str, threading.Lock] = defaultdict(threading.Lock)
+_DAEMON_START_TS: float = _time.time()
+
+
+def _validate_name(name: str) -> None:
+    if not _TRACKER_NAME_RE.match(name):
+        raise HTTPException(status_code=400, detail=f"invalid tracker name: {name!r}")
+
+
+def _sync_one_locked(cfg: Config, tracker: str) -> None:
+    with _tracker_locks[tracker]:
+        from personal_db.sync import sync_one
+        sync_one(cfg, tracker)
+
+
+def _backfill_locked(cfg: Config, tracker: str, start: str | None, end: str | None) -> None:
+    with _tracker_locks[tracker]:
+        from personal_db.sync import backfill_one
+        backfill_one(cfg, tracker, start, end)
 
 
 def _install_scheduler_safe(cfg: Config) -> str:
@@ -310,5 +337,50 @@ def build_app(cfg: Config) -> FastAPI:
         )
         # Send the user back where they came from if a referer is set; else /
         return RedirectResponse(url="/", status_code=303)
+
+    @app.get("/api/health")
+    async def api_health() -> dict[str, Any]:
+        import time
+        from personal_db.installer import list_bundled
+        installed = []
+        if cfg.trackers_dir.exists():
+            installed = sorted(d.name for d in cfg.trackers_dir.iterdir()
+                               if d.is_dir() and (d / "manifest.yaml").exists())
+        return {
+            "status": "ok",
+            "uptime_seconds": int(time.time() - _DAEMON_START_TS),
+            "trackers": installed,
+            "bundled_available": list_bundled(),
+        }
+
+    @app.post("/api/sync/{tracker}")
+    async def api_sync_one(tracker: str) -> dict[str, Any]:
+        _validate_name(tracker)
+        if not (cfg.trackers_dir / tracker).is_dir():
+            raise HTTPException(status_code=404, detail=f"no such tracker: {tracker}")
+        try:
+            await asyncio.to_thread(_sync_one_locked, cfg, tracker)
+        except Exception as e:  # noqa: BLE001 — surface to client
+            raise HTTPException(status_code=500, detail=f"sync failed: {e}") from e
+        return {"ok": True, "tracker": tracker}
+
+    @app.post("/api/sync_due")
+    async def api_sync_due() -> dict[str, Any]:
+        from personal_db.sync import sync_due
+        results = await asyncio.to_thread(sync_due, cfg)
+        return {"results": results}
+
+    @app.post("/api/backfill/{tracker}")
+    async def api_backfill(tracker: str, request: Request) -> dict[str, Any]:
+        _validate_name(tracker)
+        if not (cfg.trackers_dir / tracker).is_dir():
+            raise HTTPException(status_code=404, detail=f"no such tracker: {tracker}")
+        start = request.query_params.get("from")
+        end = request.query_params.get("to")
+        try:
+            await asyncio.to_thread(_backfill_locked, cfg, tracker, start, end)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=f"backfill failed: {e}") from e
+        return {"ok": True, "tracker": tracker, "from": start, "to": end}
 
     return app
