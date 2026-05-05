@@ -5,8 +5,8 @@ quick life_context logging, and a "force sync" action. Heavy stuff
 (charts, history) lives in the FastAPI dashboard — clicking "Open
 dashboard" launches the default browser at http://127.0.0.1:<port>/.
 
-The FastAPI server runs in a daemon thread so the rumps event loop owns
-the main thread (Cocoa requirement).
+The dashboard is served by the daemon process (personal-db daemon install),
+NOT by this process. This app is a thin client.
 """
 
 from __future__ import annotations
@@ -19,12 +19,10 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import rumps
-import uvicorn
 
 from personal_db.config import Config
+from personal_db.daemon import client as dc
 from personal_db.mcp_server.tools import log_life_context
-from personal_db.sync import sync_due
-from personal_db.daemon.http import build_app
 
 # Color → text mapping. macOS renders these emojis as native menu bar glyphs.
 _HEALTHY = "🟢"
@@ -36,22 +34,6 @@ _QUICK_STATES = ["well", "sick", "recovering", "traveling", "focused", "system_e
 
 def _local_today() -> date:
     return datetime.now().astimezone().date()
-
-
-def _start_server(cfg: Config, port: int) -> None:
-    app = build_app(cfg)
-    config = uvicorn.Config(
-        app,
-        host="127.0.0.1",
-        port=port,
-        log_level="warning",
-        access_log=False,
-    )
-    server = uvicorn.Server(config)
-    # uvicorn installs SIGINT/SIGTERM handlers on import; in a non-main thread
-    # those raise. Disable so the rumps quit handler does the cleanup.
-    server.config.install_signal_handlers = False
-    server.run()
 
 
 def _today_summary(cfg: Config, day: date) -> str:
@@ -162,11 +144,18 @@ class PersonalDBApp(rumps.App):
         # Run in a thread so the menu bar stays responsive during sync.
         def run():
             try:
-                results = sync_due(self.cfg)
+                results = dc.sync_due().get("results", {})
                 ok = sum(1 for v in results.values() if v == "ok")
                 err = sum(1 for v in results.values() if v.startswith("error"))
                 msg = f"{ok} synced · {err} errored"
                 rumps.notification("personal_db", "sync done", msg, sound=False)
+            except dc.DaemonUnreachable:
+                rumps.notification(
+                    "personal_db",
+                    "daemon not running",
+                    "Run `personal-db daemon install`",
+                    sound=False,
+                )
             except Exception as e:  # noqa: BLE001
                 rumps.notification("personal_db", "sync failed", str(e), sound=False)
             self._refresh()
@@ -191,5 +180,6 @@ class PersonalDBApp(rumps.App):
 
 
 def run_menubar(cfg: Config, port: int = 8765) -> None:
-    threading.Thread(target=_start_server, args=(cfg, port), daemon=True).start()
+    """Run the rumps menubar. The dashboard is served by the daemon
+    at http://127.0.0.1:<port>/, NOT by this process."""
     PersonalDBApp(cfg, port).run()
