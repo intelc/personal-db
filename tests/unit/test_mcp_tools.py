@@ -1,7 +1,9 @@
 import pytest
 import yaml
+from unittest.mock import patch
 
 from personal_db.config import Config
+from personal_db.daemon import client as dc
 from personal_db.db import apply_tracker_schema, connect, init_db
 from personal_db.mcp_server.tools import (
     backfill_tool,
@@ -151,35 +153,48 @@ def _make_runnable_tracker(tmp_root, name="runnable"):
     return cfg
 
 
-def test_sync_tool_runs_and_records_last_run(tmp_root):
+def test_sync_tool_delegates_to_daemon(tmp_root):
     cfg = _make_runnable_tracker(tmp_root)
-    out = sync_tool(cfg, "runnable")
-    assert out["ok"] is True
-    assert out["tracker"] == "runnable"
-    assert out["last_run"]
+    with patch.object(dc, "sync_one", return_value={"ok": True, "tracker": "runnable"}) as m:
+        out = sync_tool(cfg, "runnable")
+    m.assert_called_once_with("runnable")
+    assert out == {"ok": True, "tracker": "runnable"}
 
 
-def test_sync_tool_rejects_unknown_tracker(tmp_root):
+def test_sync_tool_returns_structured_error_on_unreachable(tmp_root):
     cfg = _make_runnable_tracker(tmp_root)
-    with pytest.raises(FileNotFoundError):
-        sync_tool(cfg, "nope")
+    with patch.object(dc, "sync_one", side_effect=dc.DaemonUnreachable("nope")):
+        out = sync_tool(cfg, "runnable")
+    assert out["ok"] is False
+    assert "daemon" in out["error"].lower()
 
 
-def test_sync_tool_rejects_invalid_name(tmp_root):
+def test_sync_due_tool_delegates(tmp_root):
     cfg = _make_runnable_tracker(tmp_root)
-    with pytest.raises(ValueError):
-        sync_tool(cfg, "../escape")
-
-
-def test_sync_due_tool_runs_pending(tmp_root):
-    cfg = _make_runnable_tracker(tmp_root)
-    out = sync_due_tool(cfg)
+    with patch.object(dc, "sync_due", return_value={"results": {"runnable": "ok"}}) as m:
+        out = sync_due_tool(cfg)
+    m.assert_called_once_with()
     assert out["results"]["runnable"] == "ok"
 
 
-def test_backfill_tool_invokes_ingest_backfill(tmp_root):
+def test_sync_due_tool_unreachable(tmp_root):
     cfg = _make_runnable_tracker(tmp_root)
-    out = backfill_tool(cfg, "runnable", "2026-04-01", "2026-04-02")
+    with patch.object(dc, "sync_due", side_effect=dc.DaemonUnreachable("nope")):
+        out = sync_due_tool(cfg)
+    assert out["ok"] is False
+    assert "daemon" in out["error"].lower()
+
+
+def test_backfill_tool_delegates(tmp_root):
+    cfg = _make_runnable_tracker(tmp_root)
+    with patch.object(dc, "backfill", return_value={"ok": True}) as m:
+        out = backfill_tool(cfg, "runnable", "2026-04-01", "2026-04-02")
+    m.assert_called_once_with("runnable", "2026-04-01", "2026-04-02")
     assert out["ok"] is True
-    rows = query(cfg, "SELECT id FROM runnable ORDER BY id")
-    assert any(r["id"] == "b1" for r in rows)
+
+
+def test_backfill_tool_unreachable(tmp_root):
+    cfg = _make_runnable_tracker(tmp_root)
+    with patch.object(dc, "backfill", side_effect=dc.DaemonUnreachable("nope")):
+        out = backfill_tool(cfg, "runnable")
+    assert out["ok"] is False

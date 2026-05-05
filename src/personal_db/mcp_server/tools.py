@@ -14,12 +14,6 @@ from personal_db.db import connect
 from personal_db.log_event import log_event
 from personal_db.manifest import load_manifest
 from personal_db.notes import list_notes, read_note
-from personal_db.sync import (
-    _read_last_run,
-    backfill_one,
-    sync_due,
-    sync_one,
-)
 
 # Cap file writes to keep the tool from being a foot-gun. Real tracker files
 # are well under 100 KB; 1 MiB leaves plenty of headroom.
@@ -271,19 +265,32 @@ def write_tracker_file(cfg: Config, path: str, content: str) -> dict[str, Any]:
 
 def sync_tool(cfg: Config, name: str) -> dict[str, Any]:
     if not _TRACKER_NAME_RE.match(name):
-        raise ValueError(f"invalid tracker name: {name!r}")
+        return {"ok": False, "error": f"invalid tracker name: {name!r}"}
     if not (cfg.trackers_dir / name).is_dir():
-        raise FileNotFoundError(f"no such tracker: {name}")
-    sync_one(cfg, name)
-    return {
-        "ok": True,
-        "tracker": name,
-        "last_run": _read_last_run(cfg).get(name),
-    }
+        return {"ok": False, "error": f"no such tracker: {name}"}
+    from personal_db.daemon import client as dc
+    try:
+        return dc.sync_one(name)
+    except dc.DaemonUnreachable as e:
+        return {
+            "ok": False,
+            "error": f"personal-db daemon not running. Run `personal-db daemon install`. ({e})",
+        }
+    except dc.DaemonError as e:
+        return {"ok": False, "error": f"daemon error: {e}"}
 
 
-def sync_due_tool(cfg: Config) -> dict[str, Any]:
-    return {"results": sync_due(cfg)}
+def sync_due_tool(cfg: Config) -> dict[str, Any]:  # noqa: ARG001 — cfg kept for API parity
+    from personal_db.daemon import client as dc
+    try:
+        return dc.sync_due()
+    except dc.DaemonUnreachable as e:
+        return {
+            "ok": False,
+            "error": f"personal-db daemon not running. Run `personal-db daemon install`. ({e})",
+        }
+    except dc.DaemonError as e:
+        return {"ok": False, "error": f"daemon error: {e}"}
 
 
 def backfill_tool(
@@ -293,11 +300,19 @@ def backfill_tool(
     end: str | None = None,
 ) -> dict[str, Any]:
     if not _TRACKER_NAME_RE.match(name):
-        raise ValueError(f"invalid tracker name: {name!r}")
+        return {"ok": False, "error": f"invalid tracker name: {name!r}"}
     if not (cfg.trackers_dir / name).is_dir():
-        raise FileNotFoundError(f"no such tracker: {name}")
-    backfill_one(cfg, name, start, end)
-    return {"ok": True, "tracker": name, "from": start, "to": end}
+        return {"ok": False, "error": f"no such tracker: {name}"}
+    from personal_db.daemon import client as dc
+    try:
+        return dc.backfill(name, start, end)
+    except dc.DaemonUnreachable as e:
+        return {
+            "ok": False,
+            "error": f"personal-db daemon not running. Run `personal-db daemon install`. ({e})",
+        }
+    except dc.DaemonError as e:
+        return {"ok": False, "error": f"daemon error: {e}"}
 
 
 def validate_tracker(cfg: Config, name: str) -> dict[str, Any]:

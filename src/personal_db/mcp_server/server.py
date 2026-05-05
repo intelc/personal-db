@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 
 from mcp.server import Server
@@ -258,11 +259,12 @@ def build_server(cfg: Config) -> Server:
         elif name == "validate_tracker":
             result = T.validate_tracker(cfg, arguments["name"])
         elif name == "sync":
-            result = T.sync_tool(cfg, arguments["name"])
+            result = await asyncio.to_thread(T.sync_tool, cfg, arguments["name"])
         elif name == "sync_due":
-            result = T.sync_due_tool(cfg)
+            result = await asyncio.to_thread(T.sync_due_tool, cfg)
         elif name == "backfill":
-            result = T.backfill_tool(
+            result = await asyncio.to_thread(
+                T.backfill_tool,
                 cfg,
                 arguments["name"],
                 arguments.get("from"),
