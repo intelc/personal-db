@@ -97,7 +97,7 @@
         <pre class="action-output" hidden></pre>
 
       {% elif step.type_ == 'verify_hooks' %}
-        <span class="hook-status-badge" data-tracker="{{ tracker_name }}">checking…</span>
+        <span class="hook-status-badge">checking…</span>
 
       {% elif step.type_ == 'note' %}
         <p class="meta">{{ step.description }}</p>
@@ -139,6 +139,7 @@ async function installHooks(button, tracker) {
   const out = button.parentElement.querySelector('.action-output');
   out.hidden = false;
   out.textContent = "installing…";
+  out.classList.remove("error");   // reset stale error styling on retry
   try {
     const r = await fetch(`/api/trackers/${tracker}/actions/install_hooks`, {method: "POST"});
     const body = await r.json();

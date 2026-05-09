@@ -619,3 +619,20 @@ table.health th {
 
 .setup-result.ok { border-color: #000; border-width: 2px; }
 .setup-result.fail { border-color: #c00; }
+
+.hook-status-badge.ok    { color: #006600; font-weight: 600; }
+.hook-status-badge.warn  { color: #c00; }
+.hook-status-badge.error { color: #c00; font-style: italic; }
+
+.action-output {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid #000;
+  white-space: pre-wrap;
+  font-family: 'IBM Plex Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+  font-size: 0.9em;
+}
+.action-output.error {
+  color: #c00;
+  border-color: #c00;
+}
