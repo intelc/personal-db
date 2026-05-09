@@ -422,28 +422,232 @@ def render_engagement(cfg: Config) -> str:
     )
 
 
+def render_session_timeline(cfg: Config) -> str:
+    """Per-session Gantt-style timeline of the last 24 hours.
+
+    One horizontal lane per (agent, session_id) showing agent_running
+    intervals (solid, agent-colored) and awaiting_user intervals (lighter).
+    Small ticks above each lane mark moments mosspath captured user
+    keystrokes (any app), giving a sense of when the user was at the
+    keyboard during a session.
+    """
+    con = _connect(cfg)
+    if not con:
+        return '<p class="meta">database not initialized yet</p>'
+
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(hours=24)
+
+    try:
+        rows = con.execute(
+            """
+            SELECT agent, session_id, start_ts, end_ts, state,
+                   duration_seconds, is_remote
+            FROM code_agent_intervals
+            WHERE datetime(end_ts) >= datetime(?)
+              AND datetime(start_ts) <= datetime(?)
+            ORDER BY agent, session_id, start_ts
+            """,
+            (start.isoformat(), end.isoformat()),
+        ).fetchall()
+        # Keystroke moments — any mosspath event with key_count > 0 in the
+        # window. Used for the per-lane keystroke tick marks.
+        has_mosspath = con.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='mosspath_lite_events'"
+        ).fetchone()
+        if has_mosspath:
+            key_rows = con.execute(
+                """
+                SELECT timestamp, key_count
+                FROM mosspath_lite_events
+                WHERE key_count > 0
+                  AND datetime(timestamp) >= datetime(?)
+                  AND datetime(timestamp) <= datetime(?)
+                """,
+                (start.isoformat(), end.isoformat()),
+            ).fetchall()
+        else:
+            key_rows = []
+    except sqlite3.OperationalError as exc:
+        return f'<p class="meta">query error: {escape(str(exc))}</p>'
+    finally:
+        con.close()
+
+    if not rows:
+        return '<p class="meta">no agent runs in the last 24 hours</p>'
+
+    # Group intervals by session, preserving display order: earliest start first
+    sessions: dict[tuple[str, str], list[sqlite3.Row]] = defaultdict(list)
+    session_first: dict[tuple[str, str], float] = {}
+    for r in rows:
+        key = (r["agent"], r["session_id"])
+        sessions[key].append(r)
+        ts = datetime.fromisoformat(r["start_ts"].replace("Z", "+00:00")).timestamp()
+        if key not in session_first or ts < session_first[key]:
+            session_first[key] = ts
+    ordered_keys = sorted(sessions.keys(), key=lambda k: session_first[k])
+
+    # Layout
+    W = 760
+    PAD_L, PAD_R, PAD_T, PAD_B = 110, 14, 18, 28
+    LANE_H = 16
+    LANE_GAP = 4
+    plot_w = W - PAD_L - PAD_R
+    plot_h = (LANE_H + LANE_GAP) * len(ordered_keys) - LANE_GAP
+    H = PAD_T + plot_h + PAD_B
+
+    cutoff_ts = start.timestamp()
+    now_ts = end.timestamp()
+    span = now_ts - cutoff_ts
+
+    def x_of(ts_iso: str) -> float:
+        ts = datetime.fromisoformat(ts_iso.replace("Z", "+00:00")).timestamp()
+        clamped = max(cutoff_ts, min(now_ts, ts))
+        return PAD_L + (clamped - cutoff_ts) / span * plot_w
+
+    # Agent palette: solid for agent_running, alpha-variant for awaiting_user.
+    AGENT_COLORS = {
+        "claude_code": "#a855f7",  # purple
+        "codex_cli": "#2563eb",    # blue
+    }
+
+    def fmt_dur(s: float) -> str:
+        s = int(round(s))
+        if s >= 3600:
+            return f"{s // 3600}h {(s % 3600) // 60}m"
+        if s >= 60:
+            return f"{s // 60}m {s % 60}s"
+        return f"{s}s"
+
+    parts: list[str] = []
+    parts.append(
+        f'<svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" '
+        f'style="width: 100%; height: auto; max-height: {H + 20}px; '
+        f'border: 1px solid #000; background: #fafafa;">'
+    )
+    # Hour gridlines (every 4h) and labels
+    for h in range(0, 25, 4):
+        ts_h = cutoff_ts + h * 3600
+        clamped = max(cutoff_ts, min(now_ts, ts_h))
+        x = PAD_L + (clamped - cutoff_ts) / span * plot_w
+        parts.append(
+            f'<line x1="{x:.1f}" y1="{PAD_T}" x2="{x:.1f}" y2="{PAD_T + plot_h}" '
+            f'stroke="#ddd" stroke-width="1" />'
+        )
+        label_dt = datetime.fromtimestamp(clamped)
+        parts.append(
+            f'<text x="{x:.1f}" y="{H - PAD_B + 14}" font-size="10" '
+            f'text-anchor="middle" fill="#666" font-family="ui-monospace, monospace">'
+            f"{label_dt.strftime('%H:%M')}</text>"
+        )
+
+    # Each session lane
+    for idx, key in enumerate(ordered_keys):
+        agent, sid = key
+        y = PAD_T + idx * (LANE_H + LANE_GAP)
+        color = AGENT_COLORS.get(agent, "#666")
+        # Lane label: agent + first 8 chars of session id; 'remote' tag if any
+        # interval in the session was remote.
+        any_remote = any(r["is_remote"] for r in sessions[key])
+        label = f"{agent.split('_')[0]} · {sid[:8]}"
+        if any_remote:
+            label += " ⌁"
+        parts.append(
+            f'<text x="{PAD_L - 6}" y="{y + LANE_H / 2 + 4:.1f}" font-size="10" '
+            f'text-anchor="end" fill="#333" font-family="ui-monospace, monospace">'
+            f"{escape(label)}</text>"
+        )
+        # Lane background
+        parts.append(
+            f'<rect x="{PAD_L}" y="{y}" width="{plot_w}" height="{LANE_H}" '
+            f'fill="#fff" stroke="#eee" />'
+        )
+        # Intervals
+        for r in sessions[key]:
+            x1 = x_of(r["start_ts"])
+            x2 = x_of(r["end_ts"])
+            w = max(1.0, x2 - x1)
+            if r["state"] == "agent_running":
+                fill = color
+                opacity = "0.95"
+            elif r["state"] == "awaiting_user":
+                fill = color
+                opacity = "0.18"
+            else:
+                fill = "#999"
+                opacity = "0.3"
+            t0 = datetime.fromisoformat(r["start_ts"].replace("Z", "+00:00")).astimezone()
+            t1 = datetime.fromisoformat(r["end_ts"].replace("Z", "+00:00")).astimezone()
+            tip = (
+                f"{r['state']} · {fmt_dur(r['duration_seconds'])} · "
+                f"{t0.strftime('%H:%M:%S')}–{t1.strftime('%H:%M:%S')}"
+            )
+            parts.append(
+                f'<rect x="{x1:.1f}" y="{y}" width="{w:.2f}" height="{LANE_H}" '
+                f'fill="{fill}" fill-opacity="{opacity}">'
+                f"<title>{escape(tip)}</title></rect>"
+            )
+
+    # Keystroke tick marks across the bottom of the plot area (single row;
+    # density gives a sense of when the user was at the keyboard).
+    if key_rows:
+        tick_y = PAD_T + plot_h + 2
+        for kr in key_rows:
+            x = x_of(kr["timestamp"])
+            parts.append(
+                f'<line x1="{x:.1f}" y1="{tick_y}" x2="{x:.1f}" y2="{tick_y + 4}" '
+                f'stroke="#000" stroke-width="0.6" stroke-opacity="0.5" />'
+            )
+
+    parts.append("</svg>")
+
+    legend = (
+        '<p class="meta" style="margin-top: 6px;">'
+        '<span style="display: inline-block; width: 10px; height: 10px; '
+        'background: #2563eb; vertical-align: middle;"></span> codex agent_running &nbsp; '
+        '<span style="display: inline-block; width: 10px; height: 10px; '
+        'background: #a855f7; vertical-align: middle;"></span> claude agent_running &nbsp; '
+        '<span style="display: inline-block; width: 10px; height: 10px; '
+        'background: #2563eb33; vertical-align: middle;"></span> awaiting_user (lighter) &nbsp; '
+        '| black ticks below: keystroke moments &nbsp; ⌁ = remote session'
+        "</p>"
+    )
+
+    return (
+        '<p class="meta">last 24 hours · one lane per session · hover for details</p>'
+        + "".join(parts)
+        + legend
+    )
+
+
 def list_visualizations() -> list[dict]:
     return [
         {
-            "slug": "00_runtime_heatmap",
+            "slug": "00_session_timeline",
+            "name": "Session Timeline (24h)",
+            "description": "One lane per session; agent runtime vs awaiting_user vs keystroke moments.",
+            "render": render_session_timeline,
+        },
+        {
+            "slug": "01_runtime_heatmap",
             "name": "Runtime Heatmap (7d)",
             "description": "7-day × 24-hour heatmap of agent_running seconds in local time.",
             "render": render_runtime_heatmap,
         },
         {
-            "slug": "01_state_breakdown",
+            "slug": "02_state_breakdown",
             "name": "State Breakdown (7d)",
             "description": "Daily stacked bars of agent_running vs awaiting_user minutes.",
             "render": render_state_breakdown,
         },
         {
-            "slug": "02_prompt_cadence",
+            "slug": "03_prompt_cadence",
             "name": "Prompt Cadence (7d)",
             "description": "Distribution of inter-prompt gap durations in the last 7 days.",
             "render": render_prompt_cadence,
         },
         {
-            "slug": "03_engagement",
+            "slug": "04_engagement",
             "name": "Engagement (7d)",
             "description": "Keystrokes typed while agent was running, joined from mosspath_lite.",
             "render": render_engagement,
