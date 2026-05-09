@@ -10,8 +10,6 @@ CREATE TABLE IF NOT EXISTS code_agent_events (
   PRIMARY KEY (agent, session_id, timestamp, event_type)
 );
 
-CREATE INDEX IF NOT EXISTS idx_code_agent_events_session
-  ON code_agent_events(agent, session_id);
 CREATE INDEX IF NOT EXISTS idx_code_agent_events_ts
   ON code_agent_events(timestamp);
 

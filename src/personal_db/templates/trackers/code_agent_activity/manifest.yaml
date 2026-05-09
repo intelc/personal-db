@@ -11,12 +11,16 @@ time_column: timestamp
 granularity: event
 
 config:
+  # Documentation-only for v1: parsed by ingest.py via a runtime fallback to True;
+  # the Manifest model has no config field yet so this block is silently ignored.
   store_raw:
     type: bool
     default: true
     description: >-
       Store the original hook payload / rollout line in the events.raw column.
       Set false to drop incidental prompt-fragment text from disk.
+
+# setup_steps: added in upcoming work (hooks installer + Codex path instructions)
 
 schema:
   tables:

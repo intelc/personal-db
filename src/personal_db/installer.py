@@ -14,7 +14,7 @@ _TRACKER_FILES = (
     "ingest.py",
     "schema.sql",
     "visualizations.py",
-    "actions.py",     # optional — user-initiated handlers loaded by daemon endpoint
+    "actions.py",     # optional — user-initiated handlers (daemon endpoint added in upcoming work)
     "parsers.py",     # optional — tracker-specific helper module
     "intervals.py",   # optional — tracker-specific helper module
 )
