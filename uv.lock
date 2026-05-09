@@ -654,7 +654,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "questionary" },
     { name = "requests" },
-    { name = "rumps" },
+    { name = "rumps", marker = "sys_platform == 'darwin'" },
     { name = "typer" },
     { name = "uvicorn" },
 ]
@@ -682,7 +682,7 @@ requires-dist = [
     { name = "questionary", specifier = ">=2.0" },
     { name = "requests", specifier = ">=2.31" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
-    { name = "rumps", specifier = ">=0.4.0" },
+    { name = "rumps", marker = "sys_platform == 'darwin'", specifier = ">=0.4.0" },
     { name = "typer", specifier = ">=0.12" },
     { name = "uvicorn", specifier = ">=0.20" },
 ]
