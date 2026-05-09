@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 import sys
 from pathlib import Path
@@ -23,13 +24,19 @@ _MANAGED_KEY = "_personal_db_managed"
 
 
 def _resolve_hook_command(cfg) -> str:
+    """Build the command string Claude Code will run for each hook event.
+
+    Claude Code executes hooks via `bash -c <command>`, so paths containing
+    spaces (or other shell metachars) must be shell-quoted to survive the
+    word-split. shlex.quote handles that.
+    """
     explicit = getattr(cfg, "hook_command", None)
     if explicit:
         return explicit
     bin_path = shutil.which("personal-db")
     if bin_path:
-        return f"{bin_path} code-agent-hook-write"
-    return f"{sys.executable} -m personal_db code-agent-hook-write"
+        return f"{shlex.quote(bin_path)} code-agent-hook-write"
+    return f"{shlex.quote(sys.executable)} -m personal_db code-agent-hook-write"
 
 
 def _settings_path(cfg) -> Path:
@@ -63,7 +70,7 @@ def install_hooks(cfg) -> dict:
     path = _settings_path(cfg)
     settings = _load_settings(path)
     if settings is None:
-        return {"ok": False, "message": f"~/.claude/settings.json is malformed JSON; refusing to overwrite. Fix manually then retry."}
+        return {"ok": False, "message": "~/.claude/settings.json is malformed JSON; refusing to overwrite. Fix manually then retry."}
 
     command = _resolve_hook_command(cfg)
     settings.setdefault("hooks", {})
@@ -111,8 +118,8 @@ def verify_hooks(cfg) -> dict:
     settings = _load_settings(path)
     if settings is None:
         return {"installed": False, "ours_present": False, "message": "settings.json is malformed."}
-    if not path.exists():
-        return {"installed": False, "ours_present": False, "message": "settings.json does not exist."}
+    # Missing file produces an empty {} from _load_settings, so the empty
+    # hooks-block path below correctly reports `installed: False`.
 
     hooks = settings.get("hooks", {})
     found = sum(
