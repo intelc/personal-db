@@ -30,7 +30,10 @@ def _default_log_path() -> Path:
 
 
 def _append_line(log_path: Path, line: str) -> None:
-    """O_APPEND ensures concurrent writes < PIPE_BUF are atomic on POSIX."""
+    """Single os.write() call on an O_APPEND fd — seek-to-end and write are
+    atomic per POSIX for concurrent writers on a regular file. Hook payload
+    lines are short so we stay well within any filesystem's atomic-write
+    boundary."""
     log_path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     try:
