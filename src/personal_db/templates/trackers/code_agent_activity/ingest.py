@@ -234,7 +234,19 @@ def _materialize_for_changed_sessions(t: Tracker, new_events: list[dict]) -> int
                 }
                 for r in rows
             ]
-            intervals = materialize_intervals(session_events, now=now)
+            # Codex CLI rollout files emit multiple session_meta rows per
+            # session (resume points). Keep only the earliest session_start
+            # so the materializer doesn't see spurious agent_running ->
+            # awaiting_user transitions mid-session.
+            seen_start = False
+            deduped: list[dict] = []
+            for ev in session_events:
+                if ev["event_type"] == "session_start":
+                    if seen_start:
+                        continue
+                    seen_start = True
+                deduped.append(ev)
+            intervals = materialize_intervals(deduped, now=now)
             total += len(intervals)
             for iv in intervals:
                 con.execute(
