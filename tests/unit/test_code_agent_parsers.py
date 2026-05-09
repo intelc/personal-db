@@ -72,3 +72,58 @@ def test_raw_field_is_original_line() -> None:
     line = _line({"hook_event_name": "SessionStart", "session_id": "s1", "received_at": "2026-05-09T10:00:00.000+00:00"})
     ev = parse_claude_hook_line(line)
     assert ev["raw"] == line
+
+
+# ---------------------------------------------------------------------------
+# Codex rollout parser tests
+# ---------------------------------------------------------------------------
+
+import pathlib
+
+from personal_db.templates.trackers.code_agent_activity.parsers import (
+    parse_codex_event,
+)
+
+_FIXTURES = pathlib.Path(__file__).parent / "fixtures"
+
+
+def test_codex_session_meta_to_session_start() -> None:
+    line = (_FIXTURES / "codex_rollout_minimal.jsonl").read_text().splitlines()[0]
+    ev = parse_codex_event(line, source_file="rollout.jsonl")
+    assert ev is not None
+    assert ev["agent"] == "codex_cli"
+    assert ev["event_type"] == "session_start"
+    assert ev["session_id"] == "019df938-cc02-7c63-9c38-8f40ccca7446"
+    assert ev["timestamp"] == "2026-05-05T17:39:05.099Z"
+    assert ev["source_file"] == "rollout.jsonl"
+
+
+def test_codex_user_message_to_prompt_submitted() -> None:
+    line = (_FIXTURES / "codex_rollout_minimal.jsonl").read_text().splitlines()[1]
+    # session_id must be threaded from a prior session_meta — parser is per-line, so
+    # the caller passes session_id explicitly:
+    ev = parse_codex_event(
+        line,
+        source_file="rollout.jsonl",
+        session_id="019df938-cc02-7c63-9c38-8f40ccca7446",
+    )
+    assert ev is not None
+    assert ev["event_type"] == "prompt_submitted"
+
+
+def test_codex_agent_delta_dropped() -> None:
+    """Streaming deltas don't generate state transitions on their own."""
+    line = (_FIXTURES / "codex_rollout_minimal.jsonl").read_text().splitlines()[2]
+    assert parse_codex_event(line, source_file="rollout.jsonl", session_id="x") is None
+
+
+def test_codex_task_complete_to_awaiting_user() -> None:
+    line = (_FIXTURES / "codex_rollout_minimal.jsonl").read_text().splitlines()[3]
+    ev = parse_codex_event(line, source_file="rollout.jsonl", session_id="x")
+    assert ev is not None
+    assert ev["event_type"] == "awaiting_user"
+
+
+def test_codex_malformed_returns_none() -> None:
+    assert parse_codex_event("not json", source_file="rollout.jsonl") is None
+    assert parse_codex_event("{}", source_file="rollout.jsonl") is None

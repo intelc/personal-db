@@ -25,6 +25,15 @@ _CLAUDE_EVENT_MAP = {
     "SessionEnd": "session_ended",
 }
 
+# Maps Codex rollout event_msg payload.type -> our v1 event_type.
+# Verified against real ~/.codex/sessions/2026/05/09/rollout-*.jsonl files.
+# agent_message (full assembled message) is the streaming content type — not
+# a state transition, so intentionally absent here.
+_CODEX_PAYLOAD_MAP = {
+    "user_message": "prompt_submitted",
+    "task_complete": "awaiting_user",
+}
+
 
 def parse_claude_hook_line(line: str) -> dict | None:
     """Parse one line of code_agent_hooks.jsonl into a normalized event dict.
@@ -64,6 +73,67 @@ def parse_claude_hook_line(line: str) -> dict | None:
     }
 
 
-def parse_codex_event(line: str, *, source_file: str | None = None) -> dict | None:
-    """Stub — implemented in Task 3."""
-    raise NotImplementedError
+def parse_codex_event(
+    line: str,
+    *,
+    source_file: str | None = None,
+    session_id: str | None = None,
+) -> dict | None:
+    """Parse one line of a Codex rollout-*.jsonl into a normalized event dict.
+
+    The caller threads `session_id` from the most recent `session_meta` row in
+    the same file (the per-line shape doesn't carry it for event_msg rows).
+
+    In real Codex rollout files the session ID lives at `payload.id` (not
+    `payload.session_id`). This was confirmed against files emitted by Codex
+    Desktop cli_version 0.129.0-alpha.15.
+
+    Returns None on malformed input, on rows that don't represent state
+    transitions (streaming content, internal accounting), or when session_id
+    is required but missing.
+    """
+    try:
+        payload = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+
+    timestamp = payload.get("timestamp")
+    row_type = payload.get("type")
+    inner = payload.get("payload") or {}
+    if timestamp is None or row_type is None:
+        return None
+
+    if row_type == "session_meta":
+        # Real Codex rollout files use payload.id (not payload.session_id).
+        sid = inner.get("id")
+        if sid is None:
+            return None
+        return {
+            "agent": "codex_cli",
+            "session_id": str(sid),
+            "timestamp": str(timestamp),
+            "event_type": "session_start",
+            "cwd": inner.get("cwd"),
+            "git_branch": None,
+            "source_file": source_file,
+            "raw": line.rstrip("\n"),
+        }
+
+    if row_type == "event_msg":
+        event_type = _CODEX_PAYLOAD_MAP.get(inner.get("type"))
+        if event_type is None or session_id is None:
+            return None
+        return {
+            "agent": "codex_cli",
+            "session_id": str(session_id),
+            "timestamp": str(timestamp),
+            "event_type": event_type,
+            "cwd": None,
+            "git_branch": None,
+            "source_file": source_file,
+            "raw": line.rstrip("\n"),
+        }
+
+    return None

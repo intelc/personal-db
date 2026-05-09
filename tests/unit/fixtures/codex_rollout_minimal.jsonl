@@ -1,0 +1,4 @@
+{"timestamp":"2026-05-05T17:39:05.099Z","type":"session_meta","payload":{"id":"019df938-cc02-7c63-9c38-8f40ccca7446","cwd":"/tmp/proj"}}
+{"timestamp":"2026-05-05T17:39:05.101Z","type":"event_msg","payload":{"type":"user_message","message":{"role":"user","content":"<redacted>"}}}
+{"timestamp":"2026-05-05T17:39:05.500Z","type":"event_msg","payload":{"type":"agent_message","content":"<redacted>"}}
+{"timestamp":"2026-05-05T17:39:08.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"t1","duration_ms":2899}}
