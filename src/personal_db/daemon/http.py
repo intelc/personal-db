@@ -457,19 +457,28 @@ def build_app(cfg: Config) -> FastAPI:
     @app.post("/api/trackers/{name}/actions/{action}")
     def tracker_action(name: str, action: str) -> dict[str, Any]:
         import importlib.util
+        import sys
+
+        _validate_name(name)
+        _validate_name(action)
 
         tracker_dir = cfg.trackers_dir / name
         actions_path = tracker_dir / "actions.py"
         if not actions_path.exists():
             raise HTTPException(status_code=404, detail=f"tracker '{name}' has no actions.py")
 
-        spec = importlib.util.spec_from_file_location(
-            f"_pdb_actions_{name}", actions_path
-        )
+        spec_name = f"_pdb_actions_{name}"
+        sys.modules.pop(spec_name, None)
+        spec = importlib.util.spec_from_file_location(spec_name, actions_path)
         if spec is None or spec.loader is None:
             raise HTTPException(status_code=500, detail="failed to load actions module")
         module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)  # type: ignore[union-attr]
+        sys.modules[spec_name] = module  # register before exec so relative imports resolve
+        try:
+            spec.loader.exec_module(module)  # type: ignore[union-attr]
+        except Exception as exc:  # noqa: BLE001
+            sys.modules.pop(spec_name, None)
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
 
         handler = getattr(module, action, None)
         if handler is None or not callable(handler):

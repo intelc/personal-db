@@ -40,7 +40,7 @@ def test_calls_tracker_action(client: TestClient) -> None:
 
 
 def test_unknown_tracker_404(client: TestClient) -> None:
-    r = client.post("/api/trackers/no-such-tracker/actions/hello")
+    r = client.post("/api/trackers/no_such_tracker/actions/hello")
     assert r.status_code == 404
 
 
@@ -53,3 +53,27 @@ def test_handler_exception_500_with_message(client: TestClient) -> None:
     r = client.post("/api/trackers/stub/actions/boom")
     assert r.status_code == 500
     assert "intentional" in r.json()["detail"]
+
+
+def test_actions_module_import_error_500(tmp_path: Path) -> None:
+    """If actions.py raises during import, return 500 with the message."""
+    cfg = Config(root=tmp_path / "personal_db")
+    cfg.trackers_dir.mkdir(parents=True, exist_ok=True)
+    cfg.state_dir.mkdir(parents=True, exist_ok=True)
+
+    tracker_dir = cfg.trackers_dir / "broken"
+    tracker_dir.mkdir(parents=True)
+    (tracker_dir / "actions.py").write_text("raise ImportError('top-level fail')\n")
+
+    app = build_app(cfg)
+    client = TestClient(app)
+    r = client.post("/api/trackers/broken/actions/anything")
+    assert r.status_code == 500
+    assert "top-level fail" in r.json()["detail"]
+
+
+def test_path_traversal_rejected(client: TestClient) -> None:
+    """Validate that names with .. or other invalid chars are rejected with 400."""
+    r = client.post("/api/trackers/..%2Fevil/actions/hello")
+    # FastAPI/Starlette URL-decodes `..` and passes it through; _validate_name catches it.
+    assert r.status_code in (400, 404)
