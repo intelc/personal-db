@@ -203,14 +203,53 @@ def render_engagement(cfg: Config) -> str:
         )
 
     try:
+        # Inference: at the moment a user submits a prompt to an agent
+        # (event_type='prompt_submitted'), they MUST be focused on the agent's
+        # window — otherwise their Enter wouldn't have reached the agent. We
+        # correlate each prompt_submitted with the nearest mosspath_lite
+        # 'submitted_text' event (within ±3s) and take the most-common
+        # bundle_id across all of a session's prompts as the session's app.
+        # Sessions that predate mosspath's keystroke capture have NULL apps;
+        # all their keystrokes count as "elsewhere".
         rows = con.execute(
             """
+            WITH paired AS (
+                SELECT e.agent, e.session_id,
+                       m.bundle_id, m.app_name,
+                       COUNT(*) AS n
+                FROM code_agent_events e
+                JOIN mosspath_lite_events m
+                  ON m.action_type = 'submitted_text'
+                 AND ABS((julianday(m.timestamp) - julianday(e.timestamp)) * 86400) <= 3
+                 AND m.bundle_id IS NOT NULL
+                WHERE e.event_type = 'prompt_submitted'
+                GROUP BY e.agent, e.session_id, m.bundle_id, m.app_name
+            ),
+            session_app AS (
+                SELECT agent, session_id, bundle_id, app_name
+                FROM (
+                    SELECT *,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY agent, session_id ORDER BY n DESC
+                           ) AS rn
+                    FROM paired
+                )
+                WHERE rn = 1
+            )
             SELECT i.agent,
                    i.session_id,
                    date(i.start_ts) AS run_date,
                    CAST(SUM(i.duration_seconds) AS INTEGER) AS total_run_sec,
-                   COALESCE(SUM(m.key_count), 0) AS keystrokes
+                   sa.app_name AS agent_app,
+                   COALESCE(SUM(CASE
+                       WHEN m.bundle_id = sa.bundle_id THEN m.key_count
+                       ELSE 0 END), 0) AS keys_in_agent,
+                   COALESCE(SUM(CASE
+                       WHEN sa.bundle_id IS NULL OR m.bundle_id != sa.bundle_id
+                       THEN m.key_count ELSE 0 END), 0) AS keys_other
             FROM code_agent_intervals i
+            LEFT JOIN session_app sa
+              ON sa.agent = i.agent AND sa.session_id = i.session_id
             LEFT JOIN mosspath_lite_events m
               ON datetime(m.timestamp) >= datetime(i.start_ts)
              AND datetime(m.timestamp) <  datetime(i.end_ts)
@@ -230,42 +269,58 @@ def render_engagement(cfg: Config) -> str:
     if not rows:
         return '<p class="meta">no agent_running intervals in the last 7 days</p>'
 
-    # Roll up by agent for the horizontal_bars summary
-    by_agent: dict[str, dict[str, float]] = defaultdict(lambda: {"keys": 0.0, "secs": 0.0})
+    # Roll up by agent: split engaged vs elsewhere
+    by_agent: dict[str, dict[str, float]] = defaultdict(
+        lambda: {"in_agent": 0.0, "other": 0.0}
+    )
     for row in rows:
-        by_agent[row["agent"]]["keys"] += row["keystrokes"] or 0
-        by_agent[row["agent"]]["secs"] += row["total_run_sec"] or 0
+        by_agent[row["agent"]]["in_agent"] += row["keys_in_agent"] or 0
+        by_agent[row["agent"]]["other"] += row["keys_other"] or 0
 
-    agent_items = [
-        (agent, by_agent[agent]["keys"])
-        for agent in sorted(by_agent, key=lambda a: by_agent[a]["keys"], reverse=True)
+    in_agent_items = [
+        (f"{agent} (in agent app)", by_agent[agent]["in_agent"])
+        for agent in sorted(by_agent, key=lambda a: by_agent[a]["in_agent"], reverse=True)
+    ]
+    other_items = [
+        (f"{agent} (elsewhere)", by_agent[agent]["other"])
+        for agent in sorted(by_agent, key=lambda a: by_agent[a]["other"], reverse=True)
     ]
 
     # Detail table
     detail_rows = []
     for row in rows:
         dur = row["total_run_sec"] or 0
-        keys = row["keystrokes"] or 0
-        rate = f"{keys / dur:.2f}" if dur else "—"
+        in_keys = row["keys_in_agent"] or 0
+        other_keys = row["keys_other"] or 0
+        total = in_keys + other_keys
+        rate = f"{total / dur:.2f}" if dur else "—"
+        agent_app = row["agent_app"] or "(unknown)"
         detail_rows.append(
             "<tr>"
             f'<td>{escape(row["run_date"] or "")}</td>'
             f'<td>{escape(row["agent"])}</td>'
             f'<td>{escape(row["session_id"][:8])}</td>'
+            f'<td>{escape(agent_app)}</td>'
             f"<td>{dur}</td>"
-            f"<td>{keys}</td>"
+            f"<td>{in_keys}</td>"
+            f"<td>{other_keys}</td>"
             f"<td>{rate}</td>"
             "</tr>"
         )
 
     return (
-        '<p class="meta">keystrokes typed while agent was running · last 50 runs (7 days)</p>'
-        + "<h3>Keystrokes by agent</h3>"
-        + horizontal_bars(agent_items, value_fmt=lambda v: str(int(v)))
+        '<p class="meta">keystrokes typed while agent was running, split by where '
+        "they were typed · last 50 runs (7 days). The agent app is inferred from "
+        "the focused window at each prompt-submit moment.</p>"
+        + "<h3>Keys typed in the agent's window</h3>"
+        + horizontal_bars(in_agent_items, value_fmt=lambda v: str(int(v)))
+        + "<h3>Keys typed elsewhere (multitasking)</h3>"
+        + horizontal_bars(other_items, value_fmt=lambda v: str(int(v)))
         + "<h3>Per-run detail</h3>"
         '<table class="recent-rows">'
         "<thead><tr><th>date</th><th>agent</th><th>session</th>"
-        "<th>run sec</th><th>keys during</th><th>keys/sec</th></tr></thead>"
+        "<th>agent app</th><th>run sec</th><th>keys in agent</th>"
+        "<th>keys elsewhere</th><th>keys/sec</th></tr></thead>"
         f'<tbody>{"".join(detail_rows)}</tbody></table>'
     )
 
