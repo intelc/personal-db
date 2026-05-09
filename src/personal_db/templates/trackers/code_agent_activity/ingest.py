@@ -30,12 +30,15 @@ from personal_db.tracker import Tracker
 # (production — see personal_db.sync._load_ingest_module). Direct relative
 # imports break the second case. Load siblings explicitly by file path:
 import importlib.util as _ilu
-from pathlib import Path as _Path
 
 
 def _load_sibling(name: str):
-    here = _Path(__file__).parent
+    here = Path(__file__).parent
     spec = _ilu.spec_from_file_location(f"_pdb_code_agent_{name}", here / f"{name}.py")
+    if spec is None or spec.loader is None:
+        raise ImportError(
+            f"code_agent_activity: cannot load sibling {name}.py from {here}"
+        )
     mod = _ilu.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -80,7 +83,9 @@ def _save_cursor(t: Tracker, state: dict) -> None:
 def _read_claude_hooks(path: Path, offset: int) -> tuple[list[dict], int, int]:
     """Returns (events, new_offset, skipped_lines)."""
     if not path.exists():
-        return [], 0, 0
+        # Preserve the incoming offset so a temporarily-absent log doesn't
+        # silently reset the cursor.
+        return [], offset, 0
     file_size = path.stat().st_size
     if offset > file_size:
         log.warning("code_agent_activity: hooks log shrank, resetting cursor")
@@ -116,7 +121,10 @@ def _read_codex_rollouts(
         return [], file_offsets, 0
 
     events: list[dict] = []
-    new_offsets: dict[str, int] = {}
+    # Start from the existing offsets so files that rglob transiently misses
+    # don't lose their cursor. We'll overwrite entries for files we successfully
+    # process below.
+    new_offsets: dict[str, int] = dict(file_offsets)
     skipped = 0
 
     rollout_paths = sorted(root.rglob("rollout-*.jsonl"))
@@ -146,6 +154,7 @@ def _read_codex_rollouts(
                         # NOTE: the Codex parser uses payload.id (not payload.session_id)
                         # — see Task 3 for the verified key name.
                         session_id = (row.get("payload") or {}).get("id")
+                        break  # one session_meta per file in well-formed Codex output
 
         with path.open("rb") as fh:
             fh.seek(offset)
@@ -169,6 +178,13 @@ def _read_codex_rollouts(
 
 
 def _store_raw_enabled(t: Tracker) -> bool:
+    """Whether to store the original line in events.raw.
+
+    The manifest's `config:` block is currently dropped by the Manifest loader
+    (no `Manifest.config` field yet — see Task 5 design notes). This function
+    exists as forward scaffolding so future wiring of the config block is
+    additive, not invasive. Always returns True today.
+    """
     cfg_block = getattr(t.manifest, "config", None) or {}
     if isinstance(cfg_block, dict):
         spec = cfg_block.get("store_raw")
@@ -178,7 +194,14 @@ def _store_raw_enabled(t: Tracker) -> bool:
 
 
 def _materialize_for_changed_sessions(t: Tracker, new_events: list[dict]) -> int:
-    """Rebuild intervals for every (agent, session_id) that got new events."""
+    """Rebuild intervals for every (agent, session_id) that got new events.
+
+    Note: this opens a separate sqlite connection from t.upsert(), so a crash
+    between the two commits leaves intervals temporarily stale. Self-healing
+    on the next sync that touches the affected session, but a session with no
+    further events would never re-materialize. Acceptable for v1; revisit if
+    we move to a single shared connection per sync.
+    """
     if not new_events:
         return 0
 
