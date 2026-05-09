@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import json
+import pathlib
 
 from personal_db.templates.trackers.code_agent_activity.parsers import (
     parse_claude_hook_line,
+    parse_codex_event,
 )
+
+
+_FIXTURES = pathlib.Path(__file__).parent / "fixtures"
 
 
 def _line(payload: dict) -> str:
@@ -78,14 +83,6 @@ def test_raw_field_is_original_line() -> None:
 # Codex rollout parser tests
 # ---------------------------------------------------------------------------
 
-import pathlib
-
-from personal_db.templates.trackers.code_agent_activity.parsers import (
-    parse_codex_event,
-)
-
-_FIXTURES = pathlib.Path(__file__).parent / "fixtures"
-
 
 def test_codex_session_meta_to_session_start() -> None:
     line = (_FIXTURES / "codex_rollout_minimal.jsonl").read_text().splitlines()[0]
@@ -122,6 +119,12 @@ def test_codex_task_complete_to_awaiting_user() -> None:
     ev = parse_codex_event(line, source_file="rollout.jsonl", session_id="x")
     assert ev is not None
     assert ev["event_type"] == "awaiting_user"
+
+
+def test_codex_event_msg_without_session_id_returns_none() -> None:
+    """session_id=None for event_msg must return None even if payload type is known."""
+    line = (_FIXTURES / "codex_rollout_minimal.jsonl").read_text().splitlines()[1]
+    assert parse_codex_event(line, source_file="rollout.jsonl") is None
 
 
 def test_codex_malformed_returns_none() -> None:
