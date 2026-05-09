@@ -256,7 +256,7 @@ def render_engagement(cfg: Config) -> str:
             )
             SELECT i.agent,
                    i.session_id,
-                   date(i.start_ts) AS run_date,
+                   strftime('%m-%d %H:%M', i.start_ts, 'localtime') AS run_when,
                    CAST(SUM(i.duration_seconds) AS INTEGER) AS total_run_sec,
                    sa.app_name AS agent_app,
                    i.is_remote AS hook_remote,
@@ -344,7 +344,7 @@ def render_engagement(cfg: Config) -> str:
             rate_display = f"{total / dur:.2f}" if dur else "—"
         detail_rows.append(
             "<tr>"
-            f'<td>{escape(row["run_date"] or "")}</td>'
+            f'<td>{escape(row["run_when"] or "")}</td>'
             f'<td>{escape(row["agent"])}</td>'
             f'<td>{escape(row["session_id"][:8])}</td>'
             f'<td>{escape(agent_app_display)}</td>'
@@ -382,7 +382,7 @@ def render_engagement(cfg: Config) -> str:
         + horizontal_bars(other_items, value_fmt=lambda v: str(int(v)))
         + "<h3>Per-run detail</h3>"
         '<table class="recent-rows">'
-        "<thead><tr><th>date</th><th>agent</th><th>session</th>"
+        "<thead><tr><th>when (local)</th><th>agent</th><th>session</th>"
         "<th>agent app</th><th>run sec</th><th>keys in agent</th>"
         "<th>keys elsewhere</th><th>keys/sec</th></tr></thead>"
         f'<tbody>{"".join(detail_rows)}</tbody></table>'
