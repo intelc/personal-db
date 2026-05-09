@@ -50,6 +50,7 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Config, TestCl
         )
     )
     monkeypatch.setenv("PERSONAL_DB_HOOKS_LOG", str(hooks_log))
+    monkeypatch.delenv("PERSONAL_DB_ROOT", raising=False)
 
     # Codex sessions: one minimal rollout file. Real Codex uses payload.id
     # (not payload.session_id) — confirmed in Task 3 against real data.
@@ -104,10 +105,14 @@ def test_concurrent_sessions_have_separate_intervals(env) -> None:
     beta = con.execute(
         "SELECT COUNT(*) FROM code_agent_intervals WHERE agent='claude_code' AND session_id='beta'"
     ).fetchone()[0]
+    codex = con.execute(
+        "SELECT COUNT(*) FROM code_agent_intervals WHERE agent='codex_cli' AND session_id='codex-1'"
+    ).fetchone()[0]
     con.close()
 
     assert alpha > 0
     assert beta > 0
+    assert codex > 0, "expected at least one materialized interval for codex_cli/codex-1"
 
 
 def test_install_hooks_action_via_daemon(env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -119,7 +124,7 @@ def test_install_hooks_action_via_daemon(env, tmp_path: Path, monkeypatch: pytes
     settings.json by overriding HOME — that makes Path('~/.claude/settings.json')
     resolve to fake_home/.claude/settings.json.
     """
-    cfg, client = env
+    _, client = env
     fake_home = tmp_path / "fake_home"
     fake_home.mkdir()
     monkeypatch.setenv("HOME", str(fake_home))
