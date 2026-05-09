@@ -7,6 +7,9 @@ CREATE TABLE IF NOT EXISTS code_agent_events (
   git_branch  TEXT,
   source_file TEXT,
   raw         TEXT,
+  -- 1 if Claude Code was running over SSH at hook time; 0 otherwise. Codex
+  -- has no direct signal so always 0; engagement viz applies a heuristic.
+  is_remote   INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (agent, session_id, timestamp, event_type)
 );
 
@@ -22,6 +25,8 @@ CREATE TABLE IF NOT EXISTS code_agent_intervals (
   duration_seconds REAL NOT NULL,
   cwd              TEXT,
   git_branch       TEXT,
+  -- Carried from any event in the session (uniform per session for Claude).
+  is_remote        INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (agent, session_id, start_ts)
 );
 

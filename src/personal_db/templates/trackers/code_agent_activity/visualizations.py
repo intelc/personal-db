@@ -209,8 +209,14 @@ def render_engagement(cfg: Config) -> str:
         # correlate each prompt_submitted with the nearest mosspath_lite
         # 'submitted_text' event (within ±3s) and take the most-common
         # bundle_id across all of a session's prompts as the session's app.
-        # Sessions that predate mosspath's keystroke capture have NULL apps;
-        # all their keystrokes count as "elsewhere".
+        #
+        # Three remote-detection paths:
+        #   1. Claude Code: hook writer captured $SSH_CONNECTION → i.is_remote=1.
+        #   2. Codex CLI heuristic: a session with ≥3 prompts and 0 paired
+        #      mosspath events is treated as remote — the user's keystrokes
+        #      are happening on a client machine mosspath can't see.
+        #   3. Otherwise (some prompts paired or session too short to be sure):
+        #      apply normal app inference.
         rows = con.execute(
             """
             WITH paired AS (
@@ -235,12 +241,27 @@ def render_engagement(cfg: Config) -> str:
                     FROM paired
                 )
                 WHERE rn = 1
+            ),
+            session_pair_stats AS (
+                -- Counts per session: total prompts vs prompts that paired
+                -- with a mosspath event. Used for the Codex remote heuristic.
+                SELECT e.agent, e.session_id,
+                       COUNT(*) AS prompt_count,
+                       SUM(CASE WHEN sa.bundle_id IS NOT NULL THEN 1 ELSE 0 END) AS paired_count
+                FROM code_agent_events e
+                LEFT JOIN session_app sa
+                  ON sa.agent = e.agent AND sa.session_id = e.session_id
+                WHERE e.event_type = 'prompt_submitted'
+                GROUP BY e.agent, e.session_id
             )
             SELECT i.agent,
                    i.session_id,
                    date(i.start_ts) AS run_date,
                    CAST(SUM(i.duration_seconds) AS INTEGER) AS total_run_sec,
                    sa.app_name AS agent_app,
+                   i.is_remote AS hook_remote,
+                   sps.prompt_count AS prompt_count,
+                   sps.paired_count AS paired_count,
                    COALESCE(SUM(CASE
                        WHEN m.bundle_id = sa.bundle_id THEN m.key_count
                        ELSE 0 END), 0) AS keys_in_agent,
@@ -250,6 +271,8 @@ def render_engagement(cfg: Config) -> str:
             FROM code_agent_intervals i
             LEFT JOIN session_app sa
               ON sa.agent = i.agent AND sa.session_id = i.session_id
+            LEFT JOIN session_pair_stats sps
+              ON sps.agent = i.agent AND sps.session_id = i.session_id
             LEFT JOIN mosspath_lite_events m
               ON datetime(m.timestamp) >= datetime(i.start_ts)
              AND datetime(m.timestamp) <  datetime(i.end_ts)
@@ -269,13 +292,28 @@ def render_engagement(cfg: Config) -> str:
     if not rows:
         return '<p class="meta">no agent_running intervals in the last 7 days</p>'
 
-    # Roll up by agent: split engaged vs elsewhere
+    def _classify_remote(row: sqlite3.Row) -> str:
+        """Return 'remote' (definite, from SSH hook), 'remote?' (heuristic),
+        or '' (local)."""
+        if row["hook_remote"]:
+            return "remote"
+        # Codex heuristic: ≥3 prompts and 0 paired with mosspath events.
+        prompts = row["prompt_count"] or 0
+        paired = row["paired_count"] or 0
+        if prompts >= 3 and paired == 0:
+            return "remote?"
+        return ""
+
+    # Roll up by agent: split engaged vs elsewhere vs remote (unmeasurable)
     by_agent: dict[str, dict[str, float]] = defaultdict(
-        lambda: {"in_agent": 0.0, "other": 0.0}
+        lambda: {"in_agent": 0.0, "other": 0.0, "remote_sec": 0.0}
     )
     for row in rows:
-        by_agent[row["agent"]]["in_agent"] += row["keys_in_agent"] or 0
-        by_agent[row["agent"]]["other"] += row["keys_other"] or 0
+        if _classify_remote(row):
+            by_agent[row["agent"]]["remote_sec"] += row["total_run_sec"] or 0
+        else:
+            by_agent[row["agent"]]["in_agent"] += row["keys_in_agent"] or 0
+            by_agent[row["agent"]]["other"] += row["keys_other"] or 0
 
     in_agent_items = [
         (f"{agent} (in agent app)", by_agent[agent]["in_agent"])
@@ -290,28 +328,54 @@ def render_engagement(cfg: Config) -> str:
     detail_rows = []
     for row in rows:
         dur = row["total_run_sec"] or 0
-        in_keys = row["keys_in_agent"] or 0
-        other_keys = row["keys_other"] or 0
-        total = in_keys + other_keys
-        rate = f"{total / dur:.2f}" if dur else "—"
-        agent_app = row["agent_app"] or "(unknown)"
+        remote_label = _classify_remote(row)
+        if remote_label:
+            agent_app_display = remote_label
+            in_keys_display = "—"
+            other_keys_display = "—"
+            rate_display = "—"
+        else:
+            in_keys = row["keys_in_agent"] or 0
+            other_keys = row["keys_other"] or 0
+            total = in_keys + other_keys
+            agent_app_display = row["agent_app"] or "(unknown)"
+            in_keys_display = str(in_keys)
+            other_keys_display = str(other_keys)
+            rate_display = f"{total / dur:.2f}" if dur else "—"
         detail_rows.append(
             "<tr>"
             f'<td>{escape(row["run_date"] or "")}</td>'
             f'<td>{escape(row["agent"])}</td>'
             f'<td>{escape(row["session_id"][:8])}</td>'
-            f'<td>{escape(agent_app)}</td>'
+            f'<td>{escape(agent_app_display)}</td>'
             f"<td>{dur}</td>"
-            f"<td>{in_keys}</td>"
-            f"<td>{other_keys}</td>"
-            f"<td>{rate}</td>"
+            f"<td>{in_keys_display}</td>"
+            f"<td>{other_keys_display}</td>"
+            f"<td>{rate_display}</td>"
             "</tr>"
+        )
+
+    # Remote-runtime summary line
+    remote_total = sum(s["remote_sec"] for s in by_agent.values())
+    remote_summary = ""
+    if remote_total > 0:
+        breakdown = ", ".join(
+            f"{a}: {int(by_agent[a]['remote_sec'] // 60)}m"
+            for a in sorted(by_agent)
+            if by_agent[a]["remote_sec"] > 0
+        )
+        remote_summary = (
+            '<p class="meta">'
+            f"agent runtime over SSH (engagement unmeasurable): {breakdown}. "
+            'Marked "remote" (Claude SSH hook) or "remote?" (Codex heuristic: '
+            "≥3 prompts, 0 paired with local keystrokes).</p>"
         )
 
     return (
         '<p class="meta">keystrokes typed while agent was running, split by where '
         "they were typed · last 50 runs (7 days). The agent app is inferred from "
         "the focused window at each prompt-submit moment.</p>"
+        + remote_summary
         + "<h3>Keys typed in the agent's window</h3>"
         + horizontal_bars(in_agent_items, value_fmt=lambda v: str(int(v)))
         + "<h3>Keys typed elsewhere (multitasking)</h3>"

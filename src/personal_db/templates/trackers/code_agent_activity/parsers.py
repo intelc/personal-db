@@ -70,6 +70,9 @@ def parse_claude_hook_line(line: str) -> dict | None:
         "git_branch": payload.get("git_branch"),
         "source_file": None,
         "raw": line.rstrip("\n"),
+        # Stamped by code-agent-hook-write CLI from $SSH_CONNECTION at hook time.
+        # Older payloads (pre-feature) lack this field — default to local.
+        "is_remote": 1 if payload.get("_is_remote") else 0,
     }
 
 
@@ -119,6 +122,10 @@ def parse_codex_event(
             "git_branch": None,
             "source_file": source_file,
             "raw": line.rstrip("\n"),
+            # No direct SSH signal in Codex rollouts; default to local.
+            # Engagement viz applies a "no mosspath pairings" heuristic
+            # at query time to flag likely-remote Codex sessions.
+            "is_remote": 0,
         }
 
     if row_type == "event_msg":
@@ -134,6 +141,7 @@ def parse_codex_event(
             "git_branch": None,
             "source_file": source_file,
             "raw": line.rstrip("\n"),
+            "is_remote": 0,
         }
 
     return None

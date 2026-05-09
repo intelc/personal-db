@@ -193,6 +193,23 @@ def _store_raw_enabled(t: Tracker) -> bool:
     return True
 
 
+def _ensure_schema_columns(con: sqlite3.Connection) -> None:
+    """Idempotent schema migration: add new columns to existing installs.
+
+    SQLite's CREATE TABLE IF NOT EXISTS is a no-op on existing tables, so it
+    won't introduce columns we add later. Use PRAGMA table_info to check
+    and ALTER if missing. Safe to call on every sync; cheap when columns
+    already exist.
+    """
+    for table in ("code_agent_events", "code_agent_intervals"):
+        cols = {r[1] for r in con.execute(f"PRAGMA table_info({table})").fetchall()}
+        if cols and "is_remote" not in cols:
+            con.execute(
+                f"ALTER TABLE {table} ADD COLUMN is_remote INTEGER NOT NULL DEFAULT 0"
+            )
+    con.commit()
+
+
 def _materialize_for_changed_sessions(t: Tracker, new_events: list[dict]) -> int:
     """Rebuild intervals for every (agent, session_id) that got new events.
 
@@ -211,13 +228,15 @@ def _materialize_for_changed_sessions(t: Tracker, new_events: list[dict]) -> int
 
     con = sqlite3.connect(t.cfg.db_path)
     try:
+        _ensure_schema_columns(con)
         for agent, sid in changed_keys:
             con.execute(
                 "DELETE FROM code_agent_intervals WHERE agent=? AND session_id=?",
                 (agent, sid),
             )
             rows = con.execute(
-                "SELECT agent, session_id, timestamp, event_type, cwd, git_branch, source_file, raw "
+                "SELECT agent, session_id, timestamp, event_type, cwd, git_branch, "
+                "source_file, raw, is_remote "
                 "FROM code_agent_events WHERE agent=? AND session_id=? ORDER BY timestamp",
                 (agent, sid),
             ).fetchall()
@@ -231,6 +250,7 @@ def _materialize_for_changed_sessions(t: Tracker, new_events: list[dict]) -> int
                     "git_branch": r[5],
                     "source_file": r[6],
                     "raw": r[7],
+                    "is_remote": r[8],
                 }
                 for r in rows
             ]
@@ -246,13 +266,20 @@ def _materialize_for_changed_sessions(t: Tracker, new_events: list[dict]) -> int
                         continue
                     seen_start = True
                 deduped.append(ev)
+            # Carry the session's remote status onto every interval. SSH state
+            # is uniform within a Claude session; for Codex it's always 0
+            # (heuristic flag is applied at viz time, not stored).
+            session_remote = 1 if any(e.get("is_remote") for e in deduped) else 0
             intervals = materialize_intervals(deduped, now=now)
             total += len(intervals)
             for iv in intervals:
+                iv["is_remote"] = session_remote
                 con.execute(
                     "INSERT OR REPLACE INTO code_agent_intervals "
-                    "(agent, session_id, start_ts, end_ts, state, duration_seconds, cwd, git_branch) "
-                    "VALUES (:agent, :session_id, :start_ts, :end_ts, :state, :duration_seconds, :cwd, :git_branch)",
+                    "(agent, session_id, start_ts, end_ts, state, duration_seconds, "
+                    "cwd, git_branch, is_remote) "
+                    "VALUES (:agent, :session_id, :start_ts, :end_ts, :state, "
+                    ":duration_seconds, :cwd, :git_branch, :is_remote)",
                     iv,
                 )
         con.commit()
@@ -264,6 +291,14 @@ def _materialize_for_changed_sessions(t: Tracker, new_events: list[dict]) -> int
 def sync(t: Tracker) -> dict:
     state = _load_cursor(t)
     keep_raw = _store_raw_enabled(t)
+
+    # Schema migration: ensure new columns exist on existing installs.
+    # Must run BEFORE t.upsert writes the rows (which may include new columns).
+    _con = sqlite3.connect(t.cfg.db_path)
+    try:
+        _ensure_schema_columns(_con)
+    finally:
+        _con.close()
 
     # Claude hooks
     claude_events, new_claude_offset, claude_skipped = _read_claude_hooks(

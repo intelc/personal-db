@@ -50,6 +50,11 @@ def main() -> None:
         if not isinstance(payload, dict):
             raise ValueError(f"hook payload was {type(payload).__name__}, expected object")
         payload["received_at"] = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+        # SSH detection: if Claude Code was invoked over SSH, the hook process
+        # inherits SSH_CONNECTION from its parent. Stamp this so engagement
+        # views can flag remote sessions where mosspath-lite can't see the
+        # user's keystrokes (they're happening on the client machine).
+        payload["_is_remote"] = bool(os.environ.get("SSH_CONNECTION"))
         line = json.dumps(payload, separators=(",", ":")) + "\n"
         _append_line(_default_log_path(), line)
     except Exception as exc:  # noqa: BLE001 — must never propagate
