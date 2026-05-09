@@ -59,6 +59,10 @@ class StepView:
     current_value: str | None
     secret: bool = False
     settings_url: str | None = None  # FDA deep-link, when applicable
+    # OAuth-specific (only populated for type_ == 'oauth')
+    oauth_index: int | None = None  # nth OAuth step in the manifest (0-based)
+    oauth_authorized: bool = False  # token already saved on disk
+    oauth_creds_present: bool = False  # client_id_env + client_secret_env both set
 
 
 @dataclass
@@ -118,6 +122,7 @@ def list_step_views(cfg: Config, manifest: Manifest) -> list[StepView]:
     """Build form-field metadata for the per-tracker setup page."""
     env = read_env(cfg.root / ".env")
     views: list[StepView] = []
+    oauth_counter = 0
     for i, step in enumerate(manifest.setup_steps):
         if isinstance(step, EnvVarStep):
             current = env.get(step.name) or os.environ.get(step.name) or ""
@@ -174,22 +179,49 @@ def list_step_views(cfg: Config, manifest: Manifest) -> list[StepView]:
         elif isinstance(step, OAuthStep):
             token_path = cfg.state_dir / "oauth" / f"{step.provider}.json"
             already = token_path.exists()
+            cid = env.get(step.client_id_env) or os.environ.get(step.client_id_env) or ""
+            cs = (
+                env.get(step.client_secret_env)
+                or os.environ.get(step.client_secret_env)
+                or ""
+            )
+            creds_present = bool(cid and cs)
+            if already:
+                description = (
+                    f"OAuth token already saved for {step.provider}. "
+                    "Re-authorize below if you need a new token."
+                )
+            elif step.redirect_port is None:
+                description = (
+                    f"This tracker's manifest doesn't pin a redirect port — run "
+                    f"`personal-db tracker setup {manifest.name}` in your terminal "
+                    "to complete OAuth. (Web flow needs a fixed pre-registered port.)"
+                )
+            elif not creds_present:
+                description = (
+                    f"Set {step.client_id_env} and {step.client_secret_env} above "
+                    "and submit once to save them, then click Authorize."
+                )
+            else:
+                description = (
+                    f"Click Authorize to open {step.provider} in a new tab. After you "
+                    "approve, you'll be sent back to this page."
+                )
             views.append(
                 StepView(
                     index=i,
                     type_="oauth",
                     label=f"OAuth ({step.provider})",
-                    description=(
-                        "Already configured. Re-authorize via terminal if needed."
-                        if already
-                        else f"Run `personal-db tracker setup {manifest.name}` in your "
-                        "terminal to complete the OAuth flow. Web wizard cannot manage "
-                        "OAuth callbacks reliably from inside this same tab."
-                    ),
+                    description=description,
                     field_name=None,
                     current_value=None,
+                    oauth_index=oauth_counter,
+                    oauth_authorized=already,
+                    oauth_creds_present=creds_present
+                    and step.redirect_port is not None,
                 )
             )
+            oauth_counter += 1
     return views
 
 
@@ -277,7 +309,8 @@ def _process_step(
             return StepResult("ok", f"OAuth token present for {step.provider}")
         return StepResult(
             "skipped",
-            f"OAuth pending — run `personal-db tracker setup {tracker_name}` in terminal",
+            f"OAuth pending — click Authorize on this page (or run "
+            f"`personal-db tracker setup {tracker_name}` in your terminal)",
         )
 
     return StepResult("failed", f"unknown step type: {type(step).__name__}")

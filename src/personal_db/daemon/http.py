@@ -8,6 +8,7 @@ Routes:
   GET  /setup/<name>              → per-tracker setup form
   POST /setup/<name>              → process setup form, run test sync
   POST /setup/install/<name>      → install a bundled tracker, redirect to /setup/<name>
+  POST /setup/oauth/<name>        → start the web OAuth flow for an OAuth-based tracker
   GET  /setup/finish              → finalize page (installs scheduler, MCP options)
   POST /setup/mcp/install/<tgt>   → install MCP into one target, redirect to finish
   POST /sync/<tracker>            → manual refresh button on viz pages
@@ -17,9 +18,11 @@ Routes:
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import sys
 import time as _time
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
@@ -32,11 +35,13 @@ from personal_db.config import Config
 from personal_db.daemon._locks import backfill_locked, sync_due_locked, sync_one_locked
 from personal_db.db import apply_tracker_schema, init_db
 from personal_db.installer import install_template
-from personal_db.manifest import load_manifest
+from personal_db.manifest import OAuthStep, load_manifest
 from personal_db.mcp_server.tools import log_life_context
+from personal_db.oauth import start_web_oauth
 from personal_db.sync import sync_one
 from personal_db.ui.setup_runner import list_overview, list_step_views, process_form
 from personal_db.ui.viz import discover, list_trackers_with_viz, load_dashboard_slugs
+from personal_db.wizard.env_file import read_env
 from personal_db.wizard.mcp_setup import _TARGETS as _MCP_TARGETS
 
 _HERE = Path(__file__).parent.parent / "ui"
@@ -221,6 +226,92 @@ def build_app(cfg: Config) -> FastAPI:
             # which will render the existing state or 404.
             pass
         return RedirectResponse(url=f"/setup/{name}", status_code=303)
+
+    @app.post("/setup/oauth/{name}")
+    async def setup_oauth_start(request: Request, name: str):
+        """Start the in-browser OAuth flow for an OAuth-based tracker.
+
+        Spawns a one-shot localhost callback server on the manifest's
+        redirect_port and 303-redirects the user to the provider's authorize
+        URL. After the provider redirects back to localhost:<redirect_port>,
+        the callback server exchanges the code, saves the token, and
+        302-redirects the user to /setup/{name}?msg=oauth_completed.
+        """
+        _validate_name(name)
+        manifest_path = cfg.trackers_dir / name / "manifest.yaml"
+        if not manifest_path.exists():
+            raise HTTPException(status_code=404, detail=f"unknown tracker: {name}")
+        manifest = load_manifest(manifest_path)
+        oauth_steps = [s for s in manifest.setup_steps if isinstance(s, OAuthStep)]
+        if not oauth_steps:
+            raise HTTPException(status_code=400, detail="no OAuth step in this tracker")
+
+        form = await request.form()
+        try:
+            idx = int(str(form.get("step_index", "0")))
+        except ValueError:
+            idx = 0
+        if idx < 0 or idx >= len(oauth_steps):
+            raise HTTPException(status_code=400, detail="step_index out of range")
+        step = oauth_steps[idx]
+
+        # Pick up creds from the live env first, then the .env file (the form
+        # submission for env_var steps writes there + sets os.environ, but the
+        # daemon may have started before any of that).
+        env_file = read_env(cfg.root / ".env")
+        cid = os.environ.get(step.client_id_env) or env_file.get(step.client_id_env)
+        cs = os.environ.get(step.client_secret_env) or env_file.get(
+            step.client_secret_env
+        )
+        if not cid or not cs:
+            msg = (
+                f"Set {step.client_id_env} and {step.client_secret_env} on this "
+                "page first, then click Authorize."
+            )
+            return RedirectResponse(
+                url=f"/setup/{name}?msg={urllib.parse.quote(msg)}",
+                status_code=303,
+            )
+        if step.redirect_port is None:
+            msg = (
+                "This tracker's manifest doesn't pin a redirect port — finish OAuth "
+                f"with `personal-db tracker setup {name}` in your terminal."
+            )
+            return RedirectResponse(
+                url=f"/setup/{name}?msg={urllib.parse.quote(msg)}",
+                status_code=303,
+            )
+
+        # Build absolute success_redirect — the callback server runs on
+        # redirect_port (≠ daemon port), so a relative URL would land on the
+        # wrong host.
+        success_msg = urllib.parse.quote(
+            f"OAuth completed for {step.provider} — click 'save & test sync' to verify."
+        )
+        success_redirect = (
+            f"{str(request.base_url).rstrip('/')}/setup/{name}?msg={success_msg}"
+        )
+        try:
+            auth_url = start_web_oauth(
+                cfg,
+                provider=step.provider,
+                auth_url=step.auth_url,
+                token_url=step.token_url,
+                client_id=cid,
+                client_secret=cs,
+                redirect_host=step.redirect_host,
+                redirect_port=step.redirect_port,
+                redirect_path=step.redirect_path,
+                scopes=step.scopes,
+                success_redirect=success_redirect,
+            )
+        except OSError as e:
+            msg = f"could not bind callback port {step.redirect_port}: {e}"
+            return RedirectResponse(
+                url=f"/setup/{name}?msg={urllib.parse.quote(msg)}",
+                status_code=303,
+            )
+        return RedirectResponse(url=auth_url, status_code=303)
 
     @app.get("/setup/finish", response_class=HTMLResponse)
     async def setup_finish(request: Request, mcp: str = "", mcp_ok: str = ""):

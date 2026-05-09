@@ -189,6 +189,81 @@ def test_setup_finish_renders_mcp_flash(tmp_path):
     assert "cursor" in r.text
 
 
+def test_setup_oauth_redirects_to_provider_when_creds_set(tmp_path, monkeypatch):
+    """Posting /setup/oauth/oura with CLIENT_ID/SECRET set in env returns a
+    303 redirect to the provider's authorize URL with redirect_uri pointing
+    at the manifest's redirect_port."""
+    cfg = _init(tmp_path)
+    _install(cfg.root, "oura")
+    monkeypatch.setenv("OURA_CLIENT_ID", "fake_id")
+    monkeypatch.setenv("OURA_CLIENT_SECRET", "fake_secret")
+
+    client = TestClient(build_app(cfg))
+    try:
+        r = client.post(
+            "/setup/oauth/oura",
+            data={"step_index": "0"},
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+        loc = r.headers["location"]
+        assert loc.startswith("https://cloud.ouraring.com/oauth/authorize?")
+        # redirect_uri should match the manifest's redirect_port (oura: 9877).
+        assert "redirect_uri=http%3A%2F%2Flocalhost%3A9877%2Fcallback" in loc
+        assert "client_id=fake_id" in loc
+        assert "scope=daily+heartrate+workout+session+personal+spo2" in loc
+    finally:
+        # Always shut down the spawned localhost callback server so subsequent
+        # tests don't run into "address already in use".
+        from personal_db.oauth import _shutdown_existing
+
+        _shutdown_existing("oura")
+
+
+def test_setup_oauth_without_creds_redirects_back_with_message(tmp_path, monkeypatch):
+    """Without CLIENT_ID/SECRET in env or .env, the OAuth route should bounce
+    the user back to /setup/oura with a helpful message — not 500."""
+    cfg = _init(tmp_path)
+    _install(cfg.root, "oura")
+    monkeypatch.delenv("OURA_CLIENT_ID", raising=False)
+    monkeypatch.delenv("OURA_CLIENT_SECRET", raising=False)
+
+    client = TestClient(build_app(cfg))
+    r = client.post(
+        "/setup/oauth/oura",
+        data={"step_index": "0"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    loc = r.headers["location"]
+    assert loc.startswith("/setup/oura?msg=")
+    assert "OURA_CLIENT_ID" in loc
+    assert "OURA_CLIENT_SECRET" in loc
+
+
+def test_setup_oauth_unknown_tracker_404(tmp_path):
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg))
+    r = client.post("/setup/oauth/no_such_tracker", data={"step_index": "0"})
+    assert r.status_code == 404
+
+
+def test_setup_tracker_get_renders_authorize_button_for_oauth(tmp_path, monkeypatch):
+    """When CLIENT_ID + CLIENT_SECRET are set, the OAuth step block on the
+    per-tracker setup page renders an Authorize button targeting
+    /setup/oauth/<name>."""
+    cfg = _init(tmp_path)
+    _install(cfg.root, "oura")
+    monkeypatch.setenv("OURA_CLIENT_ID", "fake_id")
+    monkeypatch.setenv("OURA_CLIENT_SECRET", "fake_secret")
+
+    client = TestClient(build_app(cfg))
+    r = client.get("/setup/oura")
+    assert r.status_code == 200
+    assert 'formaction="/setup/oauth/oura"' in r.text
+    assert "authorize via browser" in r.text
+
+
 def test_setup_overview_marks_installed_with_icon(tmp_path):
     """Trackers without setup_steps render with the '—' icon (e.g. habits has 1
     instruction, but life_context with no steps shows '—'). Habits has 1 step,

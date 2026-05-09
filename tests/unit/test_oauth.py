@@ -1,8 +1,25 @@
+import socket
+import urllib.error
+import urllib.parse
 import urllib.request
 from unittest.mock import MagicMock, patch
 
 from personal_db.config import Config
-from personal_db.oauth import OAuthFlow, exchange_code, load_token, save_token
+from personal_db.oauth import (
+    OAuthFlow,
+    exchange_code,
+    load_token,
+    save_token,
+    start_web_oauth,
+)
+
+
+def _free_port() -> int:
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
 
 
 def test_save_and_load_token(tmp_root):
@@ -54,3 +71,103 @@ def test_exchange_code_posts_to_token_url_and_returns_token():
     assert data["redirect_uri"] == "http://127.0.0.1:8080/callback"
     assert data["client_id"] == "CID"
     assert data["client_secret"] == "CS"
+
+
+def test_start_web_oauth_returns_auth_url_and_completes_flow(tmp_root):
+    """End-to-end: start_web_oauth returns the provider auth URL, hitting the
+    spawned callback server triggers exchange_code and save_token, and the
+    callback responds with a 302 to success_redirect."""
+    cfg = Config(root=tmp_root)
+    port = _free_port()
+
+    with patch("personal_db.oauth.exchange_code") as mock_exchange:
+        mock_exchange.return_value = {
+            "access_token": "AT",
+            "refresh_token": "RT",
+            "expires_at": 9999999999,
+        }
+        auth_url = start_web_oauth(
+            cfg,
+            provider="testprov",
+            auth_url="https://example.com/auth",
+            token_url="https://example.com/token",
+            client_id="CID",
+            client_secret="CS",
+            redirect_host="127.0.0.1",
+            redirect_port=port,
+            redirect_path="/callback",
+            scopes=["a", "b"],
+            success_redirect="http://127.0.0.1:8765/setup/foo?msg=ok",
+        )
+
+        # The auth URL bakes in the right params.
+        parsed = urllib.parse.urlparse(auth_url)
+        assert parsed.scheme == "https"
+        assert parsed.netloc == "example.com"
+        params = dict(urllib.parse.parse_qsl(parsed.query))
+        assert params["client_id"] == "CID"
+        assert params["response_type"] == "code"
+        assert params["redirect_uri"] == f"http://127.0.0.1:{port}/callback"
+        assert params["scope"] == "a b"
+        state = params["state"]
+        assert state  # non-empty
+
+        # Hit the callback as the OAuth provider would.
+        cb_url = f"http://127.0.0.1:{port}/callback?state={state}&code=ABC"
+
+        class _NoFollow(urllib.request.HTTPRedirectHandler):
+            def http_error_302(self, *args, **kwargs):
+                return None
+
+        opener = urllib.request.build_opener(_NoFollow)
+        try:
+            opener.open(cb_url, timeout=2)
+        except urllib.error.HTTPError as e:
+            assert e.code == 302
+            assert e.headers["Location"] == "http://127.0.0.1:8765/setup/foo?msg=ok"
+        else:
+            raise AssertionError("expected 302 redirect")
+
+    # Token was saved via save_token (real, not mocked).
+    saved = load_token(cfg, "testprov")
+    assert saved is not None
+    assert saved["access_token"] == "AT"
+    # exchange_code received the right args.
+    kwargs = mock_exchange.call_args.kwargs
+    assert kwargs["code"] == "ABC"
+    assert kwargs["redirect_uri"] == f"http://127.0.0.1:{port}/callback"
+    assert kwargs["client_id"] == "CID"
+
+
+def test_start_web_oauth_state_mismatch_returns_400(tmp_root):
+    cfg = Config(root=tmp_root)
+    port = _free_port()
+    with patch("personal_db.oauth.exchange_code") as mock_exchange:
+        start_web_oauth(
+            cfg,
+            provider="testprov2",
+            auth_url="https://example.com/auth",
+            token_url="https://example.com/token",
+            client_id="CID",
+            client_secret="CS",
+            redirect_host="127.0.0.1",
+            redirect_port=port,
+            redirect_path="/callback",
+            scopes=[],
+            success_redirect="http://127.0.0.1:8765/setup/x",
+        )
+        try:
+            urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/callback?state=WRONG&code=Z", timeout=2
+            )
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+        else:
+            raise AssertionError("expected 400")
+        mock_exchange.assert_not_called()
+        # Token NOT saved.
+        assert load_token(cfg, "testprov2") is None
+        # Cleanup the still-running session.
+        from personal_db.oauth import _shutdown_existing
+
+        _shutdown_existing("testprov2")

@@ -8,6 +8,12 @@
   <p class="meta">{{ manifest.description }}</p>
 </section>
 
+{% if flash %}
+  <section class="block setup-result {% if 'error' in flash|lower or 'fail' in flash|lower %}fail{% else %}ok{% endif %}">
+    <p class="meta">{{ flash }}</p>
+  </section>
+{% endif %}
+
 {% if run_result %}
   <section class="block setup-result {{ 'ok' if run_result.success else 'fail' }}">
     <h2 class="block-h">
@@ -83,6 +89,19 @@
 
       {% elif step.type_ == 'oauth' %}
         <p class="meta">{{ step.description }}</p>
+        {% if step.oauth_creds_present or step.oauth_authorized %}
+          <p>
+            <button type="submit"
+                    class="btn-primary"
+                    formaction="/setup/oauth/{{ tracker_name }}"
+                    formmethod="post"
+                    formnovalidate
+                    name="step_index"
+                    value="{{ step.oauth_index }}">
+              {% if step.oauth_authorized %}re-authorize{% else %}authorize via browser →{% endif %}
+            </button>
+          </p>
+        {% endif %}
       {% endif %}
 
       {% if r %}
