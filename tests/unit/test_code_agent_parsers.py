@@ -34,18 +34,21 @@ def test_user_prompt_submit_to_prompt_submitted() -> None:
         {"hook_event_name": "UserPromptSubmit", "session_id": "s1", "received_at": "2026-05-09T10:00:01.000+00:00"}
     )
     ev = parse_claude_hook_line(line)
+    assert ev is not None
     assert ev["event_type"] == "prompt_submitted"
 
 
 def test_stop_to_awaiting_user() -> None:
     line = _line({"hook_event_name": "Stop", "session_id": "s1", "received_at": "2026-05-09T10:00:05.000+00:00"})
     ev = parse_claude_hook_line(line)
+    assert ev is not None
     assert ev["event_type"] == "awaiting_user"
 
 
 def test_session_end_to_session_ended() -> None:
     line = _line({"hook_event_name": "SessionEnd", "session_id": "s1", "received_at": "2026-05-09T10:01:00.000+00:00"})
     ev = parse_claude_hook_line(line)
+    assert ev is not None
     assert ev["event_type"] == "session_ended"
 
 

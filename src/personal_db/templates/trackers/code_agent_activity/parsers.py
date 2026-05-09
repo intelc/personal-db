@@ -49,7 +49,7 @@ def parse_claude_hook_line(line: str) -> dict | None:
 
     session_id = payload.get("session_id")
     timestamp = payload.get("received_at")
-    if not session_id or not timestamp:
+    if session_id is None or timestamp is None:
         return None
 
     return {
