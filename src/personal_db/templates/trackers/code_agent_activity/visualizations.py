@@ -242,17 +242,39 @@ def render_engagement(cfg: Config) -> str:
                 )
                 WHERE rn = 1
             ),
+            session_meta AS (
+                -- Codex stamps these on the session_meta row of the rollout
+                -- file. originator='codex-tui' means interactive CLI (a real
+                -- person typing into a terminal) — exactly the invocation
+                -- pattern an SSH user would use. 'Codex Desktop' / 'codex_exec'
+                -- mean IDE / programmatic, where SSH is unlikely.
+                SELECT agent, session_id,
+                       json_extract(raw, '$.payload.originator') AS originator,
+                       json_extract(raw, '$.payload.source') AS source
+                FROM code_agent_events
+                WHERE event_type = 'session_start'
+            ),
             session_pair_stats AS (
-                -- Counts per session: total prompts vs prompts that paired
-                -- with a mosspath event. Used for the Codex remote heuristic.
-                SELECT e.agent, e.session_id,
-                       COUNT(*) AS prompt_count,
-                       SUM(CASE WHEN sa.bundle_id IS NOT NULL THEN 1 ELSE 0 END) AS paired_count
-                FROM code_agent_events e
-                LEFT JOIN session_app sa
-                  ON sa.agent = e.agent AND sa.session_id = e.session_id
-                WHERE e.event_type = 'prompt_submitted'
-                GROUP BY e.agent, e.session_id
+                SELECT s.agent, s.session_id,
+                       s.prompt_count,
+                       COALESCE(p.paired_count, 0) AS paired_count,
+                       sm.originator AS originator
+                FROM (
+                    SELECT agent, session_id, COUNT(*) AS prompt_count
+                    FROM code_agent_events
+                    WHERE event_type = 'prompt_submitted'
+                    GROUP BY agent, session_id
+                ) s
+                LEFT JOIN (
+                    SELECT e.agent, e.session_id, COUNT(*) AS paired_count
+                    FROM code_agent_events e
+                    JOIN session_app sa
+                      ON sa.agent = e.agent AND sa.session_id = e.session_id
+                    WHERE e.event_type = 'prompt_submitted'
+                    GROUP BY e.agent, e.session_id
+                ) p ON p.agent = s.agent AND p.session_id = s.session_id
+                LEFT JOIN session_meta sm
+                  ON sm.agent = s.agent AND sm.session_id = s.session_id
             )
             SELECT i.agent,
                    i.session_id,
@@ -262,6 +284,7 @@ def render_engagement(cfg: Config) -> str:
                    i.is_remote AS hook_remote,
                    sps.prompt_count AS prompt_count,
                    sps.paired_count AS paired_count,
+                   sps.originator AS originator,
                    COALESCE(SUM(CASE
                        WHEN m.bundle_id = sa.bundle_id THEN m.key_count
                        ELSE 0 END), 0) AS keys_in_agent,
@@ -294,13 +317,23 @@ def render_engagement(cfg: Config) -> str:
 
     def _classify_remote(row: sqlite3.Row) -> str:
         """Return 'remote' (definite, from SSH hook), 'remote?' (heuristic),
-        or '' (local)."""
+        or '' (local / unknown).
+
+        For Codex, the reliable signal is the rollout's `originator` field:
+          - 'codex-tui' = interactive CLI invocation (terminal). Locally these
+            should pair with mosspath events; if they don't pair, the user
+            was almost certainly SSH'd.
+          - 'Codex Desktop' = launched via the desktop app / IDE integration.
+            If these don't pair, mosspath was broken — not SSH.
+          - 'codex_exec' = programmatic (`codex exec` calls). No human at the
+            keyboard, engagement metric is moot.
+        """
         if row["hook_remote"]:
             return "remote"
-        # Codex heuristic: ≥3 prompts and 0 paired with mosspath events.
+        originator = row["originator"]
         prompts = row["prompt_count"] or 0
         paired = row["paired_count"] or 0
-        if prompts >= 3 and paired == 0:
+        if originator == "codex-tui" and prompts >= 1 and paired == 0:
             return "remote?"
         return ""
 
