@@ -177,8 +177,11 @@ def render_prompt_cadence(cfg: Config) -> str:
 def render_engagement(cfg: Config) -> str:
     """Per agent_running interval: keystrokes produced while the agent ran.
 
-    Joins against mosspath_lite_events (input_batch action_type).
-    Renders a graceful fallback if mosspath_lite is not installed.
+    Joins against mosspath_lite_events. Sums key_count across all event types
+    that carry keystrokes (input_batch is rare; most typing surfaces as the
+    derived semantic events composed_text / submitted_text / pasted_text /
+    copied_text). Renders a graceful fallback if mosspath_lite isn't
+    installed.
     """
     con = _connect(cfg)
     if not con:
@@ -211,7 +214,7 @@ def render_engagement(cfg: Config) -> str:
             LEFT JOIN mosspath_lite_events m
               ON datetime(m.timestamp) >= datetime(i.start_ts)
              AND datetime(m.timestamp) <  datetime(i.end_ts)
-             AND m.action_type = 'input_batch'
+             AND m.key_count > 0
             WHERE i.state = 'agent_running'
               AND datetime(i.start_ts) >= datetime('now', '-7 days')
             GROUP BY i.agent, i.session_id, i.start_ts
