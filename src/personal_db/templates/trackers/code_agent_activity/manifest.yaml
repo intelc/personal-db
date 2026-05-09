@@ -1,0 +1,42 @@
+name: code_agent_activity
+description: >-
+  Coding-agent runtime state — Claude Code (via hooks) and Codex CLI (via rollout JSONL).
+  Records session-level intervals (agent_running, awaiting_user, inactive) so efficiency,
+  engagement, and prompt-cadence questions are answerable without leaving db.sqlite.
+permission_type: none
+local_only: true
+schedule:
+  every: 5m
+time_column: timestamp
+granularity: event
+
+config:
+  store_raw:
+    type: bool
+    default: true
+    description: >-
+      Store the original hook payload / rollout line in the events.raw column.
+      Set false to drop incidental prompt-fragment text from disk.
+
+schema:
+  tables:
+    code_agent_events:
+      columns:
+        agent:       {type: TEXT,    semantic: "agent name, e.g. claude_code or codex"}
+        session_id:  {type: TEXT,    semantic: "agent-assigned session identifier"}
+        timestamp:   {type: TEXT,    semantic: "ISO-8601 UTC event timestamp"}
+        event_type:  {type: TEXT,    semantic: "state-transition event type, e.g. session_start, user_prompt_submit, stop"}
+        cwd:         {type: TEXT,    semantic: "working directory at event time"}
+        git_branch:  {type: TEXT,    semantic: "git branch at event time when available"}
+        source_file: {type: TEXT,    semantic: "originating hook payload file or rollout JSONL path"}
+        raw:         {type: TEXT,    semantic: "original hook payload or rollout line JSON when store_raw is true"}
+    code_agent_intervals:
+      columns:
+        agent:            {type: TEXT,    semantic: "agent name, e.g. claude_code or codex"}
+        session_id:       {type: TEXT,    semantic: "agent-assigned session identifier"}
+        start_ts:         {type: TEXT,    semantic: "ISO-8601 UTC interval start"}
+        end_ts:           {type: TEXT,    semantic: "ISO-8601 UTC interval end"}
+        state:            {type: TEXT,    semantic: "interval state: agent_running, awaiting_user, or inactive"}
+        duration_seconds: {type: REAL,    semantic: "interval duration in seconds"}
+        cwd:              {type: TEXT,    semantic: "working directory at interval start"}
+        git_branch:       {type: TEXT,    semantic: "git branch at interval start when available"}
