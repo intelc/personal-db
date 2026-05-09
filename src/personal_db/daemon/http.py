@@ -159,10 +159,7 @@ def build_app(cfg: Config) -> FastAPI:
     @app.get("/t/{tracker}", response_class=HTMLResponse)
     async def tracker_page(request: Request, tracker: str):
         reg = _registry()
-        viz_list = sorted(
-            (v for v in reg.values() if v.tracker == tracker),
-            key=lambda v: v.slug,
-        )
+        viz_list = [v for v in reg.values() if v.tracker == tracker]
         if not viz_list:
             raise HTTPException(
                 status_code=404,
