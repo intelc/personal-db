@@ -454,4 +454,30 @@ def build_app(cfg: Config) -> FastAPI:
             raise HTTPException(status_code=500, detail=f"backfill failed: {e}") from e
         return {"ok": True, "tracker": tracker, "from": start, "to": end}
 
+    @app.post("/api/trackers/{name}/actions/{action}")
+    def tracker_action(name: str, action: str) -> dict[str, Any]:
+        import importlib.util
+
+        tracker_dir = cfg.trackers_dir / name
+        actions_path = tracker_dir / "actions.py"
+        if not actions_path.exists():
+            raise HTTPException(status_code=404, detail=f"tracker '{name}' has no actions.py")
+
+        spec = importlib.util.spec_from_file_location(
+            f"_pdb_actions_{name}", actions_path
+        )
+        if spec is None or spec.loader is None:
+            raise HTTPException(status_code=500, detail="failed to load actions module")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)  # type: ignore[union-attr]
+
+        handler = getattr(module, action, None)
+        if handler is None or not callable(handler):
+            raise HTTPException(status_code=404, detail=f"action '{action}' not found on tracker '{name}'")
+
+        try:
+            return handler(cfg)
+        except Exception as exc:  # noqa: BLE001 — surface to client as 500
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
     return app
