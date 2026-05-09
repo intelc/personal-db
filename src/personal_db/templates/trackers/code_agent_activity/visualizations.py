@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from collections import defaultdict
-from datetime import UTC, date, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from html import escape
 
 from personal_db.config import Config
@@ -26,7 +26,7 @@ def render_runtime_heatmap(cfg: Config) -> str:
     if not con:
         return '<p class="meta">database not initialized yet</p>'
 
-    cutoff = (datetime.now(UTC) - timedelta(days=7)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     try:
         rows = con.execute(
             """
@@ -76,11 +76,11 @@ def render_state_breakdown(cfg: Config) -> str:
     if not con:
         return '<p class="meta">database not initialized yet</p>'
 
-    cutoff = (datetime.now(UTC) - timedelta(days=7)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     try:
         rows = con.execute(
             """
-            SELECT date(start_ts) AS d, state, SUM(duration_seconds) AS total
+            SELECT date(start_ts, 'localtime') AS d, state, SUM(duration_seconds) AS total
             FROM code_agent_intervals
             WHERE start_ts >= ?
             GROUP BY d, state
@@ -124,7 +124,7 @@ def render_prompt_cadence(cfg: Config) -> str:
     if not con:
         return '<p class="meta">database not initialized yet</p>'
 
-    cutoff = (datetime.now(UTC) - timedelta(days=7)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     try:
         rows = con.execute(
             """
@@ -209,8 +209,8 @@ def render_engagement(cfg: Config) -> str:
                    COALESCE(SUM(m.key_count), 0) AS keystrokes
             FROM code_agent_intervals i
             LEFT JOIN mosspath_lite_events m
-              ON m.timestamp >= i.start_ts
-             AND m.timestamp <  i.end_ts
+              ON datetime(m.timestamp) >= datetime(i.start_ts)
+             AND datetime(m.timestamp) <  datetime(i.end_ts)
              AND m.action_type = 'input_batch'
             WHERE i.state = 'agent_running'
               AND i.start_ts >= datetime('now', '-7 days')
