@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from personal_db.templates.trackers.code_agent_activity.intervals import (
     materialize_intervals,
@@ -76,7 +76,8 @@ def test_recent_open_session_kept_open() -> None:
     now = datetime(2026, 5, 9, 10, 30, 0, tzinfo=timezone.utc)  # 30 min later
     intervals = materialize_intervals(events, now=now)
 
-    # No synthetic close yet — interval extends only to last known event timestamp
+    assert len(intervals) == 1
+    assert intervals[-1]["state"] == "awaiting_user"
     assert intervals[-1]["end_ts"] == "2026-05-09T10:00:05.000+00:00"
 
 

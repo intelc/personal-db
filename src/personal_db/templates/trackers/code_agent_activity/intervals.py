@@ -15,7 +15,7 @@ If no session_ended is present and the last event is older than 60 minutes
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 # State the session is in *after* a given event_type fires.
 _STATE_AFTER = {
@@ -40,20 +40,16 @@ def _format_ts(dt: datetime) -> str:
 def materialize_intervals(events: list[dict], *, now: datetime) -> list[dict]:
     """events must all share the same (agent, session_id) and be sorted by timestamp."""
     if len(events) < 2:
-        # Stale single-event session: synthesize a close so we still get one interval.
-        if (
-            len(events) == 1
-            and now - _parse_ts(events[0]["timestamp"]) > _STALENESS_THRESHOLD
-        ):
-            # Single event with no peer — there's nothing to define an interval against.
-            # Skip; intervals require at least two transitions.
-            return []
+        # Need at least two events to define an interval's start and end.
         return []
 
     has_end = any(e["event_type"] == "session_ended" for e in events)
     last_ts = _parse_ts(events[-1]["timestamp"])
     use_events = list(events)
 
+    # Stale with no explicit end: synthesize a close so the open run gets a
+    # final interval. The interval's state reflects whatever the session was
+    # in at last_event (e.g. agent_running if the agent never finished).
     if not has_end and now - last_ts > _STALENESS_THRESHOLD:
         synthetic_close = {
             **events[-1],
