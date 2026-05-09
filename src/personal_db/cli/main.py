@@ -4,6 +4,7 @@ import typer
 from dotenv import load_dotenv
 
 from personal_db.cli import (
+    code_agent_hook_cmd,
     daemon_cmd,
     init_cmd,
     log_cmd,
@@ -62,6 +63,8 @@ daemon_app.command("status")(daemon_cmd.status)
 daemon_app.command("restart")(daemon_cmd.restart)
 daemon_app.command("run")(daemon_cmd.run)
 app.add_typer(daemon_app, name="daemon")
+
+app.add_typer(code_agent_hook_cmd.app, name="code-agent-hook-write")
 
 if __name__ == "__main__":
     app()

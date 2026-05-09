@@ -1,0 +1,90 @@
+name: mosspath_lite
+description: Mosspath Lite computer activity events, semantic sessions, work episodes, and routine answers
+permission_type: none
+setup_steps:
+  - type: instructions
+    text: |
+      Reads Mosspath Lite's local SQLite database in read-only mode.
+
+      Default source:
+        ~/Library/Application Support/Mosspath Lite/mosspath-lite.sqlite
+
+      Override with:
+        MOSSPATH_LITE_DB=/path/to/mosspath-lite.sqlite
+
+      Mosspath Lite keeps raw capture metadata for a short local retention window.
+      Sync this tracker regularly if you want personal_db to preserve durable
+      computer-activity history.
+schedule:
+  every: 1h
+time_column: timestamp
+granularity: event
+schema:
+  tables:
+    mosspath_lite_events:
+      columns:
+        id:                 {type: TEXT, semantic: "Mosspath Lite action event UUID"}
+        timestamp:          {type: TEXT, semantic: "ISO-8601 UTC event timestamp"}
+        action_type:        {type: TEXT, semantic: "captured action type, e.g. input_batch, app_visit, submitted_text"}
+        app_name:           {type: TEXT, semantic: "frontmost macOS app name"}
+        bundle_id:          {type: TEXT, semantic: "frontmost app bundle identifier"}
+        window_title:       {type: TEXT, semantic: "focused window title when available"}
+        browser_title:      {type: TEXT, semantic: "browser tab title when available"}
+        browser_url:        {type: TEXT, semantic: "browser tab URL when available"}
+        browser_domain:     {type: TEXT, semantic: "browser URL hostname/domain when available"}
+        focused_role:       {type: TEXT, semantic: "focused Accessibility role"}
+        focused_title:      {type: TEXT, semantic: "focused Accessibility title"}
+        focused_preview:    {type: TEXT, semantic: "focused text/value preview, redacted by Mosspath Lite where applicable"}
+        clipboard_type:     {type: TEXT, semantic: "clipboard content type when action included clipboard metadata"}
+        clipboard_preview:  {type: TEXT, semantic: "clipboard preview when available"}
+        key_count:          {type: INTEGER, semantic: "batched key count"}
+        mouse_count:        {type: INTEGER, semantic: "batched mouse count"}
+        scroll_count:       {type: INTEGER, semantic: "batched scroll count"}
+        screenshot_path:    {type: TEXT, semantic: "relative Mosspath Lite thumbnail path, not copied into personal_db"}
+        context_key:        {type: TEXT, semantic: "Mosspath Lite stable context key"}
+        note:               {type: TEXT, semantic: "capture note"}
+    mosspath_lite_session_digests:
+      columns:
+        session_id:         {type: TEXT, semantic: "Mosspath Lite semantic session id"}
+        started_at:         {type: TEXT, semantic: "ISO-8601 UTC session start"}
+        ended_at:           {type: TEXT, semantic: "ISO-8601 UTC session end"}
+        title:              {type: TEXT, semantic: "short session title"}
+        what:               {type: TEXT, semantic: "grounded description of what happened"}
+        possible_intent:    {type: TEXT, semantic: "cautious intent inference when supported"}
+        actions_json:       {type: TEXT, semantic: "JSON array of concrete actions"}
+        entities_json:      {type: TEXT, semantic: "JSON array of entities"}
+        artifacts_json:     {type: TEXT, semantic: "JSON array of files, repos, URLs, or other artifacts"}
+        apps_json:          {type: TEXT, semantic: "JSON array of app names"}
+        domains_json:       {type: TEXT, semantic: "JSON array of browser domains"}
+        evidence_summary:   {type: TEXT, semantic: "short evidence summary"}
+        confidence:         {type: REAL, semantic: "0-1 confidence"}
+        generated_at:       {type: TEXT, semantic: "ISO-8601 UTC generation time"}
+    mosspath_lite_work_episodes:
+      columns:
+        id:                  {type: TEXT, semantic: "Mosspath Lite work episode UUID"}
+        started_at:          {type: TEXT, semantic: "ISO-8601 UTC episode start"}
+        ended_at:            {type: TEXT, semantic: "ISO-8601 UTC episode end"}
+        title:               {type: TEXT, semantic: "episode title"}
+        what:                {type: TEXT, semantic: "what happened"}
+        why:                 {type: TEXT, semantic: "why it likely happened when supported"}
+        how_json:            {type: TEXT, semantic: "JSON array of how the user approached it"}
+        outcome:             {type: TEXT, semantic: "observable outcome when supported"}
+        source_session_ids_json: {type: TEXT, semantic: "JSON array of contributing session ids"}
+        boundary_score_ids_json: {type: TEXT, semantic: "JSON array of boundary score ids"}
+        confidence:          {type: REAL, semantic: "0-1 confidence"}
+        status:              {type: TEXT, semantic: "episode status, e.g. draft"}
+        generated_at:        {type: TEXT, semantic: "ISO-8601 UTC generation time"}
+    mosspath_lite_routine_answers:
+      columns:
+        id:                 {type: TEXT, semantic: "stable routine answer id"}
+        question_id:        {type: TEXT, semantic: "routine question id"}
+        question_title:     {type: TEXT, semantic: "routine question title"}
+        trigger_mode:       {type: TEXT, semantic: "daily, hourly, or every_3_hours"}
+        started_at:         {type: TEXT, semantic: "ISO-8601 UTC answer window start"}
+        ended_at:           {type: TEXT, semantic: "ISO-8601 UTC answer window end"}
+        answer_markdown:    {type: TEXT, semantic: "generated routine answer markdown"}
+        evidence_ids_json:  {type: TEXT, semantic: "JSON array of supporting evidence ids"}
+        confidence:         {type: REAL, semantic: "0-1 confidence"}
+        generated_at:       {type: TEXT, semantic: "ISO-8601 UTC generation time"}
+related_entities: []
+local_only: true

@@ -9,7 +9,15 @@ from pathlib import Path
 
 from personal_db.config import Config
 
-_TRACKER_FILES = ("manifest.yaml", "ingest.py", "schema.sql", "visualizations.py")
+_TRACKER_FILES = (
+    "manifest.yaml",
+    "ingest.py",
+    "schema.sql",
+    "visualizations.py",
+    "actions.py",     # optional — user-initiated handlers (daemon endpoint added in upcoming work)
+    "parsers.py",     # optional — tracker-specific helper module
+    "intervals.py",   # optional — tracker-specific helper module
+)
 
 
 def _hash_dir(path: Path) -> str:
@@ -39,7 +47,7 @@ def is_outdated(cfg: Config, name: str) -> bool:
 
 
 def update_template(cfg: Config, name: str) -> Path:
-    """Overwrite the 3 canonical files in <root>/trackers/<name>/ from the bundle.
+    """Overwrite canonical tracker files in <root>/trackers/<name>/ from the bundle.
     Preserves any other files in the dir. Raises ValueError if no bundled template."""
     src_pkg = resources.files("personal_db.templates.trackers").joinpath(name)
     if not src_pkg.is_dir():
