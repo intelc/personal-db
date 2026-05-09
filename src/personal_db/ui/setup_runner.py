@@ -26,9 +26,12 @@ from personal_db.manifest import (
     CommandTestStep,
     EnvVarStep,
     FdaCheckStep,
+    InstallHooksStep,
     InstructionsStep,
     Manifest,
+    NoteStep,
     OAuthStep,
+    VerifyHooksStep,
     load_manifest,
 )
 from personal_db.permissions import probe_sqlite_access
@@ -222,6 +225,39 @@ def list_step_views(cfg: Config, manifest: Manifest) -> list[StepView]:
                 )
             )
             oauth_counter += 1
+        elif isinstance(step, InstallHooksStep):
+            views.append(
+                StepView(
+                    index=i,
+                    type_="install_hooks",
+                    label=step.title,
+                    description=step.description or "",
+                    field_name=None,
+                    current_value=None,
+                )
+            )
+        elif isinstance(step, VerifyHooksStep):
+            views.append(
+                StepView(
+                    index=i,
+                    type_="verify_hooks",
+                    label=step.title,
+                    description="",
+                    field_name=None,
+                    current_value=None,
+                )
+            )
+        elif isinstance(step, NoteStep):
+            views.append(
+                StepView(
+                    index=i,
+                    type_="note",
+                    label=step.title,
+                    description=step.body,
+                    field_name=None,
+                    current_value=None,
+                )
+            )
     return views
 
 
@@ -312,6 +348,11 @@ def _process_step(
             f"OAuth pending — click Authorize on this page (or run "
             f"`personal-db tracker setup {tracker_name}` in your terminal)",
         )
+
+    if isinstance(step, (InstallHooksStep, VerifyHooksStep, NoteStep)):
+        # These steps are handled client-side (fetch/display) or are informational.
+        # They never block the wizard from advancing.
+        return StepResult("ok", "n/a")
 
     return StepResult("failed", f"unknown step type: {type(step).__name__}")
 

@@ -79,8 +79,32 @@ class CommandTestStep(BaseModel):
     expect_returncode: int = 0
 
 
+class InstallHooksStep(BaseModel):
+    type: Literal["install_hooks"]
+    title: str
+    description: str | None = None
+
+
+class VerifyHooksStep(BaseModel):
+    type: Literal["verify_hooks"]
+    title: str
+
+
+class NoteStep(BaseModel):
+    type: Literal["note"]
+    title: str
+    body: str
+
+
 SetupStep = Annotated[
-    EnvVarStep | OAuthStep | FdaCheckStep | InstructionsStep | CommandTestStep,
+    EnvVarStep
+    | OAuthStep
+    | FdaCheckStep
+    | InstructionsStep
+    | CommandTestStep
+    | InstallHooksStep
+    | VerifyHooksStep
+    | NoteStep,
     Field(discriminator="type"),
 ]
 

@@ -41,7 +41,7 @@
 
   {% for step in steps %}
     {% set r = step_results[loop.index0] if step_results else None %}
-    <section class="block setup-step{% if r and r.status == 'failed' %} fail{% elif r and r.status == 'ok' %} ok{% endif %}">
+    <section class="block setup-step{% if r and r.status == 'failed' %} fail{% elif r and r.status == 'ok' %} ok{% endif %}"{% if step.type_ in ('install_hooks', 'verify_hooks') %} data-step-type="{{ step.type_ }}" data-tracker="{{ tracker_name }}"{% endif %}>
       <h3 class="block-h">
         {{ loop.index }}. {{ step.label }}
         <span class="setup-step-type">[{{ step.type_ }}]</span>
@@ -87,6 +87,21 @@
       {% elif step.type_ == 'command_test' %}
         <p class="meta">{{ step.description }}</p>
 
+      {% elif step.type_ == 'install_hooks' %}
+        {% if step.description %}<p class="meta">{{ step.description }}</p>{% endif %}
+        <button
+          type="button"
+          class="btn-primary"
+          onclick="installHooks(this, '{{ tracker_name }}')"
+        >Install hooks</button>
+        <pre class="action-output" hidden></pre>
+
+      {% elif step.type_ == 'verify_hooks' %}
+        <span class="hook-status-badge" data-tracker="{{ tracker_name }}">checking…</span>
+
+      {% elif step.type_ == 'note' %}
+        <p class="meta">{{ step.description }}</p>
+
       {% elif step.type_ == 'oauth' %}
         <p class="meta">{{ step.description }}</p>
         {% if step.oauth_creds_present or step.oauth_authorized %}
@@ -117,4 +132,43 @@
     <button type="submit" class="btn-primary">save &amp; test sync</button>
   </section>
 </form>
+
+<script>
+async function installHooks(button, tracker) {
+  button.disabled = true;
+  const out = button.parentElement.querySelector('.action-output');
+  out.hidden = false;
+  out.textContent = "installing…";
+  try {
+    const r = await fetch(`/api/trackers/${tracker}/actions/install_hooks`, {method: "POST"});
+    const body = await r.json();
+    out.textContent = body.message || JSON.stringify(body);
+    if (!body.ok) out.classList.add("error");
+    document.querySelectorAll(`[data-step-type="verify_hooks"]`).forEach(refreshHookStatus);
+  } catch (err) {
+    out.textContent = `Daemon not reachable — run \`personal-db daemon install\``;
+    out.classList.add("error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function refreshHookStatus(el) {
+  const tracker = el.dataset.tracker;
+  const badge = el.querySelector(".hook-status-badge");
+  if (!badge) return;
+  try {
+    const r = await fetch(`/api/trackers/${tracker}/actions/verify_hooks`, {method: "POST"});
+    const body = await r.json();
+    badge.textContent = body.ours_present ? "✓ installed" : "✗ not installed";
+    badge.className = `hook-status-badge ${body.ours_present ? "ok" : "warn"}`;
+  } catch {
+    badge.textContent = "daemon unreachable";
+    badge.className = "hook-status-badge error";
+  }
+}
+
+document.querySelectorAll(`[data-step-type="verify_hooks"]`).forEach(refreshHookStatus);
+</script>
+
 {% endblock %}

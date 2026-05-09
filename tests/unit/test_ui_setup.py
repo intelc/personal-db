@@ -276,3 +276,41 @@ def test_setup_overview_marks_installed_with_icon(tmp_path):
     # Some indicator glyph is rendered for habits' status. Just confirm the
     # tracker appears with a row containing its summary text.
     assert "needs setup" in r.text or "configured" in r.text or "no setup needed" in r.text
+
+
+def test_install_hooks_step_renders_button(tmp_path):
+    """Render a manifest with an install_hooks step; assert the button and
+    onclick handler are present in the rendered HTML."""
+    cfg = _init(tmp_path)
+    _install(cfg.root, "code_agent_activity")
+
+    client = TestClient(build_app(cfg))
+    r = client.get("/setup/code_agent_activity")
+    assert r.status_code == 200
+    assert "installHooks(this" in r.text
+    assert "Install hooks" in r.text
+    assert "action-output" in r.text
+
+
+def test_verify_hooks_step_renders_badge(tmp_path):
+    """Render a manifest with a verify_hooks step; assert the status badge is present."""
+    cfg = _init(tmp_path)
+    _install(cfg.root, "code_agent_activity")
+
+    client = TestClient(build_app(cfg))
+    r = client.get("/setup/code_agent_activity")
+    assert r.status_code == 200
+    assert "hook-status-badge" in r.text
+    assert 'data-step-type="verify_hooks"' in r.text
+
+
+def test_note_step_renders_body(tmp_path):
+    """Render a manifest with a note step; assert the note body text is present."""
+    cfg = _init(tmp_path)
+    _install(cfg.root, "code_agent_activity")
+
+    client = TestClient(build_app(cfg))
+    r = client.get("/setup/code_agent_activity")
+    assert r.status_code == 200
+    assert "Codex CLI requires no setup" in r.text
+    assert "~/.codex/sessions/" in r.text

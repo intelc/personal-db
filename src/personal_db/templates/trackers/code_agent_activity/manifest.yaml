@@ -20,7 +20,20 @@ config:
       Store the original hook payload / rollout line in the events.raw column.
       Set false to drop incidental prompt-fragment text from disk.
 
-# setup_steps: added in upcoming work (hooks installer + Codex path instructions)
+setup_steps:
+  - type: install_hooks
+    title: Install Claude Code hooks
+    description: >-
+      One-click install of SessionStart, UserPromptSubmit, Stop, SessionEnd,
+      PreToolUse, PostToolUse hooks (async; non-blocking) into
+      ~/.claude/settings.json. Existing user hooks are preserved.
+  - type: verify_hooks
+    title: Verify hook installation
+  - type: note
+    title: Codex CLI requires no setup
+    body: >-
+      Codex CLI activity is read directly from ~/.codex/sessions/. Just keep
+      using `codex` and the next sync will pick it up.
 
 schema:
   tables:
