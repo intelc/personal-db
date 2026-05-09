@@ -1,0 +1,154 @@
+name: oura
+description: Oura Ring — daily activity, readiness, sleep score, sleep periods, stress, SpO2, workouts, sessions, heart rate
+permission_type: oauth
+setup_steps:
+  - type: instructions
+    text: |
+      Oura uses OAuth2. You need a developer app at https://cloud.ouraring.com/oauth/applications.
+
+        1. Create an application.
+        2. Set the Redirect URI to exactly: http://localhost:9877/callback
+        3. Copy the Client ID and Client Secret into the env vars below.
+
+      Required scopes: daily, heartrate, workout, session, personal, spo2.
+  - type: env_var
+    name: OURA_CLIENT_ID
+    prompt: "Oura OAuth client ID"
+  - type: env_var
+    name: OURA_CLIENT_SECRET
+    prompt: "Oura OAuth client secret"
+    secret: true
+  - type: oauth
+    provider: oura
+    client_id_env: OURA_CLIENT_ID
+    client_secret_env: OURA_CLIENT_SECRET
+    auth_url: "https://cloud.ouraring.com/oauth/authorize"
+    token_url: "https://api.ouraring.com/oauth/token"
+    scopes: ["daily", "heartrate", "workout", "session", "personal", "spo2"]
+    redirect_host: localhost
+    redirect_port: 9877
+schedule:
+  every: 6h
+time_column: day
+granularity: day
+schema:
+  tables:
+    oura_daily_activity:
+      columns:
+        id:                          {type: TEXT,    semantic: "Oura record id"}
+        day:                         {type: TEXT,    semantic: "YYYY-MM-DD local Oura day"}
+        score:                       {type: INTEGER, semantic: "0-100 daily activity score"}
+        active_calories:             {type: INTEGER, semantic: "active calories burned"}
+        total_calories:              {type: INTEGER, semantic: "total calories incl BMR"}
+        steps:                       {type: INTEGER, semantic: "step count for the day"}
+        equivalent_walking_distance: {type: INTEGER, semantic: "equivalent walking distance in meters"}
+        high_activity_time:          {type: INTEGER, semantic: "seconds in high activity"}
+        medium_activity_time:        {type: INTEGER, semantic: "seconds in medium activity"}
+        low_activity_time:           {type: INTEGER, semantic: "seconds in low activity"}
+        sedentary_time:              {type: INTEGER, semantic: "seconds sedentary"}
+        resting_time:                {type: INTEGER, semantic: "seconds resting"}
+        non_wear_time:               {type: INTEGER, semantic: "seconds ring not worn"}
+        high_activity_met_minutes:   {type: INTEGER, semantic: "MET minutes in high activity"}
+        medium_activity_met_minutes: {type: INTEGER, semantic: "MET minutes in medium activity"}
+        low_activity_met_minutes:    {type: INTEGER, semantic: "MET minutes in low activity"}
+        inactivity_alerts:           {type: INTEGER, semantic: "inactivity alert count"}
+        meters_to_target:            {type: INTEGER, semantic: "meters short of activity target"}
+        target_calories:             {type: INTEGER, semantic: "daily activity calorie target"}
+        target_meters:               {type: INTEGER, semantic: "daily activity meter target"}
+        average_met_minutes:         {type: REAL,    semantic: "average MET minutes for the day"}
+        timestamp:                   {type: TEXT,    semantic: "ISO-8601 day timestamp"}
+    oura_daily_readiness:
+      columns:
+        id:                          {type: TEXT,    semantic: "Oura record id"}
+        day:                         {type: TEXT,    semantic: "YYYY-MM-DD local Oura day"}
+        score:                       {type: INTEGER, semantic: "0-100 readiness score"}
+        temperature_deviation:       {type: REAL,    semantic: "skin temp deviation (Celsius)"}
+        temperature_trend_deviation: {type: REAL,    semantic: "trend temp deviation (Celsius)"}
+        activity_balance:            {type: INTEGER, semantic: "0-100 activity balance contributor"}
+        body_temperature:            {type: INTEGER, semantic: "0-100 body temperature contributor"}
+        hrv_balance:                 {type: INTEGER, semantic: "0-100 HRV balance contributor"}
+        previous_day_activity:       {type: INTEGER, semantic: "0-100 previous day activity contributor"}
+        previous_night:              {type: INTEGER, semantic: "0-100 previous night sleep contributor"}
+        recovery_index:              {type: INTEGER, semantic: "0-100 recovery index contributor"}
+        resting_heart_rate:          {type: INTEGER, semantic: "0-100 resting HR contributor"}
+        sleep_balance:               {type: INTEGER, semantic: "0-100 sleep balance contributor"}
+        timestamp:                   {type: TEXT,    semantic: "ISO-8601 day timestamp"}
+    oura_daily_sleep:
+      columns:
+        id:                  {type: TEXT,    semantic: "Oura record id"}
+        day:                 {type: TEXT,    semantic: "YYYY-MM-DD local Oura day"}
+        score:               {type: INTEGER, semantic: "0-100 daily sleep score"}
+        contrib_deep_sleep:  {type: INTEGER, semantic: "deep sleep contributor 0-100"}
+        contrib_efficiency:  {type: INTEGER, semantic: "efficiency contributor 0-100"}
+        contrib_latency:     {type: INTEGER, semantic: "latency contributor 0-100"}
+        contrib_rem_sleep:   {type: INTEGER, semantic: "REM contributor 0-100"}
+        contrib_restfulness: {type: INTEGER, semantic: "restfulness contributor 0-100"}
+        contrib_timing:      {type: INTEGER, semantic: "timing contributor 0-100"}
+        contrib_total_sleep: {type: INTEGER, semantic: "total sleep contributor 0-100"}
+        timestamp:           {type: TEXT,    semantic: "ISO-8601 day timestamp"}
+    oura_daily_stress:
+      columns:
+        id:            {type: TEXT,    semantic: "Oura record id"}
+        day:           {type: TEXT,    semantic: "YYYY-MM-DD local Oura day"}
+        stress_high:   {type: INTEGER, semantic: "seconds in high stress"}
+        recovery_high: {type: INTEGER, semantic: "seconds in high recovery"}
+        day_summary:   {type: TEXT,    semantic: "day summary label e.g. stressful, restored"}
+    oura_daily_spo2:
+      columns:
+        id:                          {type: TEXT,    semantic: "Oura record id"}
+        day:                         {type: TEXT,    semantic: "YYYY-MM-DD local Oura day"}
+        spo2_percentage_avg:         {type: REAL,    semantic: "average SpO2 percentage"}
+        breathing_disturbance_index: {type: INTEGER, semantic: "breathing disturbance index"}
+    oura_sleep:
+      columns:
+        id:                    {type: TEXT,    semantic: "Oura sleep period id"}
+        day:                   {type: TEXT,    semantic: "YYYY-MM-DD local Oura day"}
+        bedtime_start:         {type: TEXT,    semantic: "ISO-8601 bedtime start"}
+        bedtime_end:           {type: TEXT,    semantic: "ISO-8601 bedtime end"}
+        type:                  {type: TEXT,    semantic: "long_sleep, sleep, late_nap, rest"}
+        period:                {type: INTEGER, semantic: "sleep period index"}
+        total_sleep_duration:  {type: INTEGER, semantic: "total sleep seconds"}
+        time_in_bed:           {type: INTEGER, semantic: "time in bed seconds"}
+        awake_time:            {type: INTEGER, semantic: "awake seconds"}
+        light_sleep_duration:  {type: INTEGER, semantic: "light sleep seconds"}
+        deep_sleep_duration:   {type: INTEGER, semantic: "deep sleep seconds"}
+        rem_sleep_duration:    {type: INTEGER, semantic: "REM sleep seconds"}
+        efficiency:            {type: REAL,    semantic: "sleep efficiency 0-100"}
+        latency:               {type: INTEGER, semantic: "sleep onset latency seconds"}
+        restless_periods:      {type: INTEGER, semantic: "restless period count"}
+        average_breath:        {type: REAL,    semantic: "average breaths per minute"}
+        average_heart_rate:    {type: REAL,    semantic: "average bpm during sleep"}
+        lowest_heart_rate:     {type: INTEGER, semantic: "lowest bpm during sleep"}
+        average_hrv:           {type: REAL,    semantic: "average HRV (ms RMSSD)"}
+        readiness_score_delta: {type: INTEGER, semantic: "delta to readiness score"}
+        sleep_score_delta:     {type: INTEGER, semantic: "delta to sleep score"}
+        low_battery_alert:     {type: INTEGER, semantic: "1 if low battery during sleep else 0"}
+    oura_workout:
+      columns:
+        id:                 {type: TEXT,    semantic: "Oura workout id"}
+        day:                {type: TEXT,    semantic: "YYYY-MM-DD local Oura day"}
+        start_datetime:     {type: TEXT,    semantic: "ISO-8601 workout start"}
+        end_datetime:       {type: TEXT,    semantic: "ISO-8601 workout end"}
+        activity:           {type: TEXT,    semantic: "activity label e.g. running, cycling"}
+        intensity:          {type: TEXT,    semantic: "easy, moderate, hard"}
+        source:             {type: TEXT,    semantic: "manual, autodetected, confirmed, workout_heart_rate"}
+        load:               {type: REAL,    semantic: "training load score"}
+        average_heart_rate: {type: INTEGER, semantic: "avg bpm"}
+        max_heart_rate:     {type: INTEGER, semantic: "max bpm"}
+        calories:           {type: REAL,    semantic: "calories burned"}
+        distance:           {type: REAL,    semantic: "distance in meters"}
+        label:              {type: TEXT,    semantic: "user-entered workout label"}
+    oura_session:
+      columns:
+        id:             {type: TEXT, semantic: "Oura session id"}
+        day:            {type: TEXT, semantic: "YYYY-MM-DD local Oura day"}
+        start_datetime: {type: TEXT, semantic: "ISO-8601 session start"}
+        end_datetime:   {type: TEXT, semantic: "ISO-8601 session end"}
+        type:           {type: TEXT, semantic: "session type e.g. meditation, breathing, relaxation"}
+        mood:           {type: TEXT, semantic: "self-reported mood label"}
+    oura_heartrate:
+      columns:
+        timestamp: {type: TEXT,    semantic: "ISO-8601 sample timestamp (UTC)"}
+        bpm:       {type: INTEGER, semantic: "heart rate in beats per minute"}
+        source:    {type: TEXT,    semantic: "sleep, awake, rest, workout"}
+related_entities: []
