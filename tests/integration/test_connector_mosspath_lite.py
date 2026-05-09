@@ -207,15 +207,15 @@ def test_mosspath_lite_imports_activity_tables(tmp_path, monkeypatch):
     assert json.loads(answer["evidence_ids_json"]) == ["session-1", "episode-1"]
 
     registry = discover(cfg)
-    assert "mosspath_lite:00_today_story" in registry
-    assert "mosspath_lite:01_today_apps_domains" in registry
+    assert "mosspath_lite:00_recent_story" in registry
+    assert "mosspath_lite:01_recent_apps_domains" in registry
     assert "mosspath_lite:02_activity_heatmap_7d" in registry
 
-    story_html = registry["mosspath_lite:00_today_story"].render(cfg)
+    story_html = registry["mosspath_lite:00_recent_story"].render(cfg)
     assert "What did I work on and accomplish today?" in story_html
     assert "Routine answer tracker work" in story_html
 
-    apps_html = registry["mosspath_lite:01_today_apps_domains"].render(cfg)
+    apps_html = registry["mosspath_lite:01_recent_apps_domains"].render(cfg)
     assert "Xcode" in apps_html
 
     heatmap_html = registry["mosspath_lite:02_activity_heatmap_7d"].render(cfg)
