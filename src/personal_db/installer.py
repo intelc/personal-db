@@ -47,7 +47,7 @@ def is_outdated(cfg: Config, name: str) -> bool:
 
 
 def update_template(cfg: Config, name: str) -> Path:
-    """Overwrite the 3 canonical files in <root>/trackers/<name>/ from the bundle.
+    """Overwrite canonical tracker files in <root>/trackers/<name>/ from the bundle.
     Preserves any other files in the dir. Raises ValueError if no bundled template."""
     src_pkg = resources.files("personal_db.templates.trackers").joinpath(name)
     if not src_pkg.is_dir():

@@ -461,6 +461,8 @@ def build_app(cfg: Config) -> FastAPI:
 
         _validate_name(name)
         _validate_name(action)
+        if action.startswith("_"):
+            raise HTTPException(status_code=404, detail=f"action '{action}' not found on tracker '{name}'")
 
         tracker_dir = cfg.trackers_dir / name
         actions_path = tracker_dir / "actions.py"

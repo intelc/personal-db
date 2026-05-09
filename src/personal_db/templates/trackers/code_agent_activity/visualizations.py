@@ -213,7 +213,7 @@ def render_engagement(cfg: Config) -> str:
              AND datetime(m.timestamp) <  datetime(i.end_ts)
              AND m.action_type = 'input_batch'
             WHERE i.state = 'agent_running'
-              AND i.start_ts >= datetime('now', '-7 days')
+              AND datetime(i.start_ts) >= datetime('now', '-7 days')
             GROUP BY i.agent, i.session_id, i.start_ts
             ORDER BY i.start_ts DESC
             LIMIT 50
