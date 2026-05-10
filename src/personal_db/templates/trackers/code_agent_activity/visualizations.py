@@ -538,21 +538,26 @@ def render_session_timeline(cfg: Config) -> str:
         f'style="width: 100%; height: auto; max-height: {H + 20}px; '
         f'border: 1px solid #000; background: #fafafa;">'
     )
-    # Hour gridlines (every 4h) and labels
-    for h in range(0, 25, 4):
-        ts_h = cutoff_ts + h * 3600
-        clamped = max(cutoff_ts, min(now_ts, ts_h))
-        x = PAD_L + (clamped - cutoff_ts) / span * plot_w
+    # Gridlines: hour (full, darker, labeled every 2h) + half-hour (faint, no label).
+    for half in range(0, 49):  # 0, 0.5h, 1h, ... 24h
+        ts_h = cutoff_ts + half * 1800
+        if ts_h < cutoff_ts or ts_h > now_ts:
+            continue
+        x = PAD_L + (ts_h - cutoff_ts) / span * plot_w
+        is_hour = (half % 2) == 0
+        stroke = "#ddd" if is_hour else "#eee"
         parts.append(
             f'<line x1="{x:.1f}" y1="{PAD_T}" x2="{x:.1f}" y2="{PAD_T + plot_h}" '
-            f'stroke="#ddd" stroke-width="1" />'
+            f'stroke="{stroke}" stroke-width="1" />'
         )
-        label_dt = datetime.fromtimestamp(clamped)
-        parts.append(
-            f'<text x="{x:.1f}" y="{H - PAD_B + 14}" font-size="10" '
-            f'text-anchor="middle" fill="#666" font-family="ui-monospace, monospace">'
-            f"{label_dt.strftime('%H:%M')}</text>"
-        )
+        # Label every 2 hours to avoid crowding (24 hour-labels @ 636px = too tight).
+        if is_hour and ((half // 2) % 2) == 0:
+            label_dt = datetime.fromtimestamp(ts_h)
+            parts.append(
+                f'<text x="{x:.1f}" y="{H - PAD_B + 14}" font-size="10" '
+                f'text-anchor="middle" fill="#666" font-family="ui-monospace, monospace">'
+                f"{label_dt.strftime('%H:%M')}</text>"
+            )
 
     # Each session lane
     for idx, key in enumerate(ordered_keys):
