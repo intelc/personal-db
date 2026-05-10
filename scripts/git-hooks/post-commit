@@ -1,0 +1,16 @@
+#!/bin/sh
+# personal-db: refresh stale MCP subprocesses when src/personal_db/ changes.
+#
+# Long-running MCP subprocesses (Claude desktop, Cursor, Claude Code) hold the
+# pre-edit personal_db modules in memory. After committing changes under
+# src/personal_db/, this hook SIGTERMs them so the host apps respawn fresh
+# subprocesses on their next tool call.
+#
+# Install (one-time, from repo root):
+#   ln -sf ../../scripts/git-hooks/post-commit .git/hooks/post-commit
+#
+# Or copy if you prefer not to symlink:
+#   install -m 0755 scripts/git-hooks/post-commit .git/hooks/post-commit
+if git diff-tree --no-commit-id --name-only -r HEAD 2>/dev/null | grep -q '^src/personal_db/'; then
+  ( command -v personal-db >/dev/null 2>&1 && personal-db mcp refresh >/dev/null 2>&1 ) &
+fi
