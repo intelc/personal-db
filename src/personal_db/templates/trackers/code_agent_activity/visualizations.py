@@ -587,11 +587,13 @@ def render_session_timeline(cfg: Config) -> str:
             hover_text = "\n".join(hover_lines)
         else:
             hover_text = f"{agent} · {sid}"
-        parts.append(f"<g><title>{escape(hover_text)}</title>")
-        # Colored agent glyph (8x8 square) to the left of the session-id text.
+        parts.append(f'<g data-tip="{escape(hover_text)}">')
+        # Colored agent glyph (8x8 square) at the far left, before the session
+        # id text. Reserve ~70px for text width (8 chars + " ⌁" suffix at
+        # ~6px/char monospace 10) so the square never overlaps the label.
         sq_size = 8
         sq_y = y + (LANE_H - sq_size) / 2
-        sq_x = PAD_L - 6 - 14 - sq_size  # ~14px gap between square and text
+        sq_x = PAD_L - 6 - 70 - sq_size
         parts.append(
             f'<rect x="{sq_x:.1f}" y="{sq_y:.1f}" width="{sq_size}" height="{sq_size}" '
             f'fill="{color}" />'
@@ -628,8 +630,8 @@ def render_session_timeline(cfg: Config) -> str:
             )
             parts.append(
                 f'<rect x="{x1:.1f}" y="{y}" width="{w:.2f}" height="{LANE_H}" '
-                f'fill="{fill}" fill-opacity="{opacity}">'
-                f"<title>{escape(tip)}</title></rect>"
+                f'fill="{fill}" fill-opacity="{opacity}" '
+                f'data-tip="{escape(tip)}" />'
             )
         parts.append("</g>")
 
@@ -658,10 +660,59 @@ def render_session_timeline(cfg: Config) -> str:
         "</p>"
     )
 
+    # Custom HTML tooltip — replaces SVG <title> for instant hover (no ~1s
+    # native delay). One <div> per render gets shown/positioned by the script
+    # whenever the cursor enters an element with a [data-tip] attribute.
+    tooltip_css = (
+        "<style>"
+        ".cga-tip-wrap{position:relative;}"
+        ".cga-tip{position:absolute;display:none;pointer-events:none;"
+        "background:#000;color:#fff;padding:5px 7px;font-size:11px;"
+        "font-family:ui-monospace,monospace;border-radius:3px;"
+        "max-width:520px;white-space:pre-wrap;line-height:1.4;"
+        "z-index:1000;}"
+        "</style>"
+    )
+    tooltip_script = (
+        "<script>"
+        "(function(){"
+        "if(window.__cgaTipInit)return;window.__cgaTipInit=true;"
+        "function findTipEl(t){return t&&t.closest?t.closest('[data-tip]'):null;}"
+        "document.addEventListener('mouseover',function(e){"
+        "var el=findTipEl(e.target);if(!el)return;"
+        "var w=el.closest('.cga-tip-wrap');if(!w)return;"
+        "var tip=w.querySelector('[data-cga-tip]');"
+        "tip.textContent=el.getAttribute('data-tip')||'';"
+        "tip.style.display='block';"
+        "});"
+        "document.addEventListener('mousemove',function(e){"
+        "var el=findTipEl(e.target);if(!el)return;"
+        "var w=el.closest('.cga-tip-wrap');if(!w)return;"
+        "var tip=w.querySelector('[data-cga-tip]');"
+        "var r=w.getBoundingClientRect();"
+        "tip.style.left=(e.clientX-r.left+12)+'px';"
+        "tip.style.top=(e.clientY-r.top+12)+'px';"
+        "});"
+        "document.addEventListener('mouseout',function(e){"
+        "var el=findTipEl(e.target);if(!el)return;"
+        "var to=e.relatedTarget;if(to&&el.contains(to))return;"
+        "var w=el.closest('.cga-tip-wrap');if(!w)return;"
+        "var tip=w.querySelector('[data-cga-tip]');"
+        "tip.style.display='none';"
+        "});"
+        "})();"
+        "</script>"
+    )
+
     return (
-        '<p class="meta">last 24 hours · one lane per session · hover for details</p>'
+        tooltip_css
+        + '<p class="meta">last 24 hours · one lane per session · hover for details</p>'
+        + '<div class="cga-tip-wrap">'
         + "".join(parts)
+        + '<div class="cga-tip" data-cga-tip></div>'
+        + "</div>"
         + legend
+        + tooltip_script
     )
 
 
