@@ -22,6 +22,7 @@ OURA_TOKEN_URL = "https://api.ouraring.com/oauth/token"
 
 DEFAULT_RECENT_DAYS = 14  # cushion when we already have a cursor
 INITIAL_BACKFILL_DAYS = 365
+HEARTRATE_CHUNK_DAYS = 28  # Oura /heartrate caps each request at ~30 days
 
 
 def _client_credentials() -> tuple[str, str]:
@@ -302,14 +303,28 @@ def _sync_datetime_resource(
 def _sync_heartrate(t: Tracker, headers: dict[str, str]) -> None:
     cursor_key = "oura:heartrate"
     since, until = _resolve_datetime_window(t, cursor_key)
-    records = _fetch_paginated(
-        headers, "/heartrate", {"start_datetime": since, "end_datetime": until}
-    )
-    rows = [_flat_heartrate(r) for r in records if r.get("timestamp")]
-    if rows:
-        t.upsert("oura_heartrate", rows, key=["timestamp", "source"])
-        Cursor(cursor_key, t.cfg.state_dir).set(max(r["timestamp"] for r in rows))
-    t.log.info("oura oura_heartrate: %d", len(rows))
+    since_dt = datetime.fromisoformat(since)
+    until_dt = datetime.fromisoformat(until)
+    cursor = Cursor(cursor_key, t.cfg.state_dir)
+    total = 0
+    chunk_start = since_dt
+    while chunk_start < until_dt:
+        chunk_end = min(chunk_start + timedelta(days=HEARTRATE_CHUNK_DAYS), until_dt)
+        records = _fetch_paginated(
+            headers,
+            "/heartrate",
+            {
+                "start_datetime": chunk_start.isoformat(),
+                "end_datetime": chunk_end.isoformat(),
+            },
+        )
+        rows = [_flat_heartrate(r) for r in records if r.get("timestamp")]
+        if rows:
+            t.upsert("oura_heartrate", rows, key=["timestamp", "source"])
+            cursor.set(max(r["timestamp"] for r in rows))
+            total += len(rows)
+        chunk_start = chunk_end
+    t.log.info("oura oura_heartrate: %d", total)
 
 
 # --- entry points -----------------------------------------------------------
