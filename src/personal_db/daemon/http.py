@@ -37,7 +37,7 @@ from personal_db.db import apply_tracker_schema, init_db
 from personal_db.installer import install_template
 from personal_db.manifest import OAuthStep, load_manifest
 from personal_db.mcp_server.tools import log_life_context
-from personal_db.oauth import start_web_oauth
+from personal_db.oauth import ensure_adapter_from_manifest, start_web_oauth
 from personal_db.sync import sync_one
 from personal_db.ui.setup_runner import list_overview, list_step_views, process_form
 from personal_db.ui.viz import discover, list_trackers_with_viz, load_dashboard_slugs
@@ -251,6 +251,9 @@ def build_app(cfg: Config) -> FastAPI:
         if idx < 0 or idx >= len(oauth_steps):
             raise HTTPException(status_code=400, detail="step_index out of range")
         step = oauth_steps[idx]
+
+        # Register the tracker's TokenAdapter (if any) before any token op.
+        ensure_adapter_from_manifest(cfg.trackers_dir / name, step)
 
         # Pick up creds from the live env first, then the .env file (the form
         # submission for env_var steps writes there + sets os.environ, but the
