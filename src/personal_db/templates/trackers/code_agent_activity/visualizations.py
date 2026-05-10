@@ -559,12 +559,38 @@ def render_session_timeline(cfg: Config) -> str:
         agent, sid = key
         y = PAD_T + idx * (LANE_H + LANE_GAP)
         color = AGENT_COLORS.get(agent, "#666")
-        # Lane label: agent + first 8 chars of session id; 'remote' tag if any
-        # interval in the session was remote.
+        # Lane label: colored agent glyph + first 8 chars of session id;
+        # 'remote' tag if any interval in the session was remote.
         any_remote = any(r["is_remote"] for r in sessions[key])
-        label = f"{agent.split('_')[0]} · {sid[:8]}"
+        label = sid[:8]
         if any_remote:
             label += " ⌁"
+        # Per-lane hover: prompt + cwd (newline-separated). Falls back to
+        # agent · sid when neither is available. The interval bars below have
+        # their own <title> elements which override this on hover.
+        meta = session_meta_disp.get(key, {})
+        prompt = (meta.get("first_user_prompt") or "").strip()
+        if len(prompt) > 200:
+            prompt = prompt[:197].rstrip() + "..."
+        cwd = (meta.get("cwd") or "").strip()
+        if prompt or cwd:
+            hover_lines = []
+            if prompt:
+                hover_lines.append(prompt)
+            if cwd:
+                hover_lines.append(cwd)
+            hover_text = "\n".join(hover_lines)
+        else:
+            hover_text = f"{agent} · {sid}"
+        parts.append(f"<g><title>{escape(hover_text)}</title>")
+        # Colored agent glyph (8x8 square) to the left of the session-id text.
+        sq_size = 8
+        sq_y = y + (LANE_H - sq_size) / 2
+        sq_x = PAD_L - 6 - 14 - sq_size  # ~14px gap between square and text
+        parts.append(
+            f'<rect x="{sq_x:.1f}" y="{sq_y:.1f}" width="{sq_size}" height="{sq_size}" '
+            f'fill="{color}" />'
+        )
         parts.append(
             f'<text x="{PAD_L - 6}" y="{y + LANE_H / 2 + 4:.1f}" font-size="10" '
             f'text-anchor="end" fill="#333" font-family="ui-monospace, monospace">'
@@ -600,6 +626,7 @@ def render_session_timeline(cfg: Config) -> str:
                 f'fill="{fill}" fill-opacity="{opacity}">'
                 f"<title>{escape(tip)}</title></rect>"
             )
+        parts.append("</g>")
 
     # Keystroke tick marks across the bottom of the plot area (single row;
     # density gives a sense of when the user was at the keyboard).
@@ -626,39 +653,8 @@ def render_session_timeline(cfg: Config) -> str:
         "</p>"
     )
 
-    # Per-session header: prompt (truncated to 100 chars) + cwd, in the same
-    # order as the lanes. Lets the user map a lane label (e.g. "claude · abc12345")
-    # back to what the session was actually doing.
-    header_items: list[str] = []
-    for key in ordered_keys:
-        agent, sid = key
-        meta = session_meta_disp.get(key, {})
-        prompt = (meta.get("first_user_prompt") or "").strip()
-        if len(prompt) > 100:
-            prompt = prompt[:97].rstrip() + "..."
-        cwd = meta.get("cwd")
-        if not prompt and not cwd:
-            continue
-        prompt_html = (
-            f'<span class="prompt">{escape(prompt)}</span>' if prompt
-            else '<span class="prompt meta">(no prompt captured)</span>'
-        )
-        cwd_html = f' <span class="meta">({escape(cwd)})</span>' if cwd else ""
-        header_items.append(
-            f'<li><code>{escape(agent.split("_")[0])} · {escape(sid[:8])}</code> '
-            f"— {prompt_html}{cwd_html}</li>"
-        )
-    session_header = (
-        '<ul class="meta" style="margin: 6px 0 8px 0; padding-left: 18px;">'
-        + "".join(header_items)
-        + "</ul>"
-        if header_items
-        else ""
-    )
-
     return (
         '<p class="meta">last 24 hours · one lane per session · hover for details</p>'
-        + session_header
         + "".join(parts)
         + legend
     )
