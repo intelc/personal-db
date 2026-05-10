@@ -34,3 +34,39 @@ def test_parse_claude_session_extracts_cwd_from_message_metadata():
     assert row["assistant_msg_count"] == 1
     assert row["first_user_prompt"] == "hello, can you help me debug?"
     assert row["source_file"].endswith("abc123.jsonl")
+
+
+def test_parse_codex_session_extracts_cwd_and_first_prompt():
+    mod = _load_sessions_module()
+    jsonl = FIXTURES / "codex_sessions/sessions/2026/04/26/rollout-2026-04-26T10-00-00-550e8400-e29b-41d4-a716-446655440000.jsonl"
+    row = mod.parse_codex_session(jsonl, history_map={})
+    assert row is not None
+    assert row["agent"] == "codex"
+    assert row["session_id"] == "550e8400-e29b-41d4-a716-446655440000"
+    assert row["cwd"] == "/Users/test/code/example"
+    assert row["started_at"] == "2026-04-26T10:00:00.000Z"
+    assert row["user_msg_count"] == 1
+    assert row["assistant_msg_count"] == 1
+    assert row["first_user_prompt"] == "Write a hello world in Python"
+
+
+def test_parse_codex_session_history_overrides_first_prompt():
+    mod = _load_sessions_module()
+    jsonl = FIXTURES / "codex_sessions/sessions/2026/04/26/rollout-2026-04-26T10-00-00-550e8400-e29b-41d4-a716-446655440000.jsonl"
+    row = mod.parse_codex_session(
+        jsonl,
+        history_map={"550e8400-e29b-41d4-a716-446655440000": "from-history"},
+    )
+    assert row["first_user_prompt"] == "from-history"
+
+
+def test_load_codex_history_first_prompts_keeps_first(tmp_path):
+    mod = _load_sessions_module()
+    history = tmp_path / "history.jsonl"
+    history.write_text(
+        '{"session_id":"s1","ts":1,"text":"first"}\n'
+        '{"session_id":"s1","ts":2,"text":"second"}\n'
+        '{"session_id":"s2","ts":3,"text":"only"}\n'
+    )
+    out = mod.load_codex_history_first_prompts(history)
+    assert out == {"s1": "first", "s2": "only"}

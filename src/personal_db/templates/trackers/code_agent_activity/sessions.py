@@ -114,3 +114,157 @@ def parse_claude_session(jsonl_path: Path) -> dict | None:
         "first_user_prompt": first_user_prompt,
         "source_file": str(jsonl_path),
     }
+
+
+def _codex_parse_payload(raw):
+    if isinstance(raw, dict):
+        return raw
+    if not isinstance(raw, str):
+        return None
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        pass
+    try:
+        result = ast.literal_eval(raw)
+        if isinstance(result, dict):
+            return result
+    except (ValueError, SyntaxError):
+        pass
+    return None
+
+
+def _codex_extract_text(content) -> str:
+    if isinstance(content, str):
+        s = content.strip()
+        if s.startswith("["):
+            try:
+                content = json.loads(s)
+            except json.JSONDecodeError:
+                try:
+                    content = ast.literal_eval(s)
+                except (ValueError, SyntaxError):
+                    return s[:500]
+        else:
+            return s[:500]
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict):
+                t = block.get("text") or block.get("input_text")
+                if t:
+                    parts.append(t)
+        return " ".join(parts)[:500]
+    return str(content)[:500]
+
+
+def _codex_is_synthetic_user_message(text: str) -> bool:
+    return text.startswith("# AGENTS.md instructions for ")
+
+
+def _codex_filename_uuid(path: Path) -> str | None:
+    parts = path.stem.split("-")
+    for start in range(len(parts) - 1, -1, -1):
+        candidate = "-".join(parts[start:])
+        if len(candidate) == 36 and candidate.count("-") == 4:
+            return candidate
+    return path.stem
+
+
+def load_codex_history_first_prompts(path: Path | None = None) -> dict[str, str]:
+    """Map session_id → first user prompt text from ~/.codex/history.jsonl."""
+    if path is None:
+        path = codex_history_path()
+    out: dict[str, str] = {}
+    if not path.exists():
+        return out
+    with path.open() as f:
+        for line in f:
+            try:
+                d = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            sid = d.get("session_id")
+            text = d.get("text")
+            if sid and text and sid not in out:
+                out[sid] = text[:500]
+    return out
+
+
+def parse_codex_session(jsonl_path: Path, history_map: dict[str, str]) -> dict | None:
+    """Parse a Codex CLI rollout JSONL into a code_agent_sessions row."""
+    session_id = None
+    started_at = None
+    last_event_at = None
+    cwd = None
+    message_count = 0
+    user_msg_count = 0
+    assistant_msg_count = 0
+    first_user_prompt = None
+
+    fallback_uuid = _codex_filename_uuid(jsonl_path)
+
+    try:
+        with jsonl_path.open(encoding="utf-8") as fh:
+            for raw_line in fh:
+                raw_line = raw_line.strip()
+                if not raw_line:
+                    continue
+                try:
+                    line = json.loads(raw_line)
+                except json.JSONDecodeError:
+                    continue
+
+                line_type = line.get("type", "")
+                ts = line.get("timestamp")
+                if ts and (last_event_at is None or ts > last_event_at):
+                    last_event_at = ts
+
+                if line_type == "session_meta":
+                    payload = _codex_parse_payload(line.get("payload"))
+                    if payload is not None:
+                        session_id = payload.get("id") or fallback_uuid
+                        started_at = payload.get("timestamp")
+                elif line_type == "turn_context":
+                    if cwd is None:
+                        payload = _codex_parse_payload(line.get("payload"))
+                        if payload is not None:
+                            cwd = payload.get("cwd")
+                elif line_type == "response_item":
+                    payload = _codex_parse_payload(line.get("payload"))
+                    if payload is None:
+                        continue
+                    role = payload.get("role", "")
+                    if role == "user":
+                        text = _codex_extract_text(payload.get("content", ""))
+                        if not _codex_is_synthetic_user_message(text):
+                            message_count += 1
+                            user_msg_count += 1
+                            if first_user_prompt is None:
+                                first_user_prompt = text[:500] if text else None
+                    elif role == "assistant":
+                        message_count += 1
+                        assistant_msg_count += 1
+    except OSError as exc:
+        log.warning("code_agent_activity: cannot read %s: %s", jsonl_path, exc)
+        return None
+
+    if started_at is None:
+        return None
+
+    sid = session_id or fallback_uuid
+    if sid in history_map:
+        first_user_prompt = history_map[sid]
+
+    return {
+        "agent": "codex",
+        "session_id": sid,
+        "cwd": cwd,
+        "started_at": started_at,
+        "last_msg_at": last_event_at or started_at,
+        "message_count": message_count,
+        "user_msg_count": user_msg_count,
+        "assistant_msg_count": assistant_msg_count,
+        "first_user_prompt": first_user_prompt,
+        "source_file": str(jsonl_path),
+    }
