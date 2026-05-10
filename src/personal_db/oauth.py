@@ -396,11 +396,15 @@ def ensure_adapter_from_manifest(tracker_dir: Path, step: Any) -> None:
     spec_str = getattr(step, "adapter", None)
     if not spec_str:
         return
+    if ":" not in spec_str:
+        raise RuntimeError(
+            f"Invalid adapter spec {spec_str!r}: expected '<module>:<class>'"
+        )
+    module_name, _, class_name = spec_str.partition(":")
     provider = step.provider
     existing = _adapters.get(provider)
-    if existing is not None and existing.__class__.__name__ == spec_str.split(":")[1]:
+    if existing is not None and existing.__class__.__name__ == class_name:
         return
-    module_name, _, class_name = spec_str.partition(":")
     module_path = tracker_dir / f"{module_name}.py"
     if not module_path.exists():
         raise RuntimeError(
@@ -411,6 +415,10 @@ def ensure_adapter_from_manifest(tracker_dir: Path, step: Any) -> None:
         f"personal_db_oauth_adapter_{provider}_{module_name}",
         module_path,
     )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(
+            f"Could not load OAuth adapter module from {module_path}"
+        )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     cls = getattr(mod, class_name, None)
