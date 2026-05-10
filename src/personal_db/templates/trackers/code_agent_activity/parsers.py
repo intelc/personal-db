@@ -104,7 +104,20 @@ def parse_codex_event(
 
     timestamp = payload.get("timestamp")
     row_type = payload.get("type")
-    inner = payload.get("payload") or {}
+    inner_raw = payload.get("payload")
+    # Real Codex rollout files sometimes emit `payload` as a JSON-encoded
+    # string for session_meta rows (mirroring how sessions.py handles it).
+    if isinstance(inner_raw, str):
+        try:
+            inner = json.loads(inner_raw)
+        except (json.JSONDecodeError, ValueError):
+            inner = {}
+        if not isinstance(inner, dict):
+            inner = {}
+    elif isinstance(inner_raw, dict):
+        inner = inner_raw
+    else:
+        inner = {}
     if timestamp is None or row_type is None:
         return None
 

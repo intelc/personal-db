@@ -70,3 +70,65 @@ def test_load_codex_history_first_prompts_keeps_first(tmp_path):
     )
     out = mod.load_codex_history_first_prompts(history)
     assert out == {"s1": "first", "s2": "only"}
+
+
+import shutil
+import sqlite3 as _sqlite3
+
+from personal_db.config import Config
+from personal_db.installer import install_template
+
+
+@pytest.fixture
+def cfg_with_code_agent(tmp_path):
+    root = tmp_path / "personal_db"
+    for sub in ("trackers", "entities", "notes", "state", "state/oauth"):
+        (root / sub).mkdir(parents=True, exist_ok=True)
+    cfg = Config(root=root)
+    install_template(cfg, "code_agent_activity")
+    schema_sql = (cfg.trackers_dir / "code_agent_activity" / "schema.sql").read_text()
+    con = _sqlite3.connect(cfg.db_path)
+    con.executescript(schema_sql)
+    con.commit()
+    con.close()
+    return cfg
+
+
+def test_sync_populates_code_agent_sessions(cfg_with_code_agent, monkeypatch):
+    cfg = cfg_with_code_agent
+
+    # Stage Claude fixture into a tmp claude projects root so mtime is fresh.
+    claude_src = FIXTURES / "claude_projects/projects"
+    claude_dst = cfg.root / "fake_claude_projects"
+    shutil.copytree(claude_src, claude_dst)
+    monkeypatch.setenv("CLAUDE_PROJECTS_DIR", str(claude_dst))
+
+    # Stage Codex fixture and point CODEX_HOME at its parent.
+    codex_src = FIXTURES / "codex_sessions/sessions"
+    codex_home = cfg.root / "fake_codex"
+    (codex_home).mkdir()
+    shutil.copytree(codex_src, codex_home / "sessions")
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    # No history file → first prompts come from rollout JSONL.
+    monkeypatch.setenv("CODEX_HISTORY_FILE", str(codex_home / "history.jsonl"))
+
+    # Empty hooks log so the events phase is a no-op for Claude side.
+    (cfg.state_dir / "code_agent_hooks.jsonl").write_text("")
+    monkeypatch.setenv("PERSONAL_DB_HOOKS_LOG", str(cfg.state_dir / "code_agent_hooks.jsonl"))
+
+    from personal_db.sync import sync_one
+    sync_one(cfg, "code_agent_activity")
+
+    con = _sqlite3.connect(cfg.db_path)
+    rows = con.execute(
+        "SELECT agent, session_id, cwd, message_count, first_user_prompt "
+        "FROM code_agent_sessions ORDER BY agent"
+    ).fetchall()
+    con.close()
+    assert ("claude_code", "abc123", "/Users/test/code/example", 3, "hello, can you help me debug?") in rows
+    assert any(
+        r[0] == "codex"
+        and r[1] == "550e8400-e29b-41d4-a716-446655440000"
+        and r[2] == "/Users/test/code/example"
+        for r in rows
+    )

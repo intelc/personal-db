@@ -47,9 +47,14 @@ def _load_sibling(name: str):
 
 _parsers = _load_sibling("parsers")
 _intervals = _load_sibling("intervals")
+_sessions = _load_sibling("sessions")
 parse_claude_hook_line = _parsers.parse_claude_hook_line
 parse_codex_event = _parsers.parse_codex_event
 materialize_intervals = _intervals.materialize_intervals
+parse_claude_session = _sessions.parse_claude_session
+parse_codex_session = _sessions.parse_codex_session
+load_codex_history_first_prompts = _sessions.load_codex_history_first_prompts
+claude_root = _sessions.claude_root
 
 log = logging.getLogger(__name__)
 
@@ -370,6 +375,65 @@ def _materialize_for_changed_sessions(t: Tracker, new_events: list[dict]) -> int
     return total
 
 
+def _ingest_sessions(t: Tracker, state: dict) -> int:
+    """Walk Claude + Codex JSONL files newer than the per-source mtime cursor
+    and upsert one rollup row per session into code_agent_sessions.
+
+    Returns the count of rows upserted.
+    """
+    sessions_cursor = state.setdefault(
+        "sessions", {"claude_mtime": 0.0, "codex_mtime": 0.0}
+    )
+    rows: list[dict] = []
+
+    # Claude
+    cproj = claude_root()
+    cmtime = float(sessions_cursor.get("claude_mtime") or 0.0)
+    new_cmtime = cmtime
+    if cproj.exists():
+        for project_dir in sorted(cproj.iterdir()):
+            if not project_dir.is_dir():
+                continue
+            for jsonl in sorted(project_dir.glob("*.jsonl")):
+                try:
+                    m = jsonl.stat().st_mtime
+                except OSError:
+                    continue
+                if m <= cmtime:
+                    continue
+                if m > new_cmtime:
+                    new_cmtime = m
+                row = parse_claude_session(jsonl)
+                if row is not None:
+                    rows.append(row)
+
+    # Codex
+    csess = _codex_sessions_root()
+    xmtime = float(sessions_cursor.get("codex_mtime") or 0.0)
+    new_xmtime = xmtime
+    history = load_codex_history_first_prompts()
+    if csess.exists():
+        for jsonl in sorted(csess.rglob("*.jsonl")):
+            try:
+                m = jsonl.stat().st_mtime
+            except OSError:
+                continue
+            if m <= xmtime:
+                continue
+            if m > new_xmtime:
+                new_xmtime = m
+            row = parse_codex_session(jsonl, history)
+            if row is not None:
+                rows.append(row)
+
+    if rows:
+        t.upsert("code_agent_sessions", rows, key=["agent", "session_id"])
+
+    sessions_cursor["claude_mtime"] = new_cmtime
+    sessions_cursor["codex_mtime"] = new_xmtime
+    return len(rows)
+
+
 def sync(t: Tracker) -> dict:
     state = _load_cursor(t)
     keep_raw = _store_raw_enabled(t)
@@ -379,6 +443,7 @@ def sync(t: Tracker) -> dict:
     _con = sqlite3.connect(t.cfg.db_path)
     try:
         _ensure_schema_columns(_con)
+        _run_legacy_migration(_con, t.cfg.root)
     finally:
         _con.close()
 
@@ -406,6 +471,7 @@ def sync(t: Tracker) -> dict:
 
     state["claude_hooks_offset"] = new_claude_offset
     state["codex_files"] = new_codex_offsets
+    sessions_n = _ingest_sessions(t, state)
     _save_cursor(t, state)
 
     return {
@@ -413,6 +479,7 @@ def sync(t: Tracker) -> dict:
         "codex_events": len(codex_events),
         "events_upserted": inserted,
         "intervals_materialized": intervals_n,
+        "sessions_upserted": sessions_n,
         "skipped_lines": claude_skipped + codex_skipped,
     }
 
@@ -420,5 +487,9 @@ def sync(t: Tracker) -> dict:
 def backfill(t: Tracker, start: str | None = None, end: str | None = None) -> dict:
     """Reset cursors and re-ingest everything. start/end are advisory only —
     we don't filter the events log by date; idempotent upsert handles dupes."""
-    t.cursor.set(json.dumps({"claude_hooks_offset": 0, "codex_files": {}}))
+    t.cursor.set(json.dumps({
+        "claude_hooks_offset": 0,
+        "codex_files": {},
+        "sessions": {"claude_mtime": 0.0, "codex_mtime": 0.0},
+    }))
     return sync(t)
