@@ -32,3 +32,20 @@ CREATE TABLE IF NOT EXISTS code_agent_intervals (
 
 CREATE INDEX IF NOT EXISTS idx_code_agent_intervals_state_ts
   ON code_agent_intervals(state, start_ts);
+
+CREATE TABLE IF NOT EXISTS code_agent_sessions (
+  agent               TEXT NOT NULL,
+  session_id          TEXT NOT NULL,
+  cwd                 TEXT,
+  started_at          TEXT NOT NULL,
+  last_msg_at         TEXT NOT NULL,
+  message_count       INTEGER NOT NULL,
+  user_msg_count      INTEGER NOT NULL,
+  assistant_msg_count INTEGER NOT NULL,
+  first_user_prompt   TEXT,
+  source_file         TEXT,
+  PRIMARY KEY (agent, session_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_code_agent_sessions_started ON code_agent_sessions(started_at);
+CREATE INDEX IF NOT EXISTS idx_code_agent_sessions_cwd ON code_agent_sessions(cwd);
