@@ -99,3 +99,22 @@ def test_withings_adapter_raises_on_nonzero_status(mock_post):
             client_secret="CS",
             refresh_token="X",
         )
+
+
+@patch("requests.post")
+def test_withings_adapter_raises_when_body_missing(mock_post):
+    cls = _load_adapter_class()
+    mock_post.return_value = MagicMock(
+        status_code=200,
+        json=lambda: {"status": 0},  # success status but no 'body' key
+    )
+    mock_post.return_value.raise_for_status = MagicMock()
+
+    with pytest.raises(RuntimeError, match="missing 'body'"):
+        cls().exchange_code(
+            token_url="ignored",
+            client_id="CID",
+            client_secret="CS",
+            code="ABC",
+            redirect_uri="http://localhost:9877/callback",
+        )

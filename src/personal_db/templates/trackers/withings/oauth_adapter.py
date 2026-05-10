@@ -62,7 +62,11 @@ class WithingsAdapter:
         envelope = r.json()
         if envelope.get("status") != 0:
             raise RuntimeError(f"Withings token error: {envelope}")
-        body = envelope.get("body") or {}
+        body = envelope.get("body")
+        if not body:
+            raise RuntimeError(
+                f"Withings token response missing 'body': {envelope}"
+            )
         return {
             "access_token": body["access_token"],
             "refresh_token": body["refresh_token"],
