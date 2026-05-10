@@ -278,6 +278,73 @@ def test_refresh_if_needed_dispatches_to_registered_adapter(tmp_root):
         _adapters.pop("refresh_dispatch_test", None)
 
 
+def test_ensure_adapter_from_manifest_loads_and_registers(tmp_path):
+    from personal_db.manifest import OAuthStep
+    from personal_db.oauth import (
+        _adapter_for,
+        _adapters,
+        ensure_adapter_from_manifest,
+        StandardAdapter,
+    )
+
+    # Drop a tiny adapter module into a fake tracker dir.
+    tracker_dir = tmp_path / "fake_tracker"
+    tracker_dir.mkdir()
+    (tracker_dir / "my_adapter.py").write_text(
+        """\
+class FakeAdapter:
+    def exchange_code(self, **kw):
+        return {"access_token": "fa", "refresh_token": "r", "expires_in": 3600}
+    def refresh_token(self, **kw):
+        return {"access_token": "fa2", "refresh_token": "r", "expires_in": 3600}
+"""
+    )
+    step = OAuthStep(
+        type="oauth",
+        provider="ensure_test_provider",
+        adapter="my_adapter:FakeAdapter",
+        client_id_env="X",
+        client_secret_env="Y",
+        auth_url="https://example.com/a",
+        token_url="https://example.com/t",
+    )
+
+    try:
+        # Before: unknown provider falls back to StandardAdapter
+        assert isinstance(_adapter_for("ensure_test_provider"), StandardAdapter)
+
+        ensure_adapter_from_manifest(tracker_dir, step)
+
+        adapter = _adapter_for("ensure_test_provider")
+        assert adapter.__class__.__name__ == "FakeAdapter"
+
+        # Idempotent: calling again does not raise
+        ensure_adapter_from_manifest(tracker_dir, step)
+        assert _adapter_for("ensure_test_provider").__class__.__name__ == "FakeAdapter"
+    finally:
+        _adapters.pop("ensure_test_provider", None)
+
+
+def test_ensure_adapter_from_manifest_noop_when_adapter_unset(tmp_path):
+    from personal_db.manifest import OAuthStep
+    from personal_db.oauth import (
+        _adapter_for,
+        ensure_adapter_from_manifest,
+        StandardAdapter,
+    )
+
+    step = OAuthStep(
+        type="oauth",
+        provider="never_register_me",
+        client_id_env="X",
+        client_secret_env="Y",
+        auth_url="https://example.com/a",
+        token_url="https://example.com/t",
+    )
+    ensure_adapter_from_manifest(tmp_path, step)
+    assert isinstance(_adapter_for("never_register_me"), StandardAdapter)
+
+
 def test_refresh_if_needed_carries_prior_refresh_token_when_omitted(tmp_root):
     """If the adapter's response omits `refresh_token`, the dispatcher must
     carry the prior one forward (NOT lose it). Withings is the motivating case."""

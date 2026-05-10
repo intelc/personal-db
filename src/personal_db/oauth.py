@@ -382,3 +382,40 @@ def start_web_oauth(
     if scopes:
         auth_params["scope"] = " ".join(scopes)
     return auth_url + "?" + urllib.parse.urlencode(auth_params)
+
+
+def ensure_adapter_from_manifest(tracker_dir: Path, step: Any) -> None:
+    """Load `<tracker_dir>/<module>.py` and register `<class>()` for `step.provider`.
+
+    No-op if `step.adapter` is None or the provider is already registered with
+    the same class. Idempotent: safe to call repeatedly.
+
+    `step` is typed as Any to avoid a circular import on `OAuthStep`; only
+    `step.adapter` and `step.provider` attributes are accessed.
+    """
+    spec_str = getattr(step, "adapter", None)
+    if not spec_str:
+        return
+    provider = step.provider
+    existing = _adapters.get(provider)
+    if existing is not None and existing.__class__.__name__ == spec_str.split(":")[1]:
+        return
+    module_name, _, class_name = spec_str.partition(":")
+    module_path = tracker_dir / f"{module_name}.py"
+    if not module_path.exists():
+        raise RuntimeError(
+            f"OAuth adapter module not found: {module_path} "
+            f"(declared as {spec_str} in manifest)"
+        )
+    spec = importlib.util.spec_from_file_location(
+        f"personal_db_oauth_adapter_{provider}_{module_name}",
+        module_path,
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    cls = getattr(mod, class_name, None)
+    if cls is None:
+        raise RuntimeError(
+            f"OAuth adapter class {class_name} not found in {module_path}"
+        )
+    register_adapter(provider, cls())
