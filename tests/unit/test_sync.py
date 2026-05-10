@@ -89,3 +89,67 @@ def test_sync_due_uses_provided_sync_one_fn(tmp_root):
     assert results.get("demo") == "ok"
     assert len(called_with) == 1
     assert called_with[0] == (cfg, "demo")
+
+
+def test_sync_one_registers_oauth_adapter_from_manifest(tmp_root, monkeypatch):
+    """Ingest.py's sync() does not need to register the adapter itself —
+    sync_one wires it up based on the manifest's OAuthStep.adapter field."""
+    from personal_db.config import Config
+    from personal_db.oauth import _adapter_for, _adapters, StandardAdapter
+    from personal_db.sync import sync_one
+
+    cfg = Config(root=tmp_root)
+    tracker_dir = cfg.trackers_dir / "fake_oauth_tracker"
+    tracker_dir.mkdir(parents=True)
+
+    (tracker_dir / "manifest.yaml").write_text(
+        """\
+name: fake_oauth_tracker
+description: fake oauth tracker
+permission_type: oauth
+setup_steps:
+  - type: oauth
+    provider: fake_oauth_provider
+    adapter: my_adapter:MyAdapter
+    client_id_env: A
+    client_secret_env: B
+    auth_url: https://example.com/a
+    token_url: https://example.com/t
+schedule:
+  every: 6h
+time_column: ts
+granularity: event
+schema:
+  tables:
+    fake_table:
+      columns:
+        id: {type: TEXT, semantic: pk}
+""",
+    )
+    (tracker_dir / "schema.sql").write_text(
+        "CREATE TABLE IF NOT EXISTS fake_table (id TEXT PRIMARY KEY);\n"
+    )
+    (tracker_dir / "my_adapter.py").write_text(
+        """\
+class MyAdapter:
+    def exchange_code(self, **kw): return {}
+    def refresh_token(self, **kw): return {}
+"""
+    )
+    (tracker_dir / "ingest.py").write_text(
+        """\
+def sync(t):
+    return None
+def backfill(t, start, end):
+    return None
+"""
+    )
+
+    # Sanity: not yet registered.
+    assert isinstance(_adapter_for("fake_oauth_provider"), StandardAdapter)
+
+    try:
+        sync_one(cfg, "fake_oauth_tracker")
+        assert _adapter_for("fake_oauth_provider").__class__.__name__ == "MyAdapter"
+    finally:
+        _adapters.pop("fake_oauth_provider", None)
