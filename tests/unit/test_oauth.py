@@ -276,3 +276,47 @@ def test_refresh_if_needed_dispatches_to_registered_adapter(tmp_root):
         assert saved["refresh_token"] == "RT2"
     finally:
         _adapters.pop("refresh_dispatch_test", None)
+
+
+def test_refresh_if_needed_carries_prior_refresh_token_when_omitted(tmp_root):
+    """If the adapter's response omits `refresh_token`, the dispatcher must
+    carry the prior one forward (NOT lose it). Withings is the motivating case."""
+    from personal_db.oauth import (
+        _adapters,
+        load_token,
+        refresh_if_needed,
+        register_adapter,
+        save_token,
+    )
+
+    cfg = Config(root=tmp_root)
+    save_token(cfg, "carryfwd_test", {
+        "access_token": "old",
+        "refresh_token": "ORIGINAL_RT",
+        "expires_at": 0,
+    })
+
+    class _OmitRefreshAdapter:
+        def exchange_code(self, **kw): return {}
+        def refresh_token(self, **kw):
+            # Provider returns a new access token but no refresh_token.
+            return {"access_token": "NEW_AT", "expires_in": 3600}
+
+    register_adapter("carryfwd_test", _OmitRefreshAdapter())
+    try:
+        token = refresh_if_needed(
+            cfg,
+            "carryfwd_test",
+            token_url="https://example.com/token",
+            client_id="CID",
+            client_secret="CS",
+        )
+        assert token["access_token"] == "NEW_AT"
+        # The dispatcher carried the original refresh_token forward.
+        assert token["refresh_token"] == "ORIGINAL_RT"
+        # And persisted that fact.
+        saved = load_token(cfg, "carryfwd_test")
+        assert saved["refresh_token"] == "ORIGINAL_RT"
+        assert saved["access_token"] == "NEW_AT"
+    finally:
+        _adapters.pop("carryfwd_test", None)
