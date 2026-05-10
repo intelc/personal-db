@@ -159,7 +159,18 @@ def _codex_extract_text(content) -> str:
 
 
 def _codex_is_synthetic_user_message(text: str) -> bool:
-    return text.startswith("# AGENTS.md instructions for ")
+    """True when a Codex 'user' message is auto-injected scaffolding rather
+    than something the human typed. Codex CLI emits these as the first one
+    or two user messages of every session."""
+    if text.startswith("# AGENTS.md instructions for "):
+        return True
+    # cwd / shell / current_date / timezone metadata block.
+    if text.startswith("<environment_context>"):
+        return True
+    # Defensive: other XML envelopes seen in real rollouts.
+    if text.startswith("<user_instructions>"):
+        return True
+    return False
 
 
 def _codex_filename_uuid(path: Path) -> str | None:
