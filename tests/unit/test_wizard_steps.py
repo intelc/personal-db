@@ -26,10 +26,12 @@ from personal_db.wizard.steps import (
 
 
 def _ctx(tmp_root) -> WizardContext:
+    tracker_dir = tmp_root / "trackers" / "fake"
+    tracker_dir.mkdir(parents=True, exist_ok=True)
     return WizardContext(
         cfg=Config(root=tmp_root),
         env_path=tmp_root / ".env",
-        tracker_dir=tmp_root / "trackers" / "fake",
+        tracker_dir=tracker_dir,
     )
 
 
