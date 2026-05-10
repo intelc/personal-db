@@ -1,0 +1,46 @@
+name: withings
+description: Withings smart-scale body composition (weight, fat %, muscle, bone, etc.)
+permission_type: oauth
+setup_steps:
+  - type: env_var
+    name: WITHINGS_CLIENT_ID
+    prompt: "Withings OAuth client ID (from developer.withings.com)"
+  - type: env_var
+    name: WITHINGS_CLIENT_SECRET
+    prompt: "Withings OAuth client secret"
+    secret: true
+  - type: oauth
+    provider: withings
+    adapter: oauth_adapter:WithingsAdapter
+    client_id_env: WITHINGS_CLIENT_ID
+    client_secret_env: WITHINGS_CLIENT_SECRET
+    auth_url: "https://account.withings.com/oauth2_user/authorize2"
+    token_url: "https://wbsapi.withings.net/v2/oauth2"
+    scopes: ["user.metrics"]
+    redirect_host: localhost
+    redirect_port: 9877
+schedule:
+  every: 6h
+time_column: date
+granularity: event
+schema:
+  tables:
+    withings_measurements:
+      columns:
+        grpid:            {type: TEXT,    semantic: "Withings measure-group id, primary key"}
+        date:             {type: TEXT,    semantic: "ISO-8601 measurement time (UTC)"}
+        timezone:         {type: TEXT,    semantic: "IANA tz reported by Withings (e.g. America/Los_Angeles); per-row because user travels"}
+        attrib:           {type: INTEGER, semantic: "0=device user known, 1=device ambiguous, 2=manual entry, 4=manual ambiguous, 5=user-create, 7=auto, 8=device hash unknown"}
+        category:         {type: INTEGER, semantic: "1=real measurement, 2=user objective"}
+        device_id:        {type: TEXT,    semantic: "Withings deviceid (raw, may be empty for manual entries)"}
+        weight_kg:        {type: REAL,    semantic: "weight in kilograms (Withings type 1)"}
+        fat_ratio_pct:    {type: REAL,    semantic: "body fat percentage (type 6)"}
+        fat_mass_kg:      {type: REAL,    semantic: "fat mass in kg (type 8)"}
+        lean_mass_kg:     {type: REAL,    semantic: "fat-free mass in kg (type 5)"}
+        muscle_mass_kg:   {type: REAL,    semantic: "muscle mass in kg (type 76); often equals lean mass on basic scales"}
+        bone_mass_kg:     {type: REAL,    semantic: "bone mass in kg (type 88)"}
+        hydration_kg:     {type: REAL,    semantic: "body water in kg (type 77)"}
+        heart_pulse_bpm:  {type: INTEGER, semantic: "pulse at weigh-in (type 11); only on Body Cardio / Body Comp / Body Smart"}
+        created_at:       {type: TEXT,    semantic: "ISO-8601 record creation time (UTC)"}
+        modified_at:      {type: TEXT,    semantic: "ISO-8601 last modification time (UTC); used for cursor"}
+related_entities: []
