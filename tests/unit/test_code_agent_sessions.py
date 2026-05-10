@@ -132,3 +132,59 @@ def test_sync_populates_code_agent_sessions(cfg_with_code_agent, monkeypatch):
         and r[2] == "/Users/test/code/example"
         for r in rows
     )
+
+
+def test_claude_session_first_prompt_fallback_from_hook_events(cfg_with_code_agent, monkeypatch):
+    """Session present in code_agent_events but no JSONL: first_user_prompt
+    populated from earliest user_prompt_submit event."""
+    import json as _json
+    cfg = cfg_with_code_agent
+    # Empty Claude project root → no JSONL for session "ghost"
+    empty_claude = cfg.root / "empty_claude_projects"
+    empty_claude.mkdir()
+    monkeypatch.setenv("CLAUDE_PROJECTS_DIR", str(empty_claude))
+    # Empty Codex too
+    empty_codex = cfg.root / "empty_codex"
+    empty_codex.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(empty_codex))
+    monkeypatch.setenv("CODEX_HISTORY_FILE", str(empty_codex / "history.jsonl"))
+
+    # Hook event log with a SessionStart + UserPromptSubmit + Stop for "ghost".
+    # Note: parse_claude_hook_line reads `received_at` (not `timestamp`).
+    hooks_log = cfg.state_dir / "code_agent_hooks.jsonl"
+    monkeypatch.setenv("PERSONAL_DB_HOOKS_LOG", str(hooks_log))
+    hooks_log.write_text("\n".join([
+        _json.dumps({
+            "hook_event_name": "SessionStart",
+            "session_id": "ghost",
+            "received_at": "2026-04-26T12:00:00Z",
+            "cwd": "/Users/test/elsewhere",
+        }),
+        _json.dumps({
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "ghost",
+            "received_at": "2026-04-26T12:00:05Z",
+            "cwd": "/Users/test/elsewhere",
+            "prompt": "fix the leaky abstraction",
+        }),
+        _json.dumps({
+            "hook_event_name": "Stop",
+            "session_id": "ghost",
+            "received_at": "2026-04-26T12:01:00Z",
+            "cwd": "/Users/test/elsewhere",
+        }),
+        "",
+    ]))
+
+    from personal_db.sync import sync_one
+    sync_one(cfg, "code_agent_activity")
+
+    con = _sqlite3.connect(cfg.db_path)
+    row = con.execute(
+        "SELECT cwd, first_user_prompt FROM code_agent_sessions "
+        "WHERE agent='claude_code' AND session_id='ghost'"
+    ).fetchone()
+    con.close()
+    assert row is not None, "ghost session row should be created from hook events"
+    assert row[0] == "/Users/test/elsewhere"
+    assert row[1] == "fix the leaky abstraction"

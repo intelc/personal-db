@@ -375,6 +375,61 @@ def _materialize_for_changed_sessions(t: Tracker, new_events: list[dict]) -> int
     return total
 
 
+def _synthesize_claude_sessions_from_events(con: sqlite3.Connection) -> list[dict]:
+    """For Claude sessions that have hook events but no row in
+    code_agent_sessions yet, build a rollup row from the events alone.
+
+    `first_user_prompt` comes from the earliest prompt_submitted event's
+    raw payload (`prompt` field). cwd comes from the earliest event with cwd.
+    """
+    rows = con.execute(
+        """
+        WITH have_session AS (
+          SELECT session_id FROM code_agent_sessions WHERE agent='claude_code'
+        ),
+        agg AS (
+          SELECT
+            e.session_id AS sid,
+            MIN(e.timestamp) AS started_at,
+            MAX(e.timestamp) AS last_msg_at,
+            (SELECT cwd FROM code_agent_events e2
+              WHERE e2.agent='claude_code' AND e2.session_id=e.session_id
+                AND e2.cwd IS NOT NULL
+              ORDER BY e2.timestamp LIMIT 1) AS cwd,
+            SUM(CASE WHEN e.event_type='prompt_submitted' THEN 1 ELSE 0 END) AS user_n
+          FROM code_agent_events e
+          WHERE e.agent='claude_code'
+            AND e.session_id NOT IN (SELECT session_id FROM have_session)
+          GROUP BY e.session_id
+        )
+        SELECT
+          a.sid, a.started_at, a.last_msg_at, a.cwd, a.user_n,
+          (SELECT json_extract(e.raw, '$.prompt')
+             FROM code_agent_events e
+            WHERE e.agent='claude_code' AND e.session_id=a.sid
+              AND e.event_type='prompt_submitted'
+            ORDER BY e.timestamp LIMIT 1) AS first_prompt
+        FROM agg a
+        """
+    ).fetchall()
+
+    out: list[dict] = []
+    for sid, started_at, last_msg_at, cwd, user_n, first_prompt in rows:
+        out.append({
+            "agent": "claude_code",
+            "session_id": sid,
+            "cwd": cwd,
+            "started_at": started_at,
+            "last_msg_at": last_msg_at,
+            "message_count": int(user_n or 0),
+            "user_msg_count": int(user_n or 0),
+            "assistant_msg_count": 0,
+            "first_user_prompt": (first_prompt[:500] if first_prompt else None),
+            "source_file": None,
+        })
+    return out
+
+
 def _ingest_sessions(t: Tracker, state: dict) -> int:
     """Walk Claude + Codex JSONL files newer than the per-source mtime cursor
     and upsert one rollup row per session into code_agent_sessions.
@@ -429,9 +484,19 @@ def _ingest_sessions(t: Tracker, state: dict) -> int:
     if rows:
         t.upsert("code_agent_sessions", rows, key=["agent", "session_id"])
 
+    # After JSONL-derived rows are written, synthesize rows for sessions that
+    # exist only as hook events (e.g., JSONL deleted or not yet flushed).
+    syn_con = sqlite3.connect(t.cfg.db_path)
+    try:
+        synth = _synthesize_claude_sessions_from_events(syn_con)
+    finally:
+        syn_con.close()
+    if synth:
+        t.upsert("code_agent_sessions", synth, key=["agent", "session_id"])
+
     sessions_cursor["claude_mtime"] = new_cmtime
     sessions_cursor["codex_mtime"] = new_xmtime
-    return len(rows)
+    return len(rows) + len(synth)
 
 
 def sync(t: Tracker) -> dict:
