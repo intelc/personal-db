@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -208,6 +209,87 @@ def _ensure_schema_columns(con: sqlite3.Connection) -> None:
                 f"ALTER TABLE {table} ADD COLUMN is_remote INTEGER NOT NULL DEFAULT 0"
             )
     con.commit()
+
+
+_CANONICAL_TRACKER_FILES = {
+    "manifest.yaml",
+    "ingest.py",
+    "schema.sql",
+    "visualizations.py",
+}
+_PERMITTED_NOISE = {"__pycache__"}
+
+
+def _table_exists(con: sqlite3.Connection, name: str) -> bool:
+    row = con.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+    ).fetchone()
+    return row is not None
+
+
+def _is_canonical_tracker_dir(d: Path) -> bool:
+    """True iff d's contents are exactly the four canonical tracker files
+    (plus permitted noise like __pycache__). Protects user customizations."""
+    if not d.is_dir():
+        return False
+    entries = {p.name for p in d.iterdir()}
+    extras = entries - _CANONICAL_TRACKER_FILES - _PERMITTED_NOISE
+    if extras:
+        return False
+    return _CANONICAL_TRACKER_FILES.issubset(entries)
+
+
+def _run_legacy_migration(con: sqlite3.Connection, root: Path) -> None:
+    """One-shot, idempotent migration from the now-defunct
+    claude_conversations / codex_conversations trackers.
+
+    All branches gate on legacy-artifact existence so subsequent runs are
+    cheap no-ops. Safe to call on every sync.
+    """
+    if _table_exists(con, "claude_sessions"):
+        con.execute(
+            """
+            INSERT OR IGNORE INTO code_agent_sessions
+              (agent, session_id, cwd, started_at, last_msg_at,
+               message_count, user_msg_count, assistant_msg_count,
+               first_user_prompt, source_file)
+            SELECT 'claude_code', session_id, NULL, started_at, last_msg_at,
+                   message_count, user_msg_count, assistant_msg_count,
+                   first_user_prompt, NULL
+            FROM claude_sessions
+            """
+        )
+        con.execute("DROP TABLE claude_sessions")
+
+    if _table_exists(con, "codex_sessions"):
+        con.execute(
+            """
+            INSERT OR IGNORE INTO code_agent_sessions
+              (agent, session_id, cwd, started_at, last_msg_at,
+               message_count, user_msg_count, assistant_msg_count,
+               first_user_prompt, source_file)
+            SELECT 'codex', session_id, cwd, started_at, last_event_at,
+                   event_count, user_msg_count, assistant_msg_count,
+                   first_user_prompt, NULL
+            FROM codex_sessions
+            """
+        )
+        con.execute("DROP TABLE codex_sessions")
+
+    con.commit()
+
+    trackers_dir = root / "trackers"
+    for stale in ("claude_conversations", "codex_conversations"):
+        d = trackers_dir / stale
+        if not d.exists():
+            continue
+        if _is_canonical_tracker_dir(d):
+            shutil.rmtree(d)
+            log.info("code_agent_activity: removed legacy tracker dir %s", d)
+        else:
+            log.warning(
+                "code_agent_activity: leaving %s in place (non-canonical contents)", d
+            )
 
 
 def _materialize_for_changed_sessions(t: Tracker, new_events: list[dict]) -> int:
