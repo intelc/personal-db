@@ -171,3 +171,17 @@ def test_start_web_oauth_state_mismatch_returns_400(tmp_root):
         from personal_db.oauth import _shutdown_existing
 
         _shutdown_existing("testprov2")
+
+
+def test_register_and_lookup_adapter():
+    from personal_db.oauth import register_adapter, _adapter_for, StandardAdapter
+
+    class _Fake:
+        def exchange_code(self, **kw): return {}
+        def refresh_token(self, **kw): return {}
+
+    fake = _Fake()
+    register_adapter("test_provider_xyz", fake)
+    assert _adapter_for("test_provider_xyz") is fake
+    # Unknown providers fall back to StandardAdapter
+    assert isinstance(_adapter_for("never_registered"), StandardAdapter)

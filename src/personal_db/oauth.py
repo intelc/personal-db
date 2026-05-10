@@ -8,7 +8,7 @@ import threading
 import time
 import urllib.parse
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import requests
 
@@ -58,6 +58,94 @@ class OAuthFlow:
     def shutdown(self) -> None:
         self._server.shutdown()
         self._server.server_close()
+
+
+class TokenAdapter(Protocol):
+    """Provider-specific override for OAuth token exchange/refresh.
+
+    Implementations return a token dict containing at least:
+      access_token, refresh_token, expires_in
+    The dispatcher (refresh_if_needed / exchange_code) adds expires_at.
+    """
+
+    def exchange_code(
+        self,
+        *,
+        token_url: str,
+        client_id: str,
+        client_secret: str,
+        code: str,
+        redirect_uri: str,
+    ) -> dict[str, Any]: ...
+
+    def refresh_token(
+        self,
+        *,
+        token_url: str,
+        client_id: str,
+        client_secret: str,
+        refresh_token: str,
+    ) -> dict[str, Any]: ...
+
+
+class StandardAdapter:
+    """Default RFC 6749 token flow used when no per-provider adapter is registered."""
+
+    def exchange_code(
+        self,
+        *,
+        token_url: str,
+        client_id: str,
+        client_secret: str,
+        code: str,
+        redirect_uri: str,
+    ) -> dict[str, Any]:
+        r = requests.post(
+            token_url,
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "client_id": client_id,
+                "client_secret": client_secret,
+            },
+            timeout=10,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def refresh_token(
+        self,
+        *,
+        token_url: str,
+        client_id: str,
+        client_secret: str,
+        refresh_token: str,
+    ) -> dict[str, Any]:
+        r = requests.post(
+            token_url,
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": client_id,
+                "client_secret": client_secret,
+            },
+            timeout=10,
+        )
+        r.raise_for_status()
+        return r.json()
+
+
+_adapters: dict[str, TokenAdapter] = {}
+
+
+def register_adapter(provider: str, adapter: TokenAdapter) -> None:
+    """Register a TokenAdapter for `provider`. Idempotent: re-registering replaces."""
+    _adapters[provider] = adapter
+
+
+def _adapter_for(provider: str) -> TokenAdapter:
+    return _adapters.get(provider) or StandardAdapter()
 
 
 def _token_path(cfg: Config, provider: str) -> Path:
