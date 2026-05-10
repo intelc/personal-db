@@ -115,8 +115,48 @@ def _fetch_measures(
 
 
 def sync(t: Tracker) -> None:
-    raise NotImplementedError("filled in Task 11")
+    cid, cs = _client_credentials()
+    token = refresh_if_needed(
+        t.cfg,
+        "withings",
+        token_url=TOKEN_URL,
+        client_id=cid,
+        client_secret=cs,
+    )
+    access_token = token["access_token"]
+    cursor = Cursor("withings:measurements", t.cfg.state_dir)
+
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        body = _fetch_measures(
+            access_token,
+            lastupdate=cursor.get(),
+            offset=offset,
+        )
+        default_tz = body.get("timezone") or "UTC"
+        grps = body.get("measuregrps") or []
+        for grp in grps:
+            rows.append(_flatten(grp, default_tz))
+        if not body.get("more"):
+            break
+        if not grps:
+            # `more=1` lying about a non-empty next page; bail safely.
+            break
+        offset = body.get("offset", offset + len(grps))
+
+    if rows:
+        max_mod = max(r["_modified_unix"] for r in rows)
+        # Strip the internal field before upsert.
+        for r in rows:
+            r.pop("_modified_unix", None)
+        t.upsert("withings_measurements", rows, key=["grpid"])
+        cursor.set(str(max_mod))
+    t.log.info("withings measurements: %d", len(rows))
 
 
 def backfill(t: Tracker, start: str | None, end: str | None) -> None:
-    raise NotImplementedError("filled in Task 11")
+    """Withings has no separate backfill endpoint — `sync` with no cursor is
+    already a full backfill. The (start, end) args are accepted for interface
+    compatibility but ignored."""
+    sync(t)

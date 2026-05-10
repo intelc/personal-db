@@ -101,3 +101,38 @@ def test_update_template_preserves_other_files(tmp_root):
     update_template(cfg, "habits")
     assert side.exists()
     assert side.read_text() == "personal notes"
+
+
+def test_update_template_copies_oauth_adapter_modules(tmp_root):
+    """When the manifest declares OAuthStep.adapter, update_template must
+    also copy the adapter module file. This was a real bug — Withings was the
+    first bundled tracker to declare an adapter."""
+    cfg = Config(root=tmp_root)
+    dest = update_template(cfg, "withings")
+    assert (dest / "oauth_adapter.py").is_file(), (
+        f"oauth_adapter.py was not copied to {dest}; only "
+        f"{sorted(p.name for p in dest.iterdir())} present"
+    )
+    # Sanity: importing it works and the class is loadable.
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "withings_adapter_install_test", dest / "oauth_adapter.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert hasattr(mod, "WithingsAdapter")
+
+
+def test_is_outdated_detects_adapter_module_drift(tmp_root, monkeypatch):
+    """If the installed adapter module diverges from the bundle, is_outdated
+    should return True. Without hashing the adapter, drift goes undetected."""
+    cfg = Config(root=tmp_root)
+    dest = update_template(cfg, "withings")
+    assert not is_outdated(cfg, "withings"), "freshly-installed should be in sync"
+
+    # Mutate the installed adapter — should be detected as drift.
+    adapter_path = dest / "oauth_adapter.py"
+    adapter_path.write_text(adapter_path.read_text() + "\n# manual edit\n")
+    assert is_outdated(cfg, "withings"), (
+        "adapter module drift was not detected by is_outdated"
+    )

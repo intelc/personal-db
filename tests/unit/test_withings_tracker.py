@@ -215,3 +215,126 @@ def test_flatten_timezone_fallback_to_default():
     }
     row = ingest._flatten(grp, default_tz="America/New_York")
     assert row["timezone"] == "America/New_York"
+
+
+@pytest.fixture
+def withings_tracker(tmp_root, monkeypatch):
+    """A Tracker pointed at tmp_root with the schema applied and credentials set."""
+    from personal_db.config import Config
+    from personal_db.db import apply_tracker_schema, init_db
+    from personal_db.tracker import Tracker
+
+    cfg = Config(root=tmp_root)
+    init_db(cfg.db_path)
+    apply_tracker_schema(cfg.db_path, (WITHINGS_DIR / "schema.sql").read_text())
+    monkeypatch.setenv("WITHINGS_CLIENT_ID", "CID")
+    monkeypatch.setenv("WITHINGS_CLIENT_SECRET", "CS")
+    # Persist a non-expiring token so refresh_if_needed returns immediately.
+    from personal_db.oauth import save_token
+    save_token(cfg, "withings", {
+        "access_token": "AT",
+        "refresh_token": "RT",
+        "expires_at": 9999999999,
+    })
+    return Tracker(name="withings", cfg=cfg, manifest=None)
+
+
+def _grp(grpid, modified, weight_kg=80.0):
+    return {
+        "grpid": grpid, "attrib": 0, "date": modified, "created": modified,
+        "modified": modified, "category": 1, "deviceid": "x", "timezone": "UTC",
+        "measures": [{"value": int(weight_kg * 1000), "type": 1, "unit": -3}],
+    }
+
+
+def test_sync_first_run_no_cursor(withings_tracker, monkeypatch):
+    ingest = _load_ingest_module()
+    seen_calls = []
+
+    def fake_fetch(token, *, lastupdate, offset):
+        seen_calls.append({"lastupdate": lastupdate, "offset": offset})
+        return {
+            "timezone": "UTC",
+            "more": 0, "offset": 0,
+            "measuregrps": [_grp(1, 1746752400, 80.0)],
+        }
+
+    monkeypatch.setattr(ingest, "_fetch_measures", fake_fetch)
+    ingest.sync(withings_tracker)
+    # First run: no lastupdate sent
+    assert seen_calls == [{"lastupdate": None, "offset": 0}]
+    # Cursor advanced to the modified value
+    from personal_db.tracker import Cursor
+    cur = Cursor("withings:measurements", withings_tracker.cfg.state_dir)
+    assert cur.get() == "1746752400"
+
+
+def test_sync_paginates_until_more_is_zero(withings_tracker, monkeypatch):
+    ingest = _load_ingest_module()
+    pages = [
+        {"timezone": "UTC", "more": 1, "offset": 100,
+         "measuregrps": [_grp(1, 1746000000, 80.0), _grp(2, 1746100000, 81.0)]},
+        {"timezone": "UTC", "more": 0, "offset": 0,
+         "measuregrps": [_grp(3, 1746200000, 82.0)]},
+    ]
+    calls = []
+
+    def fake_fetch(token, *, lastupdate, offset):
+        calls.append({"offset": offset})
+        return pages.pop(0)
+
+    monkeypatch.setattr(ingest, "_fetch_measures", fake_fetch)
+    ingest.sync(withings_tracker)
+    assert [c["offset"] for c in calls] == [0, 100]
+    # All three rows persisted
+    import sqlite3
+    rows = sqlite3.connect(withings_tracker.cfg.db_path).execute(
+        "SELECT grpid, weight_kg FROM withings_measurements ORDER BY grpid"
+    ).fetchall()
+    assert rows == [("1", 80.0), ("2", 81.0), ("3", 82.0)]
+    # Cursor is the max modified value across all pages
+    from personal_db.tracker import Cursor
+    cur = Cursor("withings:measurements", withings_tracker.cfg.state_dir)
+    assert cur.get() == "1746200000"
+
+
+def test_sync_incremental_passes_lastupdate(withings_tracker, monkeypatch):
+    ingest = _load_ingest_module()
+    # Pre-set the cursor as if a prior sync ran.
+    from personal_db.tracker import Cursor
+    Cursor("withings:measurements", withings_tracker.cfg.state_dir).set("1700000000")
+
+    seen = {}
+
+    def fake_fetch(token, *, lastupdate, offset):
+        seen["lastupdate"] = lastupdate
+        return {"timezone": "UTC", "more": 0, "offset": 0, "measuregrps": []}
+
+    monkeypatch.setattr(ingest, "_fetch_measures", fake_fetch)
+    ingest.sync(withings_tracker)
+    assert seen["lastupdate"] == "1700000000"
+
+
+def test_sync_drops_internal_modified_unix_field(withings_tracker, monkeypatch):
+    """_modified_unix must not leak into the SQL insert (no such column)."""
+    ingest = _load_ingest_module()
+
+    def fake_fetch(token, *, lastupdate, offset):
+        return {"timezone": "UTC", "more": 0, "offset": 0,
+                "measuregrps": [_grp(99, 1746752400, 80.0)]}
+
+    monkeypatch.setattr(ingest, "_fetch_measures", fake_fetch)
+    # Should not raise (would raise sqlite3.OperationalError if _modified_unix leaked).
+    ingest.sync(withings_tracker)
+
+
+def test_backfill_is_an_alias_for_sync(withings_tracker, monkeypatch):
+    ingest = _load_ingest_module()
+    called = []
+
+    def fake_sync(t):
+        called.append(t)
+
+    monkeypatch.setattr(ingest, "sync", fake_sync)
+    ingest.backfill(withings_tracker, start=None, end=None)
+    assert called == [withings_tracker]
