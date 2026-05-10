@@ -110,6 +110,27 @@ main {
 .refresh-btn:hover { background: #000; color: #fff; }
 .refresh-btn:active { background: #333; color: #fff; }
 
+/* Unit toggle (kg ↔ lb on Withings, reusable for any binary unit picker).
+   Same visual weight as .refresh-btn — sits inline at the top of a chart. */
+.unit-toggle {
+  display: inline-block;
+  margin-bottom: 4px;
+}
+.unit-toggle button {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 1px 8px;
+  border: 1px solid #000;
+  background: #fff;
+  color: #000;
+  cursor: pointer;
+  letter-spacing: 0.05em;
+  text-transform: lowercase;
+}
+.unit-toggle button + button { border-left: none; }
+.unit-toggle button:hover { background: #eee; }
+.unit-toggle button.active { background: #000; color: #fff; }
+
 /* Viz title bar (with link to dedicated page + raw slug) */
 .block-h .viz-title-link {
   color: inherit;

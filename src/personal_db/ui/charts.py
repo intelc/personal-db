@@ -226,6 +226,188 @@ def stacked_vertical_bars(
     return f'<div class="vbar-chart svc-chart">{"".join(cols)}</div>'
 
 
+def line_chart(
+    items: list[tuple[str, float | None]],
+    *,
+    color: str = "#000",
+    height_px: int = 140,
+    show_every_nth_label: int = 5,
+    y_min: float | None = None,
+    y_max: float | None = None,
+    show_dots: bool = True,
+    connect_gaps: bool = True,
+    annotate_extremes: bool = True,
+    value_attr: str | None = None,
+) -> str:
+    """[(label, value), ...] → SVG line chart for sparse time-series.
+
+    Defaults connect across None gaps so weigh-ins or other intermittent data
+    render as one continuous line. Set `connect_gaps=False` to break the line
+    at every None (useful when None means "sensor offline" rather than "no data
+    today"). Each dot has a `<title>` SVG tooltip showing date and value.
+    With `annotate_extremes=True` (default), the highest and lowest points are
+    labelled with their values.
+
+    `value_attr`: if set (e.g. `"data-kg"`), the raw numeric value is also
+    written to that HTML attribute on every numeric `<text>` and `<title>` in
+    the chart. Lets a host page implement a unit toggle in JS without losing
+    the original units.
+    """
+    return multi_line_chart(
+        x_labels=[lbl for lbl, _ in items],
+        series=[("", [v for _, v in items], color)],
+        height_px=height_px,
+        show_every_nth_label=show_every_nth_label,
+        y_min=y_min,
+        y_max=y_max,
+        show_dots=show_dots,
+        connect_gaps=connect_gaps,
+        annotate_extremes=annotate_extremes,
+        value_attr=value_attr,
+    )
+
+
+def multi_line_chart(
+    x_labels: list[str],
+    series: list[tuple[str, list[float | None], str]],
+    *,
+    height_px: int = 140,
+    show_every_nth_label: int = 5,
+    y_min: float | None = None,
+    y_max: float | None = None,
+    show_dots: bool = True,
+    connect_gaps: bool = True,
+    annotate_extremes: bool = True,
+    value_attr: str | None = None,
+) -> str:
+    """Multi-series SVG line chart sharing one x-axis.
+
+    `series` is a list of `(name, values, color)`. By default lines connect
+    across None values (a "sparse but continuous" series); pass
+    `connect_gaps=False` to break the line at every None instead. Dots carry
+    `<title>` tooltips with the x-label and value. The highest and lowest
+    point per series are annotated when `annotate_extremes=True`.
+
+    `value_attr`: if set (e.g. `"data-kg"`), the raw numeric value is also
+    written to that HTML attribute on every numeric `<text>` and `<title>` in
+    the chart, so a host page can swap displayed text via JS without losing
+    the original units.
+    """
+    def _vattr(v: float) -> str:
+        return f' {value_attr}="{v:g}"' if value_attr else ""
+
+    n = len(x_labels)
+    if n == 0 or not series:
+        return '<p class="meta">no data</p>'
+    real = [v for _, vs, _ in series for v in vs if v is not None]
+    if not real:
+        return '<p class="meta">no data</p>'
+
+    lo = y_min if y_min is not None else min(real)
+    hi = y_max if y_max is not None else max(real)
+    if hi == lo:
+        hi = lo + 1
+
+    width = 1000
+    m_left, m_right, m_top, m_bot = 40, 24, 14, 18
+    plot_w = width - m_left - m_right
+    plot_h = height_px - m_top - m_bot
+
+    def x_for(i: int) -> float:
+        return m_left + (i / max(n - 1, 1)) * plot_w
+
+    def y_for(v: float) -> float:
+        return m_top + (1 - (v - lo) / (hi - lo)) * plot_h
+
+    parts: list[str] = []
+    for _, values, color in series:
+        indexed = [(i, v) for i, v in enumerate(values) if v is not None]
+        if not indexed:
+            continue
+
+        if connect_gaps:
+            segs = [[(x_for(i), y_for(v)) for i, v in indexed]]
+        else:
+            segs = []
+            seg: list[tuple[float, float]] = []
+            for i, v in enumerate(values):
+                if v is None:
+                    if seg:
+                        segs.append(seg)
+                        seg = []
+                    continue
+                seg.append((x_for(i), y_for(v)))
+            if seg:
+                segs.append(seg)
+
+        for s in segs:
+            if len(s) >= 2:
+                pts = " ".join(f"{x:.1f},{y:.1f}" for x, y in s)
+                parts.append(
+                    f'<polyline points="{pts}" fill="none" '
+                    f'stroke="{color}" stroke-width="1.5"/>'
+                )
+
+        if show_dots:
+            for i, v in indexed:
+                parts.append(
+                    f'<circle cx="{x_for(i):.1f}" cy="{y_for(v):.1f}" r="2.5" '
+                    f'fill="{color}">'
+                    f"<title{_vattr(v)}>{escape(str(x_labels[i]))}: {v:g}</title>"
+                    f"</circle>"
+                )
+
+        if annotate_extremes and len(indexed) >= 2:
+            hi_i, hi_v = max(indexed, key=lambda iv: iv[1])
+            lo_i, lo_v = min(indexed, key=lambda iv: iv[1])
+            if hi_v != lo_v:
+                parts.append(
+                    f'<text{_vattr(hi_v)} x="{x_for(hi_i):.1f}" y="{y_for(hi_v) - 6:.1f}" '
+                    f'font-size="9" text-anchor="middle" fill="{color}">{hi_v:g}</text>'
+                )
+                parts.append(
+                    f'<text{_vattr(lo_v)} x="{x_for(lo_i):.1f}" y="{y_for(lo_v) + 12:.1f}" '
+                    f'font-size="9" text-anchor="middle" fill="{color}">{lo_v:g}</text>'
+                )
+
+    # X-axis tick labels. Anchor first label at start, last at end so they
+    # don't clip the SVG viewBox edges.
+    for i, lbl in enumerate(x_labels):
+        if (i % show_every_nth_label == 0) or i == n - 1:
+            anchor = "start" if i == 0 else "end" if i == n - 1 else "middle"
+            parts.append(
+                f'<text x="{x_for(i):.1f}" y="{height_px - 4}" '
+                f'font-size="10" text-anchor="{anchor}" fill="#666">{escape(str(lbl))}</text>'
+            )
+
+    parts.append(
+        f'<text{_vattr(hi)} x="{m_left - 4:.1f}" y="{m_top + 4:.1f}" '
+        f'font-size="10" text-anchor="end" fill="#666">{hi:g}</text>'
+        f'<text{_vattr(lo)} x="{m_left - 4:.1f}" y="{m_top + plot_h:.1f}" '
+        f'font-size="10" text-anchor="end" fill="#666">{lo:g}</text>'
+    )
+
+    legend = ""
+    named = [(name, c) for name, _, c in series if name]
+    if named:
+        chips = "".join(
+            f'<span style="margin-right:1em">'
+            f'<span style="display:inline-block;width:.8em;height:.8em;'
+            f'background:{c};margin-right:.3em;vertical-align:middle"></span>'
+            f"{escape(name)}</span>"
+            for name, c in named
+        )
+        legend = f'<p class="meta" style="margin:0">{chips}</p>'
+
+    return (
+        legend
+        + f'<svg viewBox="0 0 {width} {height_px}" preserveAspectRatio="none" '
+        f'style="width:100%;height:{height_px}px">'
+        f'{"".join(parts)}'
+        f"</svg>"
+    )
+
+
 def word_cloud(
     items: list[tuple[str, int]],
     *,
