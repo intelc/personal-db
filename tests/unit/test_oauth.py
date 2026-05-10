@@ -173,6 +173,41 @@ def test_start_web_oauth_state_mismatch_returns_400(tmp_root):
         _shutdown_existing("testprov2")
 
 
+def test_exchange_code_dispatches_to_registered_adapter():
+    from personal_db.oauth import _adapters, exchange_code, register_adapter
+
+    seen = {}
+
+    class _RecordingAdapter:
+        def exchange_code(self, **kw):
+            seen.update(kw)
+            return {
+                "access_token": "from-adapter",
+                "refresh_token": "RT",
+                "expires_in": 3600,
+            }
+
+        def refresh_token(self, **kw):
+            return {}
+
+    register_adapter("dispatch_test", _RecordingAdapter())
+    try:
+        token = exchange_code(
+            token_url="https://example.com/token",
+            client_id="CID",
+            client_secret="CS",
+            code="ABC",
+            redirect_uri="http://127.0.0.1:1/callback",
+            provider="dispatch_test",
+        )
+        assert token["access_token"] == "from-adapter"
+        assert "expires_at" in token
+        assert seen["code"] == "ABC"
+        assert seen["client_id"] == "CID"
+    finally:
+        _adapters.pop("dispatch_test", None)
+
+
 def test_register_and_lookup_adapter():
     from personal_db.oauth import _adapter_for, _adapters, register_adapter, StandardAdapter
 

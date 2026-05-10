@@ -208,24 +208,22 @@ def exchange_code(
     client_secret: str,
     code: str,
     redirect_uri: str,
+    provider: str = "_standard",
 ) -> dict[str, Any]:
     """Exchange an OAuth authorization code for an access token.
 
-    Counterpart to refresh_if_needed for the initial code-for-token step.
+    Dispatches through `_adapter_for(provider)` so providers with non-standard
+    token endpoints (e.g. Withings) can override the wire format. The default
+    `_standard` provider routes to StandardAdapter, preserving prior behavior.
     """
-    r = requests.post(
-        token_url,
-        data={
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": redirect_uri,
-            "client_id": client_id,
-            "client_secret": client_secret,
-        },
-        timeout=10,
+    adapter = _adapter_for(provider)
+    token = adapter.exchange_code(
+        token_url=token_url,
+        client_id=client_id,
+        client_secret=client_secret,
+        code=code,
+        redirect_uri=redirect_uri,
     )
-    r.raise_for_status()
-    token = r.json()
     token["expires_at"] = int(time.time()) + int(token.get("expires_in", 3600))
     return token
 
@@ -332,6 +330,7 @@ def start_web_oauth(
                     client_secret=client_secret,
                     code=code,
                     redirect_uri=redirect_uri,
+                    provider=provider,
                 )
                 save_token(cfg, provider, token)
             except Exception as e:  # noqa: BLE001 — funnel into UI
