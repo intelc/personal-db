@@ -42,6 +42,10 @@ def test_callback_captures_code():
         flow.shutdown()
 
 
+# This test calls exchange_code WITHOUT a `provider` arg, so it routes
+# through the default `_standard` sentinel → StandardAdapter. The
+# requests.post mock thus verifies StandardAdapter's wire format
+# end-to-end via the dispatcher.
 def test_exchange_code_posts_to_token_url_and_returns_token():
     with patch("personal_db.oauth.requests.post") as mock_post:
         mock_post.return_value = MagicMock(
@@ -171,3 +175,215 @@ def test_start_web_oauth_state_mismatch_returns_400(tmp_root):
         from personal_db.oauth import _shutdown_existing
 
         _shutdown_existing("testprov2")
+
+
+def test_exchange_code_dispatches_to_registered_adapter():
+    from personal_db.oauth import _adapters, exchange_code, register_adapter
+
+    seen = {}
+
+    class _RecordingAdapter:
+        def exchange_code(self, **kw):
+            seen.update(kw)
+            return {
+                "access_token": "from-adapter",
+                "refresh_token": "RT",
+                "expires_in": 3600,
+            }
+
+        def refresh_token(self, **kw):
+            return {}
+
+    register_adapter("dispatch_test", _RecordingAdapter())
+    try:
+        token = exchange_code(
+            token_url="https://example.com/token",
+            client_id="CID",
+            client_secret="CS",
+            code="ABC",
+            redirect_uri="http://127.0.0.1:1/callback",
+            provider="dispatch_test",
+        )
+        assert token["access_token"] == "from-adapter"
+        assert "expires_at" in token
+        assert seen["code"] == "ABC"
+        assert seen["client_id"] == "CID"
+    finally:
+        _adapters.pop("dispatch_test", None)
+
+
+def test_register_and_lookup_adapter():
+    from personal_db.oauth import _adapter_for, _adapters, register_adapter, StandardAdapter
+
+    class _Fake:
+        def exchange_code(self, **kw): return {}
+        def refresh_token(self, **kw): return {}
+
+    fake = _Fake()
+    register_adapter("test_provider_xyz", fake)
+    try:
+        assert _adapter_for("test_provider_xyz") is fake
+        # Unknown providers fall back to StandardAdapter
+        assert isinstance(_adapter_for("never_registered"), StandardAdapter)
+    finally:
+        _adapters.pop("test_provider_xyz", None)
+
+
+def test_refresh_if_needed_dispatches_to_registered_adapter(tmp_root):
+    from personal_db.oauth import (
+        _adapters,
+        load_token,
+        refresh_if_needed,
+        register_adapter,
+        save_token,
+    )
+
+    cfg = Config(root=tmp_root)
+    # Save an expired token so refresh is forced.
+    save_token(cfg, "refresh_dispatch_test", {
+        "access_token": "old",
+        "refresh_token": "RT",
+        "expires_at": 0,
+    })
+
+    seen = {}
+
+    class _RecordingAdapter:
+        def exchange_code(self, **kw): return {}
+        def refresh_token(self, **kw):
+            seen.update(kw)
+            return {
+                "access_token": "from-adapter",
+                "refresh_token": "RT2",
+                "expires_in": 3600,
+            }
+
+    register_adapter("refresh_dispatch_test", _RecordingAdapter())
+    try:
+        token = refresh_if_needed(
+            cfg,
+            "refresh_dispatch_test",
+            token_url="https://example.com/token",
+            client_id="CID",
+            client_secret="CS",
+        )
+        assert token["access_token"] == "from-adapter"
+        assert "expires_at" in token
+        assert seen["refresh_token"] == "RT"
+        # Token was persisted
+        saved = load_token(cfg, "refresh_dispatch_test")
+        assert saved["access_token"] == "from-adapter"
+        assert saved["refresh_token"] == "RT2"
+    finally:
+        _adapters.pop("refresh_dispatch_test", None)
+
+
+def test_ensure_adapter_from_manifest_loads_and_registers(tmp_path):
+    from personal_db.manifest import OAuthStep
+    from personal_db.oauth import (
+        _adapter_for,
+        _adapters,
+        ensure_adapter_from_manifest,
+        StandardAdapter,
+    )
+
+    # Drop a tiny adapter module into a fake tracker dir.
+    tracker_dir = tmp_path / "fake_tracker"
+    tracker_dir.mkdir()
+    (tracker_dir / "my_adapter.py").write_text(
+        """\
+class FakeAdapter:
+    def exchange_code(self, **kw):
+        return {"access_token": "fa", "refresh_token": "r", "expires_in": 3600}
+    def refresh_token(self, **kw):
+        return {"access_token": "fa2", "refresh_token": "r", "expires_in": 3600}
+"""
+    )
+    step = OAuthStep(
+        type="oauth",
+        provider="ensure_test_provider",
+        adapter="my_adapter:FakeAdapter",
+        client_id_env="X",
+        client_secret_env="Y",
+        auth_url="https://example.com/a",
+        token_url="https://example.com/t",
+    )
+
+    try:
+        # Before: unknown provider falls back to StandardAdapter
+        assert isinstance(_adapter_for("ensure_test_provider"), StandardAdapter)
+
+        ensure_adapter_from_manifest(tracker_dir, step)
+
+        adapter = _adapter_for("ensure_test_provider")
+        assert adapter.__class__.__name__ == "FakeAdapter"
+
+        # Idempotent: calling again does not raise
+        ensure_adapter_from_manifest(tracker_dir, step)
+        assert _adapter_for("ensure_test_provider").__class__.__name__ == "FakeAdapter"
+    finally:
+        _adapters.pop("ensure_test_provider", None)
+
+
+def test_ensure_adapter_from_manifest_noop_when_adapter_unset(tmp_path):
+    from personal_db.manifest import OAuthStep
+    from personal_db.oauth import (
+        _adapter_for,
+        ensure_adapter_from_manifest,
+        StandardAdapter,
+    )
+
+    step = OAuthStep(
+        type="oauth",
+        provider="never_register_me",
+        client_id_env="X",
+        client_secret_env="Y",
+        auth_url="https://example.com/a",
+        token_url="https://example.com/t",
+    )
+    ensure_adapter_from_manifest(tmp_path, step)
+    assert isinstance(_adapter_for("never_register_me"), StandardAdapter)
+
+
+def test_refresh_if_needed_carries_prior_refresh_token_when_omitted(tmp_root):
+    """If the adapter's response omits `refresh_token`, the dispatcher must
+    carry the prior one forward (NOT lose it). Withings is the motivating case."""
+    from personal_db.oauth import (
+        _adapters,
+        load_token,
+        refresh_if_needed,
+        register_adapter,
+        save_token,
+    )
+
+    cfg = Config(root=tmp_root)
+    save_token(cfg, "carryfwd_test", {
+        "access_token": "old",
+        "refresh_token": "ORIGINAL_RT",
+        "expires_at": 0,
+    })
+
+    class _OmitRefreshAdapter:
+        def exchange_code(self, **kw): return {}
+        def refresh_token(self, **kw):
+            # Provider returns a new access token but no refresh_token.
+            return {"access_token": "NEW_AT", "expires_in": 3600}
+
+    register_adapter("carryfwd_test", _OmitRefreshAdapter())
+    try:
+        token = refresh_if_needed(
+            cfg,
+            "carryfwd_test",
+            token_url="https://example.com/token",
+            client_id="CID",
+            client_secret="CS",
+        )
+        assert token["access_token"] == "NEW_AT"
+        # The dispatcher carried the original refresh_token forward.
+        assert token["refresh_token"] == "ORIGINAL_RT"
+        # And persisted that fact.
+        saved = load_token(cfg, "carryfwd_test")
+        assert saved["refresh_token"] == "ORIGINAL_RT"
+        assert saved["access_token"] == "NEW_AT"
+    finally:
+        _adapters.pop("carryfwd_test", None)

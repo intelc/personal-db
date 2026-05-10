@@ -26,7 +26,13 @@ from personal_db.wizard.steps import (
 
 
 def _ctx(tmp_root) -> WizardContext:
-    return WizardContext(cfg=Config(root=tmp_root), env_path=tmp_root / ".env")
+    tracker_dir = tmp_root / "trackers" / "fake"
+    tracker_dir.mkdir(parents=True, exist_ok=True)
+    return WizardContext(
+        cfg=Config(root=tmp_root),
+        env_path=tmp_root / ".env",
+        tracker_dir=tracker_dir,
+    )
 
 
 def test_env_var_writes_value_when_missing(tmp_root, monkeypatch):

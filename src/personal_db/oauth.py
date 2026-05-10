@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import http.server
+import importlib.util
 import json
 import secrets
 import socketserver
@@ -8,7 +9,7 @@ import threading
 import time
 import urllib.parse
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import requests
 
@@ -60,6 +61,98 @@ class OAuthFlow:
         self._server.server_close()
 
 
+class TokenAdapter(Protocol):
+    """Provider-specific override for OAuth token exchange/refresh.
+
+    Implementations return a token dict containing at least:
+      access_token, expires_in
+    plus refresh_token when the provider issues one. On `refresh_token` calls
+    where the provider omits a new refresh_token, the dispatcher (refresh_if_needed)
+    carries the prior refresh_token forward — adapters do not need to do this.
+    The dispatcher also adds expires_at.
+    """
+
+    def exchange_code(
+        self,
+        *,
+        token_url: str,
+        client_id: str,
+        client_secret: str,
+        code: str,
+        redirect_uri: str,
+    ) -> dict[str, Any]: ...
+
+    def refresh_token(
+        self,
+        *,
+        token_url: str,
+        client_id: str,
+        client_secret: str,
+        refresh_token: str,
+    ) -> dict[str, Any]: ...
+
+
+class StandardAdapter:
+    """Default RFC 6749 token flow used when no per-provider adapter is registered."""
+
+    def exchange_code(
+        self,
+        *,
+        token_url: str,
+        client_id: str,
+        client_secret: str,
+        code: str,
+        redirect_uri: str,
+    ) -> dict[str, Any]:
+        r = requests.post(
+            token_url,
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "client_id": client_id,
+                "client_secret": client_secret,
+            },
+            timeout=10,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def refresh_token(
+        self,
+        *,
+        token_url: str,
+        client_id: str,
+        client_secret: str,
+        refresh_token: str,
+    ) -> dict[str, Any]:
+        r = requests.post(
+            token_url,
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": client_id,
+                "client_secret": client_secret,
+            },
+            timeout=10,
+        )
+        r.raise_for_status()
+        return r.json()
+
+
+_adapters: dict[str, TokenAdapter] = {}
+_STANDARD_ADAPTER: "TokenAdapter" = StandardAdapter()
+
+
+def register_adapter(provider: str, adapter: TokenAdapter) -> None:
+    """Register a TokenAdapter for `provider`. Idempotent: re-registering replaces."""
+    _adapters[provider] = adapter
+
+
+def _adapter_for(provider: str) -> TokenAdapter:
+    return _adapters.get(provider, _STANDARD_ADAPTER)
+
+
 def _token_path(cfg: Config, provider: str) -> Path:
     d = cfg.state_dir / "oauth"
     d.mkdir(parents=True, exist_ok=True)
@@ -84,24 +177,28 @@ def refresh_if_needed(
     client_id: str,
     client_secret: str,
 ) -> dict[str, Any]:
-    """Refresh the token if expired. Returns the (possibly refreshed) token."""
+    """Refresh the token if expired. Returns the (possibly refreshed) token.
+
+    Dispatches the actual refresh wire call through `_adapter_for(provider)`
+    so providers with non-standard token endpoints (e.g. Withings) can
+    override the request shape and response parsing.
+
+    If the provider omits a new `refresh_token` in its response, the prior
+    refresh_token is carried forward (this stays in the dispatcher rather
+    than the adapter — see TokenAdapter docstring).
+    """
     token = load_token(cfg, provider) or {}
     if token.get("expires_at", 0) > time.time() + 60:
         return token
     if "refresh_token" not in token:
         raise RuntimeError(f"{provider}: no refresh_token; re-run setup")
-    r = requests.post(
-        token_url,
-        data={
-            "grant_type": "refresh_token",
-            "refresh_token": token["refresh_token"],
-            "client_id": client_id,
-            "client_secret": client_secret,
-        },
-        timeout=10,
+    adapter = _adapter_for(provider)
+    new_token = adapter.refresh_token(
+        token_url=token_url,
+        client_id=client_id,
+        client_secret=client_secret,
+        refresh_token=token["refresh_token"],
     )
-    r.raise_for_status()
-    new_token = r.json()
     new_token["expires_at"] = int(time.time()) + int(new_token.get("expires_in", 3600))
     if "refresh_token" not in new_token:
         new_token["refresh_token"] = token["refresh_token"]
@@ -116,24 +213,22 @@ def exchange_code(
     client_secret: str,
     code: str,
     redirect_uri: str,
+    provider: str = "_standard",
 ) -> dict[str, Any]:
     """Exchange an OAuth authorization code for an access token.
 
-    Counterpart to refresh_if_needed for the initial code-for-token step.
+    Dispatches through `_adapter_for(provider)` so providers with non-standard
+    token endpoints (e.g. Withings) can override the wire format. The default
+    `_standard` provider routes to StandardAdapter, preserving prior behavior.
     """
-    r = requests.post(
-        token_url,
-        data={
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": redirect_uri,
-            "client_id": client_id,
-            "client_secret": client_secret,
-        },
-        timeout=10,
+    adapter = _adapter_for(provider)
+    token = adapter.exchange_code(
+        token_url=token_url,
+        client_id=client_id,
+        client_secret=client_secret,
+        code=code,
+        redirect_uri=redirect_uri,
     )
-    r.raise_for_status()
-    token = r.json()
     token["expires_at"] = int(time.time()) + int(token.get("expires_in", 3600))
     return token
 
@@ -240,6 +335,7 @@ def start_web_oauth(
                     client_secret=client_secret,
                     code=code,
                     redirect_uri=redirect_uri,
+                    provider=provider,
                 )
                 save_token(cfg, provider, token)
             except Exception as e:  # noqa: BLE001 — funnel into UI
@@ -286,3 +382,48 @@ def start_web_oauth(
     if scopes:
         auth_params["scope"] = " ".join(scopes)
     return auth_url + "?" + urllib.parse.urlencode(auth_params)
+
+
+def ensure_adapter_from_manifest(tracker_dir: Path, step: Any) -> None:
+    """Load `<tracker_dir>/<module>.py` and register `<class>()` for `step.provider`.
+
+    No-op if `step.adapter` is None or the provider is already registered with
+    the same class. Idempotent: safe to call repeatedly.
+
+    `step` is typed as Any to avoid a circular import on `OAuthStep`; only
+    `step.adapter` and `step.provider` attributes are accessed.
+    """
+    spec_str = getattr(step, "adapter", None)
+    if not spec_str:
+        return
+    if ":" not in spec_str:
+        raise RuntimeError(
+            f"Invalid adapter spec {spec_str!r}: expected '<module>:<class>'"
+        )
+    module_name, _, class_name = spec_str.partition(":")
+    provider = step.provider
+    existing = _adapters.get(provider)
+    if existing is not None and existing.__class__.__name__ == class_name:
+        return
+    module_path = tracker_dir / f"{module_name}.py"
+    if not module_path.exists():
+        raise RuntimeError(
+            f"OAuth adapter module not found: {module_path} "
+            f"(declared as {spec_str} in manifest)"
+        )
+    spec = importlib.util.spec_from_file_location(
+        f"personal_db_oauth_adapter_{provider}_{module_name}",
+        module_path,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(
+            f"Could not load OAuth adapter module from {module_path}"
+        )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    cls = getattr(mod, class_name, None)
+    if cls is None:
+        raise RuntimeError(
+            f"OAuth adapter class {class_name} not found in {module_path}"
+        )
+    register_adapter(provider, cls())

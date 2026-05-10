@@ -77,3 +77,58 @@ def test_load_manifest_parses_optional_env_var(tmp_path):
     m = load_manifest(p)
     assert m.setup_steps[0].optional is False
     assert m.setup_steps[1].optional is True
+
+
+def test_oauth_step_accepts_optional_adapter_field(tmp_path):
+    from personal_db.manifest import load_manifest, OAuthStep
+
+    p = tmp_path / "manifest.yaml"
+    p.write_text(
+        """\
+name: t1
+description: test
+permission_type: oauth
+time_column: ts
+setup_steps:
+  - type: oauth
+    provider: withings_test
+    adapter: oauth_adapter:WithingsAdapter
+    client_id_env: A
+    client_secret_env: B
+    auth_url: https://example.com/a
+    token_url: https://example.com/t
+schema:
+  tables: {}
+""",
+    )
+    m = load_manifest(p)
+    step = m.setup_steps[0]
+    assert isinstance(step, OAuthStep)
+    assert step.adapter == "oauth_adapter:WithingsAdapter"
+
+
+def test_oauth_step_adapter_field_is_optional(tmp_path):
+    from personal_db.manifest import load_manifest, OAuthStep
+
+    p = tmp_path / "manifest.yaml"
+    p.write_text(
+        """\
+name: t2
+description: test
+permission_type: oauth
+time_column: ts
+setup_steps:
+  - type: oauth
+    provider: whoop
+    client_id_env: A
+    client_secret_env: B
+    auth_url: https://example.com/a
+    token_url: https://example.com/t
+schema:
+  tables: {}
+""",
+    )
+    m = load_manifest(p)
+    step = m.setup_steps[0]
+    assert isinstance(step, OAuthStep)
+    assert step.adapter is None

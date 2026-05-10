@@ -26,7 +26,12 @@ from personal_db.manifest import (
     InstructionsStep,
     OAuthStep,
 )
-from personal_db.oauth import OAuthFlow, exchange_code, save_token
+from personal_db.oauth import (
+    OAuthFlow,
+    ensure_adapter_from_manifest,
+    exchange_code,
+    save_token,
+)
 from personal_db.permissions import (
     open_fda_settings_pane,
     probe_sqlite_access,
@@ -39,6 +44,7 @@ from personal_db.wizard.env_file import read_env, upsert_env
 class WizardContext:
     cfg: Config
     env_path: Path
+    tracker_dir: Path
 
 
 @dataclass
@@ -146,6 +152,8 @@ def handle_oauth(step: OAuthStep, ctx: WizardContext) -> StepResult:
             f"missing OAuth credentials: ensure {step.client_id_env} and "
             f"{step.client_secret_env} are set (run env_var steps first)"
         )
+    # Register the tracker's TokenAdapter (if any) before any token op.
+    ensure_adapter_from_manifest(ctx.tracker_dir, step)
     state = secrets.token_urlsafe(16)
     flow = OAuthFlow(state=state, port=step.redirect_port or 0)
     flow.start()
@@ -172,6 +180,7 @@ def handle_oauth(step: OAuthStep, ctx: WizardContext) -> StepResult:
             client_secret=client_secret,
             code=code,
             redirect_uri=redirect_uri,
+            provider=step.provider,
         )
         save_token(ctx.cfg, step.provider, token)
         return Ok(f"OAuth completed for {step.provider}")

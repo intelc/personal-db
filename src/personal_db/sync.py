@@ -11,7 +11,8 @@ from pathlib import Path
 from personal_db.config import Config
 from personal_db.data_horizon import compute_and_store as _store_horizon
 from personal_db.db import apply_tracker_schema, init_db
-from personal_db.manifest import load_manifest
+from personal_db.manifest import OAuthStep, load_manifest
+from personal_db.oauth import ensure_adapter_from_manifest
 from personal_db.tracker import Tracker
 from personal_db.transforms import TransformError, make_context, topo_sort, validate
 
@@ -147,9 +148,17 @@ def _run_transforms(cfg: Config, name: str, mod, tracker_dir: Path) -> None:
             ctx.con.close()
 
 
+def _register_oauth_adapters(tracker_dir: Path, manifest) -> None:
+    """Register every OAuthStep.adapter declared in the manifest. Idempotent."""
+    for step in manifest.setup_steps:
+        if isinstance(step, OAuthStep):
+            ensure_adapter_from_manifest(tracker_dir, step)
+
+
 def sync_one(cfg: Config, name: str) -> None:
     tracker_dir = cfg.trackers_dir / name
     manifest = load_manifest(tracker_dir / "manifest.yaml")
+    _register_oauth_adapters(tracker_dir, manifest)
     _ensure_schema(cfg, tracker_dir)
     mod = _load_ingest_module(tracker_dir, name)
     t = Tracker(name=name, cfg=cfg, manifest=manifest)
@@ -162,6 +171,7 @@ def sync_one(cfg: Config, name: str) -> None:
 def backfill_one(cfg: Config, name: str, start: str | None, end: str | None) -> None:
     tracker_dir = cfg.trackers_dir / name
     manifest = load_manifest(tracker_dir / "manifest.yaml")
+    _register_oauth_adapters(tracker_dir, manifest)
     _ensure_schema(cfg, tracker_dir)
     mod = _load_ingest_module(tracker_dir, name)
     t = Tracker(name=name, cfg=cfg, manifest=manifest)

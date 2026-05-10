@@ -50,6 +50,7 @@ class EnvVarStep(BaseModel):
 class OAuthStep(BaseModel):
     type: Literal["oauth"]
     provider: str
+    adapter: str | None = None  # "<module>:<class>" loaded from the tracker dir
     client_id_env: str
     client_secret_env: str
     auth_url: str
