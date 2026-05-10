@@ -65,8 +65,11 @@ class TokenAdapter(Protocol):
     """Provider-specific override for OAuth token exchange/refresh.
 
     Implementations return a token dict containing at least:
-      access_token, refresh_token, expires_in
-    The dispatcher (refresh_if_needed / exchange_code) adds expires_at.
+      access_token, expires_in
+    plus refresh_token when the provider issues one. On `refresh_token` calls
+    where the provider omits a new refresh_token, the dispatcher (refresh_if_needed)
+    carries the prior refresh_token forward — adapters do not need to do this.
+    The dispatcher also adds expires_at.
     """
 
     def exchange_code(

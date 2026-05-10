@@ -174,7 +174,7 @@ def test_start_web_oauth_state_mismatch_returns_400(tmp_root):
 
 
 def test_register_and_lookup_adapter():
-    from personal_db.oauth import register_adapter, _adapter_for, StandardAdapter
+    from personal_db.oauth import _adapter_for, _adapters, register_adapter, StandardAdapter
 
     class _Fake:
         def exchange_code(self, **kw): return {}
@@ -182,6 +182,9 @@ def test_register_and_lookup_adapter():
 
     fake = _Fake()
     register_adapter("test_provider_xyz", fake)
-    assert _adapter_for("test_provider_xyz") is fake
-    # Unknown providers fall back to StandardAdapter
-    assert isinstance(_adapter_for("never_registered"), StandardAdapter)
+    try:
+        assert _adapter_for("test_provider_xyz") is fake
+        # Unknown providers fall back to StandardAdapter
+        assert isinstance(_adapter_for("never_registered"), StandardAdapter)
+    finally:
+        _adapters.pop("test_provider_xyz", None)
