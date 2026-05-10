@@ -46,7 +46,11 @@ _DISPATCH = {
 
 def run_tracker(cfg: Config, name: str) -> RunResult:
     manifest = load_manifest(cfg.trackers_dir / name / "manifest.yaml")
-    ctx = WizardContext(cfg=cfg, env_path=cfg.root / ".env")
+    ctx = WizardContext(
+        cfg=cfg,
+        env_path=cfg.root / ".env",
+        tracker_dir=cfg.trackers_dir / name,
+    )
 
     # Run each setup_step in order. Stop on first Failed.
     for i, step in enumerate(manifest.setup_steps, 1):
