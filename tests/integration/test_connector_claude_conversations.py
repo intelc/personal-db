@@ -7,7 +7,7 @@ from pathlib import Path
 from personal_db.config import Config
 from personal_db.sync import sync_one
 
-FIXTURE_PROJECTS = Path("tests/fixtures/claude_conversations/projects")
+FIXTURE_PROJECTS = Path("tests/fixtures/code_agent_activity/claude_projects/projects")
 
 
 def _init_and_install(root: Path) -> None:

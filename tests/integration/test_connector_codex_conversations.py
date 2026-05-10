@@ -8,7 +8,7 @@ from pathlib import Path
 from personal_db.config import Config
 from personal_db.sync import sync_one
 
-FIXTURE_SESSIONS = Path("tests/fixtures/codex_conversations/sessions")
+FIXTURE_SESSIONS = Path("tests/fixtures/code_agent_activity/codex_sessions/sessions")
 
 
 def _init_and_install(root: Path) -> None:
