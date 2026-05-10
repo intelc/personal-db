@@ -141,6 +141,7 @@ class StandardAdapter:
 
 
 _adapters: dict[str, TokenAdapter] = {}
+_STANDARD_ADAPTER: "TokenAdapter" = StandardAdapter()
 
 
 def register_adapter(provider: str, adapter: TokenAdapter) -> None:
@@ -149,7 +150,7 @@ def register_adapter(provider: str, adapter: TokenAdapter) -> None:
 
 
 def _adapter_for(provider: str) -> TokenAdapter:
-    return _adapters.get(provider) or StandardAdapter()
+    return _adapters.get(provider, _STANDARD_ADAPTER)
 
 
 def _token_path(cfg: Config, provider: str) -> Path:

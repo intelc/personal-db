@@ -42,6 +42,10 @@ def test_callback_captures_code():
         flow.shutdown()
 
 
+# This test calls exchange_code WITHOUT a `provider` arg, so it routes
+# through the default `_standard` sentinel → StandardAdapter. The
+# requests.post mock thus verifies StandardAdapter's wire format
+# end-to-end via the dispatcher.
 def test_exchange_code_posts_to_token_url_and_returns_token():
     with patch("personal_db.oauth.requests.post") as mock_post:
         mock_post.return_value = MagicMock(
