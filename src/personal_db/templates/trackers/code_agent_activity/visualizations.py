@@ -612,15 +612,12 @@ def render_session_timeline(cfg: Config) -> str:
         if len(prompt) > 200:
             prompt = prompt[:197].rstrip() + "..."
         cwd = (meta.get("cwd") or "").strip()
-        if prompt or cwd:
-            hover_lines = []
-            if prompt:
-                hover_lines.append(prompt)
-            if cwd:
-                hover_lines.append(cwd)
-            hover_text = "\n".join(hover_lines)
-        else:
-            hover_text = f"{agent} · {sid}"
+        # Always two lines so the hover format is consistent across sessions.
+        hover_text = (
+            f"{agent} · {sid[:8]}\n"
+            f"{prompt or '(no prompt captured)'}\n"
+            f"{cwd or '(cwd unknown)'}"
+        )
         parts.append(f'<g data-tip="{escape(hover_text)}">')
         # Agent-identity glyph at the far left, before the session id text.
         # 12x12 with ~6px gap; text reserves ~60px (8 chars + " ⌁" suffix at
