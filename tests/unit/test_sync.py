@@ -153,3 +153,69 @@ def backfill(t, start, end):
         assert _adapter_for("fake_oauth_provider").__class__.__name__ == "MyAdapter"
     finally:
         _adapters.pop("fake_oauth_provider", None)
+
+
+def test_backfill_one_registers_oauth_adapter_from_manifest(tmp_root, monkeypatch):
+    """backfill_one shares the same _register_oauth_adapters call site as sync_one;
+    cover it explicitly so future regressions in either are caught."""
+    from personal_db.config import Config
+    from personal_db.oauth import _adapter_for, _adapters, StandardAdapter
+    from personal_db.sync import backfill_one
+
+    cfg = Config(root=tmp_root)
+    tracker_dir = cfg.trackers_dir / "fake_oauth_tracker_b"
+    tracker_dir.mkdir(parents=True)
+
+    (tracker_dir / "manifest.yaml").write_text(
+        """\
+name: fake_oauth_tracker_b
+description: fake oauth tracker (backfill variant)
+permission_type: oauth
+setup_steps:
+  - type: oauth
+    provider: fake_backfill_oauth_provider
+    adapter: my_backfill_adapter:MyBackfillAdapter
+    client_id_env: A
+    client_secret_env: B
+    auth_url: https://example.com/a
+    token_url: https://example.com/t
+schedule:
+  every: 6h
+time_column: ts
+granularity: event
+schema:
+  tables:
+    fake_table:
+      columns:
+        id: {type: TEXT, semantic: pk}
+""",
+    )
+    (tracker_dir / "schema.sql").write_text(
+        "CREATE TABLE IF NOT EXISTS fake_table (id TEXT PRIMARY KEY);\n"
+    )
+    (tracker_dir / "my_backfill_adapter.py").write_text(
+        """\
+class MyBackfillAdapter:
+    def exchange_code(self, **kw): return {}
+    def refresh_token(self, **kw): return {}
+"""
+    )
+    (tracker_dir / "ingest.py").write_text(
+        """\
+def sync(t):
+    return None
+def backfill(t, start, end):
+    return None
+"""
+    )
+
+    assert isinstance(_adapter_for("fake_backfill_oauth_provider"), StandardAdapter)
+
+    try:
+        backfill_one(cfg, "fake_oauth_tracker_b", start=None, end=None)
+        assert (
+            _adapter_for("fake_backfill_oauth_provider").__class__.__name__
+            == "MyBackfillAdapter"
+        )
+    finally:
+        _adapters.pop("fake_backfill_oauth_provider", None)
