@@ -14,9 +14,11 @@ def test_list_bundled_returns_known_templates():
         "screen_time",
         "imessage",
         "habits",
-        "claude_conversations",
-        "codex_conversations",
+        "code_agent_activity",
     } <= names
+    # claude_conversations and codex_conversations were folded into code_agent_activity.
+    assert "claude_conversations" not in names
+    assert "codex_conversations" not in names
 
 
 def test_granola_manifest_loads():
