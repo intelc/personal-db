@@ -87,7 +87,7 @@ def test_run_legacy_migration_backfills_and_drops(db_with_legacy_tables: Path, t
         ).fetchall()
         assert rows == [
             ("claude_code", "c1", None, "hi"),
-            ("codex",       "x1", "/repo", "hello"),
+            ("codex_cli",   "x1", "/repo", "hello"),
         ]
     finally:
         con.close()

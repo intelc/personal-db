@@ -257,7 +257,7 @@ def parse_codex_session(jsonl_path: Path, history_map: dict[str, str]) -> dict |
         first_user_prompt = history_map[sid]
 
     return {
-        "agent": "codex",
+        "agent": "codex_cli",
         "session_id": sid,
         "cwd": cwd,
         "started_at": started_at,

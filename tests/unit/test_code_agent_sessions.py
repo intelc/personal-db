@@ -41,7 +41,7 @@ def test_parse_codex_session_extracts_cwd_and_first_prompt():
     jsonl = FIXTURES / "codex_sessions/sessions/2026/04/26/rollout-2026-04-26T10-00-00-550e8400-e29b-41d4-a716-446655440000.jsonl"
     row = mod.parse_codex_session(jsonl, history_map={})
     assert row is not None
-    assert row["agent"] == "codex"
+    assert row["agent"] == "codex_cli"
     assert row["session_id"] == "550e8400-e29b-41d4-a716-446655440000"
     assert row["cwd"] == "/Users/test/code/example"
     assert row["started_at"] == "2026-04-26T10:00:00.000Z"
@@ -127,7 +127,7 @@ def test_sync_populates_code_agent_sessions(cfg_with_code_agent, monkeypatch):
     con.close()
     assert ("claude_code", "abc123", "/Users/test/code/example", 3, "hello, can you help me debug?") in rows
     assert any(
-        r[0] == "codex"
+        r[0] == "codex_cli"
         and r[1] == "550e8400-e29b-41d4-a716-446655440000"
         and r[2] == "/Users/test/code/example"
         for r in rows
@@ -188,3 +188,71 @@ def test_claude_session_first_prompt_fallback_from_hook_events(cfg_with_code_age
     assert row is not None, "ghost session row should be created from hook events"
     assert row[0] == "/Users/test/elsewhere"
     assert row[1] == "fix the leaky abstraction"
+
+
+def test_codex_session_joins_to_intervals_for_viz(cfg_with_code_agent, monkeypatch):
+    """Regression: code_agent_sessions.agent must match code_agent_events.agent
+    for Codex (both 'codex_cli'), so the viz JOIN works."""
+    cfg = cfg_with_code_agent
+
+    # Stage a richer Codex rollout that emits at least two classifier-mapped
+    # events (session_start + prompt_submitted + awaiting_user) so the
+    # intervals materializer produces rows we can JOIN against.
+    codex_home = cfg.root / "fake_codex"
+    sessions_dir = codex_home / "sessions" / "2026" / "04" / "26"
+    sessions_dir.mkdir(parents=True)
+    rollout = sessions_dir / "rollout-2026-04-26T10-00-00-550e8400-e29b-41d4-a716-446655440000.jsonl"
+    rollout.write_text(
+        '{"type":"session_meta","timestamp":"2026-04-26T10:00:00.000Z",'
+        '"payload":"{\\"id\\": \\"550e8400-e29b-41d4-a716-446655440000\\", '
+        '\\"timestamp\\": \\"2026-04-26T10:00:00.000Z\\", '
+        '\\"cwd\\": \\"/Users/test/code/example\\"}"}\n'
+        '{"type":"event_msg","timestamp":"2026-04-26T10:00:02.000Z",'
+        '"payload":{"type":"user_message","text":"Write hello world"}}\n'
+        '{"type":"event_msg","timestamp":"2026-04-26T10:00:05.000Z",'
+        '"payload":{"type":"task_complete"}}\n'
+    )
+    # Mirror the response_item user/assistant rows so parse_codex_session can
+    # populate first_user_prompt for the row we expect to JOIN against.
+    with rollout.open("a") as fh:
+        fh.write(
+            '{"type":"response_item","timestamp":"2026-04-26T10:00:02.000Z",'
+            '"payload":{"role":"user","content":[{"type":"text",'
+            '"text":"Write hello world"}]}}\n'
+            '{"type":"response_item","timestamp":"2026-04-26T10:00:05.000Z",'
+            '"payload":{"role":"assistant","content":[{"type":"text",'
+            '"text":"print(\'Hello\')"}]}}\n'
+        )
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    monkeypatch.setenv("CODEX_HISTORY_FILE", str(codex_home / "history.jsonl"))
+
+    # Empty Claude
+    empty_claude = cfg.root / "empty_claude_projects"
+    empty_claude.mkdir()
+    monkeypatch.setenv("CLAUDE_PROJECTS_DIR", str(empty_claude))
+    # Empty hooks log
+    hooks_log = cfg.state_dir / "code_agent_hooks.jsonl"
+    hooks_log.write_text("")
+    monkeypatch.setenv("PERSONAL_DB_HOOKS_LOG", str(hooks_log))
+
+    from personal_db.sync import sync_one
+    sync_one(cfg, "code_agent_activity")
+
+    con = _sqlite3.connect(cfg.db_path)
+    # The viz join: intervals LEFT JOIN sessions ON (agent, session_id).
+    # If labels mismatch, s.first_user_prompt is NULL for every Codex row.
+    rows = con.execute(
+        """
+        SELECT i.agent, i.session_id, s.first_user_prompt
+        FROM code_agent_intervals i
+        LEFT JOIN code_agent_sessions s
+          ON s.agent = i.agent AND s.session_id = i.session_id
+        WHERE i.agent = 'codex_cli'
+        """
+    ).fetchall()
+    con.close()
+    assert rows, "expected at least one codex_cli interval"
+    assert any(r[2] is not None for r in rows), (
+        "JOIN failed: code_agent_sessions.agent must match code_agent_events.agent "
+        f"(rows: {rows})"
+    )

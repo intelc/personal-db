@@ -59,7 +59,7 @@ schema:
         git_branch:       {type: TEXT,    semantic: "git branch at interval start when available"}
     code_agent_sessions:
       columns:
-        agent:               {type: TEXT,    semantic: "agent name, e.g. claude_code or codex"}
+        agent:               {type: TEXT,    semantic: "agent name, e.g. claude_code or codex_cli"}
         session_id:          {type: TEXT,    semantic: "agent-assigned session identifier"}
         cwd:                 {type: TEXT,    semantic: "absolute working directory; resolved from JSONL message metadata or hook events"}
         started_at:          {type: TEXT,    semantic: "ISO-8601 UTC, earliest user/assistant message timestamp"}

@@ -273,7 +273,7 @@ def _run_legacy_migration(con: sqlite3.Connection, root: Path) -> None:
               (agent, session_id, cwd, started_at, last_msg_at,
                message_count, user_msg_count, assistant_msg_count,
                first_user_prompt, source_file)
-            SELECT 'codex', session_id, cwd, started_at, last_event_at,
+            SELECT 'codex_cli', session_id, cwd, started_at, last_event_at,
                    event_count, user_msg_count, assistant_msg_count,
                    first_user_prompt, NULL
             FROM codex_sessions
