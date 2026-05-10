@@ -554,7 +554,7 @@ def render_session_timeline(cfg: Config) -> str:
 
     # Agent palette: solid for agent_running, alpha-variant for awaiting_user.
     AGENT_COLORS = {
-        "claude_code": "#a855f7",  # purple
+        "claude_code": "#D97757",  # claude orange (brand)
         "codex_cli": "#2563eb",    # blue
     }
 
@@ -684,7 +684,7 @@ def render_session_timeline(cfg: Config) -> str:
         '<span style="display: inline-block; width: 10px; height: 10px; '
         'background: #2563eb; vertical-align: middle;"></span> codex agent_running &nbsp; '
         '<span style="display: inline-block; width: 10px; height: 10px; '
-        'background: #a855f7; vertical-align: middle;"></span> claude agent_running &nbsp; '
+        'background: #D97757; vertical-align: middle;"></span> claude agent_running &nbsp; '
         '<span style="display: inline-block; width: 10px; height: 10px; '
         'background: #2563eb33; vertical-align: middle;"></span> awaiting_user (lighter) &nbsp; '
         '| black ticks below: keystroke moments &nbsp; ⌁ = remote session'
