@@ -441,12 +441,16 @@ def render_session_timeline(cfg: Config) -> str:
     try:
         rows = con.execute(
             """
-            SELECT agent, session_id, start_ts, end_ts, state,
-                   duration_seconds, is_remote
-            FROM code_agent_intervals
-            WHERE datetime(end_ts) >= datetime(?)
-              AND datetime(start_ts) <= datetime(?)
-            ORDER BY agent, session_id, start_ts
+            SELECT i.agent, i.session_id, i.start_ts, i.end_ts, i.state,
+                   i.duration_seconds, i.is_remote,
+                   s.first_user_prompt AS first_user_prompt,
+                   s.cwd AS session_cwd
+            FROM code_agent_intervals i
+            LEFT JOIN code_agent_sessions s
+              ON s.agent = i.agent AND s.session_id = i.session_id
+            WHERE datetime(i.end_ts) >= datetime(?)
+              AND datetime(i.start_ts) <= datetime(?)
+            ORDER BY i.agent, i.session_id, i.start_ts
             """,
             (start.isoformat(), end.isoformat()),
         ).fetchall()
@@ -479,12 +483,21 @@ def render_session_timeline(cfg: Config) -> str:
     # Group intervals by session, preserving display order: earliest start first
     sessions: dict[tuple[str, str], list[sqlite3.Row]] = defaultdict(list)
     session_first: dict[tuple[str, str], float] = {}
+    # Per-session metadata from code_agent_sessions (LEFT JOIN above). Captured
+    # once per session and surfaced in a header list above the SVG so users can
+    # tell what each lane was about (cwd + first prompt).
+    session_meta_disp: dict[tuple[str, str], dict[str, str | None]] = {}
     for r in rows:
         key = (r["agent"], r["session_id"])
         sessions[key].append(r)
         ts = datetime.fromisoformat(r["start_ts"].replace("Z", "+00:00")).timestamp()
         if key not in session_first or ts < session_first[key]:
             session_first[key] = ts
+        if key not in session_meta_disp:
+            session_meta_disp[key] = {
+                "first_user_prompt": r["first_user_prompt"],
+                "cwd": r["session_cwd"],
+            }
     ordered_keys = sorted(sessions.keys(), key=lambda k: session_first[k])
 
     # Layout
@@ -613,8 +626,39 @@ def render_session_timeline(cfg: Config) -> str:
         "</p>"
     )
 
+    # Per-session header: prompt (truncated to 100 chars) + cwd, in the same
+    # order as the lanes. Lets the user map a lane label (e.g. "claude · abc12345")
+    # back to what the session was actually doing.
+    header_items: list[str] = []
+    for key in ordered_keys:
+        agent, sid = key
+        meta = session_meta_disp.get(key, {})
+        prompt = (meta.get("first_user_prompt") or "").strip()
+        if len(prompt) > 100:
+            prompt = prompt[:97].rstrip() + "..."
+        cwd = meta.get("cwd")
+        if not prompt and not cwd:
+            continue
+        prompt_html = (
+            f'<span class="prompt">{escape(prompt)}</span>' if prompt
+            else '<span class="prompt meta">(no prompt captured)</span>'
+        )
+        cwd_html = f' <span class="meta">({escape(cwd)})</span>' if cwd else ""
+        header_items.append(
+            f'<li><code>{escape(agent.split("_")[0])} · {escape(sid[:8])}</code> '
+            f"— {prompt_html}{cwd_html}</li>"
+        )
+    session_header = (
+        '<ul class="meta" style="margin: 6px 0 8px 0; padding-left: 18px;">'
+        + "".join(header_items)
+        + "</ul>"
+        if header_items
+        else ""
+    )
+
     return (
         '<p class="meta">last 24 hours · one lane per session · hover for details</p>'
+        + session_header
         + "".join(parts)
         + legend
     )
