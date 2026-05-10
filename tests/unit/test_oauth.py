@@ -227,3 +227,52 @@ def test_register_and_lookup_adapter():
         assert isinstance(_adapter_for("never_registered"), StandardAdapter)
     finally:
         _adapters.pop("test_provider_xyz", None)
+
+
+def test_refresh_if_needed_dispatches_to_registered_adapter(tmp_root):
+    from personal_db.oauth import (
+        _adapters,
+        load_token,
+        refresh_if_needed,
+        register_adapter,
+        save_token,
+    )
+
+    cfg = Config(root=tmp_root)
+    # Save an expired token so refresh is forced.
+    save_token(cfg, "refresh_dispatch_test", {
+        "access_token": "old",
+        "refresh_token": "RT",
+        "expires_at": 0,
+    })
+
+    seen = {}
+
+    class _RecordingAdapter:
+        def exchange_code(self, **kw): return {}
+        def refresh_token(self, **kw):
+            seen.update(kw)
+            return {
+                "access_token": "from-adapter",
+                "refresh_token": "RT2",
+                "expires_in": 3600,
+            }
+
+    register_adapter("refresh_dispatch_test", _RecordingAdapter())
+    try:
+        token = refresh_if_needed(
+            cfg,
+            "refresh_dispatch_test",
+            token_url="https://example.com/token",
+            client_id="CID",
+            client_secret="CS",
+        )
+        assert token["access_token"] == "from-adapter"
+        assert "expires_at" in token
+        assert seen["refresh_token"] == "RT"
+        # Token was persisted
+        saved = load_token(cfg, "refresh_dispatch_test")
+        assert saved["access_token"] == "from-adapter"
+        assert saved["refresh_token"] == "RT2"
+    finally:
+        _adapters.pop("refresh_dispatch_test", None)

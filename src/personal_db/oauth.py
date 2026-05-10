@@ -177,24 +177,28 @@ def refresh_if_needed(
     client_id: str,
     client_secret: str,
 ) -> dict[str, Any]:
-    """Refresh the token if expired. Returns the (possibly refreshed) token."""
+    """Refresh the token if expired. Returns the (possibly refreshed) token.
+
+    Dispatches the actual refresh wire call through `_adapter_for(provider)`
+    so providers with non-standard token endpoints (e.g. Withings) can
+    override the request shape and response parsing.
+
+    If the provider omits a new `refresh_token` in its response, the prior
+    refresh_token is carried forward (this stays in the dispatcher rather
+    than the adapter — see TokenAdapter docstring).
+    """
     token = load_token(cfg, provider) or {}
     if token.get("expires_at", 0) > time.time() + 60:
         return token
     if "refresh_token" not in token:
         raise RuntimeError(f"{provider}: no refresh_token; re-run setup")
-    r = requests.post(
-        token_url,
-        data={
-            "grant_type": "refresh_token",
-            "refresh_token": token["refresh_token"],
-            "client_id": client_id,
-            "client_secret": client_secret,
-        },
-        timeout=10,
+    adapter = _adapter_for(provider)
+    new_token = adapter.refresh_token(
+        token_url=token_url,
+        client_id=client_id,
+        client_secret=client_secret,
+        refresh_token=token["refresh_token"],
     )
-    r.raise_for_status()
-    new_token = r.json()
     new_token["expires_at"] = int(time.time()) + int(new_token.get("expires_in", 3600))
     if "refresh_token" not in new_token:
         new_token["refresh_token"] = token["refresh_token"]
