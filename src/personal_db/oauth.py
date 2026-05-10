@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import http.server
+import importlib.util
 import json
 import secrets
 import socketserver
