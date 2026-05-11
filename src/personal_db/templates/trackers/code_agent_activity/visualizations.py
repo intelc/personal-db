@@ -220,15 +220,21 @@ def render_engagement(cfg: Config) -> str:
         rows = con.execute(
             """
             WITH paired AS (
+                -- ISO-8601 timestamps sort lexicographically, so a plain
+                -- string range using datetime(±N seconds) lets SQLite use
+                -- idx_mosspath_lite_events_timestamp. Wrapping in julianday()
+                -- or datetime() would force a full scan per outer row.
                 SELECT e.agent, e.session_id,
                        m.bundle_id, m.app_name,
                        COUNT(*) AS n
                 FROM code_agent_events e
                 JOIN mosspath_lite_events m
                   ON m.action_type = 'submitted_text'
-                 AND ABS((julianday(m.timestamp) - julianday(e.timestamp)) * 86400) <= 3
+                 AND m.timestamp >= datetime(e.timestamp, '-3 seconds')
+                 AND m.timestamp <= datetime(e.timestamp, '+3 seconds')
                  AND m.bundle_id IS NOT NULL
                 WHERE e.event_type = 'prompt_submitted'
+                  AND e.timestamp >= datetime('now', '-7 days')
                 GROUP BY e.agent, e.session_id, m.bundle_id, m.app_name
             ),
             session_app AS (
@@ -297,11 +303,12 @@ def render_engagement(cfg: Config) -> str:
             LEFT JOIN session_pair_stats sps
               ON sps.agent = i.agent AND sps.session_id = i.session_id
             LEFT JOIN mosspath_lite_events m
-              ON datetime(m.timestamp) >= datetime(i.start_ts)
-             AND datetime(m.timestamp) <  datetime(i.end_ts)
+              ON m.timestamp >= i.start_ts
+             AND m.timestamp <  i.end_ts
              AND m.key_count > 0
+             AND m.timestamp >= datetime('now', '-7 days')
             WHERE i.state = 'agent_running'
-              AND datetime(i.start_ts) >= datetime('now', '-7 days')
+              AND i.start_ts >= datetime('now', '-7 days')
             GROUP BY i.agent, i.session_id, i.start_ts
             ORDER BY i.start_ts DESC
             LIMIT 50
@@ -482,8 +489,8 @@ def render_session_timeline(cfg: Config) -> str:
             FROM code_agent_intervals i
             LEFT JOIN code_agent_sessions s
               ON s.agent = i.agent AND s.session_id = i.session_id
-            WHERE datetime(i.end_ts) >= datetime(?)
-              AND datetime(i.start_ts) <= datetime(?)
+            WHERE i.end_ts >= ?
+              AND i.start_ts <= ?
             ORDER BY i.agent, i.session_id, i.start_ts
             """,
             (start.isoformat(), end.isoformat()),
@@ -499,8 +506,8 @@ def render_session_timeline(cfg: Config) -> str:
                 SELECT timestamp, key_count
                 FROM mosspath_lite_events
                 WHERE key_count > 0
-                  AND datetime(timestamp) >= datetime(?)
-                  AND datetime(timestamp) <= datetime(?)
+                  AND timestamp >= ?
+                  AND timestamp <= ?
                 """,
                 (start.isoformat(), end.isoformat()),
             ).fetchall()
