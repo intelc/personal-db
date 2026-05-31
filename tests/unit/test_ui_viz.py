@@ -528,5 +528,6 @@ def test_base_uses_vendored_ag_assets(tmp_path):
     assert "/static/vendor/ag-charts-community/13.3.0/ag-charts-community.min.js" in r.text
     assert "/static/pdb-grid.js?v=5" in r.text
     assert "/static/style.css?v=finance-app-4" in r.text
-    assert "/static/pdb-finance.js?v=5" in r.text
+    assert "/static/pdb-app-state.js?v=1" in r.text
+    assert "/static/pdb-finance.js?v=6" in r.text
     assert "cdn.jsdelivr.net" not in r.text

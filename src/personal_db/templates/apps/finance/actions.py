@@ -264,6 +264,13 @@ def _known_burn_buckets(ctx: AppContext) -> set[str]:
     return {*_BASE_BURN_BUCKETS, "exclude", *[str(row[0]) for row in rows]}
 
 
+def _burn_rate_state(ctx: AppContext) -> dict[str, Any] | None:
+    try:
+        return ctx.module("models").burn_rate(ctx)
+    except Exception:
+        return None
+
+
 def set_burn_classification(ctx: AppContext, payload: dict[str, Any]) -> dict[str, Any]:
     """Store a burn-rate override or create a reusable user rule."""
     bucket = _classification_bucket(ctx, payload)
@@ -351,7 +358,7 @@ def set_burn_classification(ctx: AppContext, payload: dict[str, Any]) -> dict[st
         con.commit()
     finally:
         con.close()
-    return {"ok": True, "scope": scope, "bucket": bucket}
+    return {"ok": True, "scope": scope, "bucket": bucket, "burn_rate": _burn_rate_state(ctx)}
 
 
 def clear_burn_override(ctx: AppContext, payload: dict[str, Any]) -> dict[str, Any]:
@@ -398,7 +405,14 @@ def create_burn_bucket(ctx: AppContext, payload: dict[str, Any]) -> dict[str, An
         con.commit()
     finally:
         con.close()
-    return {"ok": True, "bucket": bucket, "label": label, "emoji": emoji, "color": color}
+    return {
+        "ok": True,
+        "bucket": bucket,
+        "label": label,
+        "emoji": emoji,
+        "color": color,
+        "burn_rate": _burn_rate_state(ctx),
+    }
 
 
 def set_burn_bucket_color(ctx: AppContext, payload: dict[str, Any]) -> dict[str, Any]:
@@ -435,4 +449,11 @@ def set_burn_bucket_color(ctx: AppContext, payload: dict[str, Any]) -> dict[str,
         con.commit()
     finally:
         con.close()
-    return {"ok": True, "bucket": bucket, "label": label, "emoji": next_emoji, "color": color}
+    return {
+        "ok": True,
+        "bucket": bucket,
+        "label": label,
+        "emoji": next_emoji,
+        "color": color,
+        "burn_rate": _burn_rate_state(ctx),
+    }

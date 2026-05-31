@@ -67,6 +67,7 @@ def test_app_template_install_and_reinstall_preserve_extra_files(tmp_root):
     assert (dest / "app.yaml").exists()
     assert (dest / "schema.sql").exists()
     assert (dest / "queries.sql").exists()
+    assert (dest / "models.py").exists()
     extra = dest / "local_note.md"
     extra.write_text("keep me")
     (dest / "views.py").write_text("# stale\n")
@@ -122,7 +123,7 @@ def test_app_route_renders_custom_app_and_named_query(tmp_root):
                 "name": "sample",
                 "title": "Sample App",
                 "description": "test app",
-                "reads": {"tables": ["sample"]},
+                "reads": {"tables": ["sample"], "models": ["summary"]},
                 "pages": [
                     {"slug": "home", "title": "Home", "view": "render_home"},
                     {"slug": "details", "title": "Details", "view": "render_details"},
@@ -137,12 +138,19 @@ def test_app_route_renders_custom_app_and_named_query(tmp_root):
         "from personal_db.ui import components as c\n"
         "def render_home(ctx):\n"
         "    rows = ctx.query('sample_rows')\n"
+        "    query_url = ctx.query_url('sample_rows')\n"
+        "    model_url = ctx.model_url('summary')\n"
         "    return c.page('Sample Home', c.data_grid(rows, [\n"
         "        {'field': 'id', 'headerName': 'ID'},\n"
         "        {'field': 'label', 'headerName': 'Label'},\n"
-        "    ]))\n"
+        "    ]), f'<span data-query-url=\"{query_url}\" data-model-url=\"{model_url}\"></span>')\n"
         "def render_details(ctx):\n"
         "    return c.page('Details', '<p>details page</p>')\n"
+    )
+    (app_dir / "models.py").write_text(
+        "def summary(ctx, params):\n"
+        "    rows = ctx.query('sample_rows')\n"
+        "    return {'count': len(rows), 'params': params, 'rows': rows}\n"
     )
 
     client = TestClient(build_app(cfg))
@@ -154,6 +162,24 @@ def test_app_route_renders_custom_app_and_named_query(tmp_root):
     assert home.status_code == 200
     assert "Sample Home" in home.text
     assert "Hello App" in home.text
+    assert 'data-query-url="/api/apps/sample/queries/sample_rows"' in home.text
+    assert 'data-model-url="/api/apps/sample/models/summary"' in home.text
+
+    api = client.get("/api/apps/sample/queries/sample_rows")
+    assert api.status_code == 200
+    assert api.json()["rows"] == [{"id": "one", "label": "Hello App"}]
+    assert api.json()["query"] == "sample_rows"
+
+    missing_api = client.get("/api/apps/sample/queries/missing")
+    assert missing_api.status_code == 404
+
+    model = client.get("/api/apps/sample/models/summary?scope=all")
+    assert model.status_code == 200
+    assert model.json()["count"] == 1
+    assert model.json()["params"] == {"scope": "all"}
+
+    undeclared_model = client.get("/api/apps/sample/models/not_declared")
+    assert undeclared_model.status_code == 404
 
     details = client.get("/a/sample/details")
     assert details.status_code == 200
@@ -932,6 +958,8 @@ def test_bundled_finance_pages_render_with_synthetic_data(tmp_root):
     assert "🤖 AI spending" in overview.text
     assert "🗑️ Wasted" in overview.text
     assert "data-burn-rate" in overview.text
+    assert 'data-pdb-island="finance-burn-rate"' in overview.text
+    assert 'data-burn-rate-state-url="/api/apps/finance/models/burn_rate"' in overview.text
     assert 'class="burn-rate-card" data-burn-bucket="rent"' in overview.text
     assert 'class="burn-rate-card" data-burn-bucket="food"' in overview.text
     assert 'class="burn-rate-card" data-burn-bucket="health"' in overview.text
@@ -1085,6 +1113,7 @@ def test_finance_burn_inline_classification_updates_overview(tmp_root):
     )
     assert rule.status_code == 200
     assert rule.json()["bucket"] == "subscriptions"
+    assert rule.json()["burn_rate"]["bucket_counts"]["subscriptions"] >= 1
 
     bucket = client.post(
         "/api/apps/finance/actions/create_burn_bucket",
@@ -1107,6 +1136,7 @@ def test_finance_burn_inline_classification_updates_overview(tmp_root):
     )
     assert colored_bucket.status_code == 200
     assert colored_bucket.json()["color"] == "blue"
+    assert colored_bucket.json()["burn_rate"]["bucket_counts"]["pet_projects"] == 0
 
     overview = client.get("/a/finance")
     assert overview.status_code == 200

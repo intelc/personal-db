@@ -26,6 +26,7 @@ _APP_TEMPLATE_FILES = (
     "queries.sql",
     "views.py",
     "actions.py",
+    "models.py",
     "instructions.md",
 )
 
@@ -48,6 +49,7 @@ class AppPage:
 @dataclass(frozen=True)
 class AppReads:
     tables: tuple[str, ...] = ()
+    models: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -94,9 +96,21 @@ class AppContext:
             raise AppQueryError(f"unknown query: {name}")
         return run_named_query(self.cfg, sql, params)
 
+    def query_url(self, name: str) -> str:
+        _validate_identifier(name, "query")
+        return f"/api/apps/{self.manifest.name}/queries/{name}"
+
+    def model_url(self, name: str) -> str:
+        _validate_identifier(name, "model")
+        return f"/api/apps/{self.manifest.name}/models/{name}"
+
     def action_url(self, name: str) -> str:
         _validate_identifier(name, "action")
         return f"/api/apps/{self.manifest.name}/actions/{name}"
+
+    def module(self, stem: str) -> Any:
+        _validate_identifier(stem, "module")
+        return load_app_module(self.app_dir, self.manifest.name, stem)
 
 
 def _validate_identifier(value: str, label: str) -> None:
@@ -154,7 +168,10 @@ def load_app_manifest(path: Path) -> AppManifest:
         title=str(raw.get("title") or name.replace("_", " ").title()),
         description=str(raw.get("description") or ""),
         pages=tuple(pages),
-        reads=AppReads(tables=_strings(reads_raw.get("tables"), field_name="reads.tables")),
+        reads=AppReads(
+            tables=_strings(reads_raw.get("tables"), field_name="reads.tables"),
+            models=_strings(reads_raw.get("models"), field_name="reads.models"),
+        ),
         writes=AppWrites(
             tables=_strings(writes_raw.get("tables"), field_name="writes.tables"),
             actions=_strings(writes_raw.get("actions"), field_name="writes.actions"),
@@ -292,18 +309,23 @@ def run_named_query(
         con.close()
 
 
-def load_app_view(definition: AppDefinition, page: AppPage) -> Callable[[AppContext], str]:
-    path = definition.root / "views.py"
+def load_app_module(app_dir: Path, app_name: str, stem: str) -> Any:
+    path = app_dir / f"{stem}.py"
     if not path.is_file():
-        raise AppManifestError(f"app {definition.name} has no views.py")
-    modname = f"personal_db_app_{definition.name}"
+        raise AppManifestError(f"app {app_name} has no {stem}.py")
+    modname = f"personal_db_app_{app_name}_{stem}"
     sys.modules.pop(modname, None)
     spec = importlib.util.spec_from_file_location(modname, path)
     if spec is None or spec.loader is None:
-        raise AppManifestError(f"failed to load app module: {definition.name}")
+        raise AppManifestError(f"failed to load app module: {app_name}/{stem}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[modname] = module
     spec.loader.exec_module(module)  # type: ignore[union-attr]
+    return module
+
+
+def load_app_view(definition: AppDefinition, page: AppPage) -> Callable[[AppContext], str]:
+    module = load_app_module(definition.root, definition.name, "views")
     view = getattr(module, page.view, None)
     if view is None or not callable(view):
         raise AppManifestError(f"view {page.view!r} not found for app {definition.name}")

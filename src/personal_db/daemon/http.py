@@ -35,8 +35,10 @@ from fastapi.templating import Jinja2Templates
 from personal_db.apps import (
     AppContext,
     AppManifestError,
+    AppQueryError,
     apply_app_schema,
     discover_apps,
+    load_app_module,
     load_app_view,
 )
 from personal_db.config import Config
@@ -629,6 +631,68 @@ def build_app(cfg: Config) -> FastAPI:
                 return handler(cfg)
 
             return await asyncio.to_thread(_call_handler)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @app.get("/api/apps/{name}/queries/{query_name}")
+    async def app_query(name: str, query_name: str, request: Request) -> dict[str, Any]:
+        _validate_name(name)
+        _validate_name(query_name)
+        apps = _app_registry()
+        definition = apps.get(name)
+        if definition is None:
+            raise HTTPException(status_code=404, detail=f"unknown app: {name}")
+        apply_app_schema(cfg, definition.root)
+        ctx = AppContext(cfg=cfg, app_dir=definition.root, manifest=definition.manifest)
+        params = {key: value for key, value in request.query_params.items()}
+        try:
+            rows = await asyncio.to_thread(lambda: ctx.query(query_name, **params))
+        except AppQueryError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        return {"app": name, "query": query_name, "params": params, "rows": rows}
+
+    @app.get("/api/apps/{name}/models/{model}")
+    async def app_model(name: str, model: str, request: Request) -> Any:
+        import inspect
+
+        _validate_name(name)
+        _validate_name(model)
+        apps = _app_registry()
+        definition = apps.get(name)
+        if definition is None:
+            raise HTTPException(status_code=404, detail=f"unknown app: {name}")
+        if model not in definition.manifest.reads.models:
+            raise HTTPException(
+                status_code=404, detail=f"model '{model}' not declared on app '{name}'"
+            )
+        apply_app_schema(cfg, definition.root)
+        try:
+            module = load_app_module(definition.root, definition.name, "models")
+            handler = getattr(module, model, None)
+            if handler is None or not callable(handler):
+                raise HTTPException(
+                    status_code=404, detail=f"model '{model}' not found on app '{name}'"
+                )
+            ctx = AppContext(cfg=cfg, app_dir=definition.root, manifest=definition.manifest)
+            params = {key: value for key, value in request.query_params.items()}
+            signature = inspect.signature(handler)
+            if inspect.iscoroutinefunction(handler):
+                if len(signature.parameters) >= 2:
+                    return await handler(ctx, params)
+                return await handler(ctx)
+
+            def _call_handler():
+                if len(signature.parameters) >= 2:
+                    return handler(ctx, params)
+                return handler(ctx)
+
+            return await asyncio.to_thread(_call_handler)
+        except HTTPException:
+            raise
+        except AppManifestError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 

@@ -42,6 +42,7 @@
         const message = await response.text();
         throw new Error(message || `Save failed (${response.status})`);
       }
+      const actionResult = await response.json();
       const grid = form.closest('[data-pdb-grid]');
       if (params.data) {
         params.data.__burnBucket = bucket;
@@ -63,6 +64,7 @@
             oldBucket: previousBucket,
             newBucket: bucket,
             bucketLabel: bucketLabel || bucket,
+            actionResult,
           },
         })
       );

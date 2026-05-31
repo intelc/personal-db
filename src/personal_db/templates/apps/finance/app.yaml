@@ -10,6 +10,8 @@ reads:
     - finance_daily_cashflow
     - finance_daily_net_worth
     - finance_parent_draws
+  models:
+    - burn_rate
 
 writes:
   tables:

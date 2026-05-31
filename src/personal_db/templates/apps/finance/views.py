@@ -712,7 +712,9 @@ def _render_burn_rate(ctx: AppContext) -> str:
 
     return c.section(
         "Personal Burn Rate",
-        f'<div data-burn-rate>{_burn_rate_cards(ctx, by_bucket, buckets)}'
+        '<div data-burn-rate data-pdb-island="finance-burn-rate" '
+        f'data-burn-rate-state-url="{html.escape(ctx.model_url("burn_rate"), quote=True)}">'
+        f"{_burn_rate_cards(ctx, by_bucket, buckets)}"
         f"{_burn_rate_table(ctx, detail_rows, buckets)}</div>",
         subtitle=(
             "Smoothed monthly estimate from up to 180 days; table shows the last 90 days. "

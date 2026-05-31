@@ -25,6 +25,25 @@
     if (!cards.length || !grid) return;
     let activeBucket = '';
     let activeLabel = '';
+    const store =
+      window.pdbApp && typeof window.pdbApp.createStore === 'function'
+        ? window.pdbApp.createStore({ activeBucket: '', activeLabel: '', burnRate: null })
+        : null;
+
+    function setIslandState(partial) {
+      if (!store) return null;
+      return store.setState((state) => ({ ...state, ...partial }));
+    }
+
+    function burnRateState() {
+      return store ? store.getState().burnRate : null;
+    }
+
+    function activeBucketState() {
+      const state = burnRateState();
+      if (!state || !Array.isArray(state.buckets) || !activeBucket) return null;
+      return state.buckets.find((item) => item.bucket === activeBucket) || null;
+    }
 
     function displayedCount() {
       return grid.__pdbGridApi && typeof grid.__pdbGridApi.getDisplayedRowCount === 'function'
@@ -34,11 +53,40 @@
 
     function updateStatus() {
       if (!status) return;
-      const count = displayedCount();
+      const bucketState = activeBucketState();
+      const count = bucketState ? bucketState.count : displayedCount();
       const suffix = count == null ? '' : ` (${count} txns)`;
       status.textContent = activeBucket
         ? `Showing ${activeLabel || 'selected'} transactions${suffix}`
         : 'Showing all burn-rate transactions';
+    }
+
+    function applyBurnRateState(burnRate) {
+      if (!burnRate || !Array.isArray(burnRate.buckets)) return;
+      setIslandState({ burnRate });
+      burnRate.buckets.forEach((bucketState) => {
+        const card = cards.find((item) => item.dataset.burnBucket === bucketState.bucket);
+        if (!card) return;
+        const strong = card.querySelector('strong');
+        const small = card.querySelector('small');
+        if (strong && bucketState.monthly_display) strong.textContent = bucketState.monthly_display;
+        if (small) {
+          const days = burnRate.evidence_days || 90;
+          small.textContent = `smoothed / mo - ${bucketState.count || 0} txns / ${days}d`;
+        }
+      });
+      updateStatus();
+    }
+
+    async function refreshBurnRateState() {
+      if (!section.dataset.burnRateStateUrl || !window.pdbApp || !window.pdbApp.requestJson) {
+        return;
+      }
+      try {
+        applyBurnRateState(await window.pdbApp.requestJson(section.dataset.burnRateStateUrl));
+      } catch (_error) {
+        // Keep the server-rendered state if the richer state endpoint is unavailable.
+      }
     }
 
     function updateCardCount(bucket, delta) {
@@ -56,6 +104,7 @@
       const selected = bucket || '';
       activeBucket = selected;
       activeLabel = label || '';
+      setIslandState({ activeBucket, activeLabel });
       cards.forEach((card) => {
         const active = selected && card.dataset.burnBucket === selected;
         card.classList.toggle('active', Boolean(active));
@@ -88,20 +137,30 @@
     }
     grid.addEventListener('pdb-burn-classified', (event) => {
       const detail = event.detail || {};
-      if (detail.oldBucket !== detail.newBucket) {
+      const burnRate = detail.actionResult && detail.actionResult.burn_rate;
+      if (burnRate) {
+        applyBurnRateState(burnRate);
+      } else if (detail.oldBucket !== detail.newBucket) {
         updateCardCount(detail.oldBucket, -1);
         updateCardCount(detail.newBucket, 1);
+        refreshBurnRateState();
       }
       if (grid.__pdbGridApi && typeof grid.__pdbGridApi.onFilterChanged === 'function') {
         grid.__pdbGridApi.onFilterChanged();
       }
       updateStatus();
     });
+    refreshBurnRateState();
   }
 
   function initAll() {
     document.querySelectorAll('[data-finance-dashboard]').forEach(initDashboard);
-    document.querySelectorAll('[data-burn-rate]').forEach(initBurnRate);
+    if (window.pdbApp && typeof window.pdbApp.registerIsland === 'function') {
+      window.pdbApp.registerIsland('finance-burn-rate', initBurnRate);
+      window.pdbApp.mountIslands();
+    } else {
+      document.querySelectorAll('[data-burn-rate]').forEach(initBurnRate);
+    }
   }
 
   if (document.readyState === 'loading') {
