@@ -304,6 +304,8 @@ def build_app(cfg: Config) -> FastAPI:
                 redirect_path=step.redirect_path,
                 scopes=step.scopes,
                 success_redirect=success_redirect,
+                scheme=step.scheme,
+                scope_separator=step.scope_separator,
             )
         except OSError as e:
             msg = f"could not bind callback port {step.redirect_port}: {e}"
@@ -458,8 +460,9 @@ def build_app(cfg: Config) -> FastAPI:
         return {"ok": True, "tracker": tracker, "from": start, "to": end}
 
     @app.post("/api/trackers/{name}/actions/{action}")
-    def tracker_action(name: str, action: str) -> dict[str, Any]:
+    async def tracker_action(name: str, action: str, request: Request) -> dict[str, Any]:
         import importlib.util
+        import inspect
         import sys
 
         _validate_name(name)
@@ -490,8 +493,23 @@ def build_app(cfg: Config) -> FastAPI:
             raise HTTPException(status_code=404, detail=f"action '{action}' not found on tracker '{name}'")
 
         try:
-            return handler(cfg)
-        except Exception as exc:  # noqa: BLE001 — surface to client as 500
+            params = inspect.signature(handler).parameters
+            payload: dict[str, Any] = {}
+            if len(params) >= 2 and request.headers.get("content-length", "0") != "0":
+                payload = await request.json()
+
+            if inspect.iscoroutinefunction(handler):
+                if len(params) >= 2:
+                    return await handler(cfg, payload)
+                return await handler(cfg)
+
+            def _call_handler():
+                if len(params) >= 2:
+                    return handler(cfg, payload)
+                return handler(cfg)
+
+            return await asyncio.to_thread(_call_handler)
+        except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return app

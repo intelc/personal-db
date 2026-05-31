@@ -61,6 +61,14 @@ class OAuthStep(BaseModel):
         None  # None → OS picks; set when provider requires exact pre-registered URI
     )
     redirect_host: str = "127.0.0.1"  # provider may require "localhost" in the URI string
+    # Some providers (notably Instagram Login) require an HTTPS redirect URI
+    # even for localhost. When scheme=="https" the callback server wraps its
+    # socket in a self-signed cert auto-generated under state_dir; the user
+    # has to click through the browser's cert warning once per browser.
+    scheme: Literal["http", "https"] = "http"
+    # RFC 6749 says scopes are space-separated, but Instagram Login wants
+    # commas. Adapters that need a non-standard separator set this.
+    scope_separator: str = " "
 
 
 class FdaCheckStep(BaseModel):
@@ -97,6 +105,16 @@ class NoteStep(BaseModel):
     body: str
 
 
+class TrackerActionStep(BaseModel):
+    type: Literal["action"]
+    title: str
+    action: str
+    button_label: str
+    description: str | None = None
+    status_action: str | None = None
+    status_label: str | None = None
+
+
 SetupStep = Annotated[
     EnvVarStep
     | OAuthStep
@@ -105,7 +123,8 @@ SetupStep = Annotated[
     | CommandTestStep
     | InstallHooksStep
     | VerifyHooksStep
-    | NoteStep,
+    | NoteStep
+    | TrackerActionStep,
     Field(discriminator="type"),
 ]
 

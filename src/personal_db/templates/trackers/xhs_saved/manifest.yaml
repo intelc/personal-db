@@ -1,0 +1,97 @@
+name: xhs_saved
+description: Xiaohongshu / RedNote saved posts collected from a logged-in Chrome session
+permission_type: manual
+setup_steps:
+  - type: env_var
+    name: XHS_SAVED_PROFILE_URL
+    prompt: "Your Xiaohongshu profile URL; the tracker opens it and clicks 收藏"
+    optional: true
+  - type: env_var
+    name: XHS_SAVED_USE_ACTIVE_TAB
+    prompt: "Set to 1 to collect from the current Chrome tab instead of opening XHS_SAVED_PROFILE_URL"
+    optional: true
+  - type: env_var
+    name: XHS_CHROME_PROFILE
+    prompt: "Optional Chrome profile directory name for cookies (default Default)"
+    optional: true
+  - type: env_var
+    name: XHS_SAVED_MAX_SCROLLS
+    prompt: "Optional saved-tab scroll passes per sync (default 240)"
+    optional: true
+  - type: env_var
+    name: XHS_SAVED_OVERLAP_STOP
+    prompt: "Optional consecutive already-known saved posts before normal sync stops (default 25)"
+    optional: true
+  - type: env_var
+    name: XHS_SAVED_DEEP_BACKFILL
+    prompt: "Set to 1 to ignore overlap stopping and scroll as deeply as possible"
+    optional: true
+  - type: env_var
+    name: XHS_SAVED_DETAIL_LIMIT
+    prompt: "Optional max note detail pages to fetch per sync (default 50)"
+    optional: true
+  - type: instructions
+    text: |
+      This tracker uses your real Google Chrome session as the source of truth.
+      Before syncing, sign in to Xiaohongshu / RedNote in Chrome. Set
+      XHS_SAVED_PROFILE_URL to your profile page, or open the desired profile
+      tab in Chrome and set XHS_SAVED_USE_ACTIVE_TAB=1.
+
+      The tracker clicks the 收藏 tab in Chrome, scrolls it to discover saved
+      note links, deduplicates by note id, and fetches note detail pages with
+      Chrome cookies to store title, author, description, media URLs, and
+      public like/collect/comment/share counts. It intentionally avoids the raw
+      favorites API because that endpoint frequently returns account-risk
+      errors even when Chrome is authenticated.
+
+      Normal sync is incremental: after it sees enough consecutive already-known
+      saved notes, it stops scrolling. Use `personal-db backfill xhs_saved` or
+      set XHS_SAVED_DEEP_BACKFILL=1 for a one-off deep pass.
+schedule:
+  every: 12h
+time_column: saved_first_seen_at
+granularity: event
+schema:
+  tables:
+    xhs_saved_collections:
+      columns:
+        collected_at:      {type: TEXT, semantic: "ISO-8601 time when the browser collection finished"}
+        source_url:        {type: TEXT, semantic: "Profile or active tab URL used for collection"}
+        source_title:      {type: TEXT, semantic: "Browser page title at collection time"}
+        clicked_saved_tab: {type: INTEGER, semantic: "1 when the 收藏 tab click was detected"}
+        note_count:        {type: INTEGER, semantic: "Number of unique saved note links discovered"}
+        raw_json:          {type: TEXT, semantic: "Compact raw collection metadata, excluding cookies"}
+    xhs_saved_posts:
+      columns:
+        note_id:             {type: TEXT, semantic: "Xiaohongshu note id, primary key"}
+        source_url:          {type: TEXT, semantic: "Latest saved-note URL, usually including xsec parameters"}
+        first_seen_url:      {type: TEXT, semantic: "First saved-note URL observed by personal_db"}
+        xsec_token:          {type: TEXT, semantic: "xsec_token query parameter from the saved link when present"}
+        xsec_source:         {type: TEXT, semantic: "xsec_source query parameter from the saved link when present"}
+        title:               {type: TEXT, semantic: "Note title or display title"}
+        description:         {type: TEXT, semantic: "Note body/description text"}
+        author_user_id:      {type: TEXT, semantic: "Author user id when available"}
+        author_nickname:     {type: TEXT, semantic: "Author display nickname at latest fetch"}
+        note_type:           {type: TEXT, semantic: "Normal, video, or other platform note type when available"}
+        posted_at:           {type: TEXT, semantic: "ISO-8601 note publish time when available"}
+        thumbnail_url:       {type: TEXT, semantic: "First image/thumbnail URL when available"}
+        image_urls_json:     {type: TEXT, semantic: "JSON array of image URLs from note detail"}
+        video_urls_json:     {type: TEXT, semantic: "JSON array of video URLs from note detail"}
+        saved_first_seen_at: {type: TEXT, semantic: "ISO-8601 when personal_db first discovered this saved post"}
+        saved_last_seen_at:  {type: TEXT, semantic: "ISO-8601 when personal_db last saw this post in 收藏"}
+        latest_seen_rank:    {type: INTEGER, semantic: "Most recent observed position in the saved grid; 1 is newest/first"}
+        last_fetched_at:     {type: TEXT, semantic: "ISO-8601 when note detail was last refreshed"}
+        fetch_status:        {type: TEXT, semantic: "ok, pending, or error for the latest detail fetch"}
+        fetch_error:         {type: TEXT, semantic: "Latest detail fetch error message, if any"}
+        raw_json:            {type: TEXT, semantic: "Compact raw note/detail JSON for parser compatibility"}
+    xhs_saved_post_snapshots:
+      columns:
+        note_id:         {type: TEXT, semantic: "FK to xhs_saved_posts.note_id"}
+        snapshot_at:     {type: TEXT, semantic: "ISO-8601 of when this public-count snapshot was taken"}
+        liked_count:     {type: INTEGER, semantic: "Public like count"}
+        collected_count: {type: INTEGER, semantic: "Public collect/save count"}
+        comment_count:   {type: INTEGER, semantic: "Public comment count"}
+        share_count:     {type: INTEGER, semantic: "Public share count when exposed"}
+        raw_json:        {type: TEXT, semantic: "Compact raw interaction JSON"}
+related_entities: []
+local_only: false

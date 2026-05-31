@@ -151,6 +151,20 @@ def test_refresh_button_renders_on_tracker_page(tmp_path):
     assert "↻ refresh" in r.text
 
 
+def test_setup_button_renders_on_tracker_and_viz_pages(tmp_path):
+    cfg = _setup(tmp_path, "daily_time_accounting")
+    client = TestClient(build_app(cfg))
+
+    tracker = client.get("/t/daily_time_accounting")
+    viz = client.get("/v/daily_time_accounting:today_stack")
+
+    assert tracker.status_code == 200
+    assert viz.status_code == 200
+    assert 'href="/setup/daily_time_accounting"' in tracker.text
+    assert 'href="/setup/daily_time_accounting"' in viz.text
+    assert "setup" in tracker.text
+
+
 def test_refresh_button_skipped_for_builtin_viz(tmp_path):
     """The health viz lives under _builtin — no underlying tracker, no refresh button."""
     cfg = _setup(tmp_path, "daily_time_accounting")
@@ -159,6 +173,7 @@ def test_refresh_button_skipped_for_builtin_viz(tmp_path):
     assert r.status_code == 200
     # Health is built-in; no sync to run.
     assert "/sync/_builtin" not in r.text
+    assert "/setup/_builtin" not in r.text
 
 
 def test_refresh_endpoint_runs_sync_and_redirects(tmp_path):
@@ -166,8 +181,8 @@ def test_refresh_endpoint_runs_sync_and_redirects(tmp_path):
     client = TestClient(build_app(cfg))
     # Track that sync_one was called by checking the framework's last_run.json
     # gets updated after the POST.
-    from datetime import datetime, timezone
-    before = datetime.now(timezone.utc).isoformat()
+    from datetime import UTC, datetime
+    before = datetime.now(UTC).isoformat()
     r = client.post(
         "/sync/daily_time_accounting",
         headers={"referer": "/t/daily_time_accounting"},
@@ -254,7 +269,7 @@ def test_every_bundled_tracker_viz_renders_without_error(tmp_path):
     for slug, viz in reg.items():
         try:
             html = viz.render(cfg)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             failures.append(f"{slug}: {type(e).__name__}: {e}")
             continue
         assert isinstance(html, str), f"{slug} returned non-string"
@@ -339,6 +354,9 @@ def test_synthesized_viz_renders_recent_rows(tmp_path):
     assert html.index("abc123") < html.index("def456")
     # Header line shows count and time range
     assert "2 rows" in html
+    # Generic recent tables render through the shared AG Grid bridge.
+    assert "data-pdb-grid" in html
+    assert "data-pdb-grid-options" in html
 
 
 def test_synthesized_viz_handles_empty_table(tmp_path):
@@ -365,9 +383,9 @@ def test_health_viz_links_tracker_names(tmp_path):
     # Need at least one entry in last_run.json so health renders rows
     state = cfg.state_dir
     state.mkdir(parents=True, exist_ok=True)
-    from datetime import datetime, timezone
+    from datetime import UTC, datetime
     (state / "last_run.json").write_text(
-        f'{{"daily_time_accounting": "{datetime.now(timezone.utc).isoformat()}"}}'
+        f'{{"daily_time_accounting": "{datetime.now(UTC).isoformat()}"}}'
     )
     client = TestClient(build_app(cfg))
     r = client.get("/v/_builtin:health")
@@ -394,3 +412,98 @@ def test_render_today_stack_returns_html(tmp_path):
     html = viz.render(cfg)
     # Today is dynamic; just check the data shows up if it's actually today
     assert "stack" in html or "no data" in html
+
+
+def test_aggrid_table_marks_safe_html_columns():
+    from personal_db.ui.aggrid import table_grid
+
+    class SafeHtml(str):
+        pass
+
+    html = table_grid(
+        [("plain", SafeHtml("<span>badge</span>"))],
+        ["Name", "Badge"],
+        html_columns={1},
+    )
+
+    assert "data-pdb-grid" in html
+    assert '"cellRenderer": "html"' in html
+    assert "<\\/span>" in html
+
+
+def test_agcharts_line_renders_structured_options():
+    from personal_db.ui.agcharts import line_chart
+
+    html = line_chart(
+        [("01-01", 10.0), ("01-02", 12.0)],
+        color="#111111",
+        value_attr="data-usd",
+        legend_position="right",
+        month_markers=True,
+    )
+
+    assert "data-pdb-chart" in html
+    assert "data-pdb-chart-options" in html
+    assert '"type": "line"' in html
+    assert '"axes": {"bottom": {"type": "category"}, "left": {"type": "number"}}' in html
+    assert '"legend": {"enabled": false, "position": "right"}' in html
+    assert '"pdbZoom": {"enabled": true, "windows": [365, 180, 90, 30, 7]}' in html
+    assert '"pdbScale": {"enabled": true, "mode": "auto"' in html
+    assert '"pdbTimeMarkers": {"enabled": true, "monthBoundaries": true, "xKey": "x"}' in html
+
+
+def test_agcharts_gain_loss_area_can_enable_time_grouping():
+    from personal_db.ui.agcharts import gain_loss_area_chart
+
+    html = gain_loss_area_chart(
+        ["05-23", "05-24", "05-25"],
+        [10.0, -12.0, 3.0],
+        date_values=["2026-05-23", "2026-05-24", "2026-05-25"],
+        aggregation=True,
+        aggregation_default_mode="week",
+        scale_default_mode="full",
+        month_markers=True,
+        value_attr="data-usd",
+    )
+
+    assert '"date": "2026-05-23"' in html
+    assert '"pdbAggregation": {"enabled": true' in html
+    assert '"dateKey": "date"' in html
+    assert '"modes": ["day", "week", "month"]' in html
+    assert '"defaultMode": "week"' in html
+    assert '"sumKeys": ["net"]' in html
+    assert '"defaultMode": "full"' in html
+    assert '"valueFormat": "usd"' in html
+
+
+def test_agcharts_gain_loss_area_defaults_to_zoom_window():
+    from personal_db.ui.agcharts import gain_loss_area_chart
+
+    html = gain_loss_area_chart(
+        ["05-23", "05-24", "05-25"],
+        [10.0, -12.0, 3.0],
+        value_attr="data-usd",
+        zoom_default_window=7,
+        month_markers=True,
+    )
+
+    assert '"type": "area"' in html
+    assert '"yKey": "gain"' in html
+    assert '"yKey": "loss"' in html
+    assert '"type": "line"' in html
+    assert '"yKey": "net"' in html
+    assert '"legend": {"enabled": false}' in html
+    assert '"defaultWindow": 7' in html
+    assert '"pdbTimeMarkers": {"enabled": true, "monthBoundaries": true, "xKey": "x"}' in html
+
+
+def test_base_uses_vendored_ag_assets(tmp_path):
+    cfg = _setup(tmp_path)
+    client = TestClient(build_app(cfg))
+    r = client.get("/")
+
+    assert r.status_code == 200
+    assert "/static/vendor/ag-grid-community/35.3.0/ag-grid-community.min.js" in r.text
+    assert "/static/vendor/ag-charts-community/13.3.0/ag-charts-community.min.js" in r.text
+    assert "/static/pdb-finance.js?v=1" in r.text
+    assert "cdn.jsdelivr.net" not in r.text

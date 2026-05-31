@@ -25,6 +25,7 @@ from personal_db.manifest import (
     FdaCheckStep,
     InstructionsStep,
     OAuthStep,
+    TrackerActionStep,
 )
 from personal_db.oauth import (
     OAuthFlow,
@@ -155,10 +156,15 @@ def handle_oauth(step: OAuthStep, ctx: WizardContext) -> StepResult:
     # Register the tracker's TokenAdapter (if any) before any token op.
     ensure_adapter_from_manifest(ctx.tracker_dir, step)
     state = secrets.token_urlsafe(16)
-    flow = OAuthFlow(state=state, port=step.redirect_port or 0)
+    flow = OAuthFlow(
+        state=state,
+        port=step.redirect_port or 0,
+        scheme=step.scheme,
+        state_dir=ctx.cfg.state_dir if step.scheme == "https" else None,
+    )
     flow.start()
     try:
-        redirect_uri = f"http://{step.redirect_host}:{flow.port}{step.redirect_path}"
+        redirect_uri = f"{step.scheme}://{step.redirect_host}:{flow.port}{step.redirect_path}"
         params = {
             "response_type": "code",
             "client_id": client_id,
@@ -166,7 +172,7 @@ def handle_oauth(step: OAuthStep, ctx: WizardContext) -> StepResult:
             "state": state,
         }
         if step.scopes:
-            params["scope"] = " ".join(step.scopes)
+            params["scope"] = step.scope_separator.join(step.scopes)
         auth_url = step.auth_url + "?" + urllib.parse.urlencode(params)
         print(f"\n  Opening browser to authorize {step.provider}…")
         print(f"  If it doesn't open, paste this URL manually:\n    {auth_url}\n")
@@ -186,3 +192,11 @@ def handle_oauth(step: OAuthStep, ctx: WizardContext) -> StepResult:
         return Ok(f"OAuth completed for {step.provider}")
     finally:
         flow.shutdown()
+
+
+def handle_tracker_action(step: TrackerActionStep, ctx: WizardContext) -> StepResult:
+    print(
+        f"\n  {step.title} is available from the browser setup page "
+        f"as a `{step.button_label}` button."
+    )
+    return Ok("available in browser setup")

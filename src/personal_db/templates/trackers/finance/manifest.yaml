@@ -1,0 +1,164 @@
+name: finance
+description: Combined downstream finance model from Plaid and selected Monarch exports
+permission_type: none
+setup_steps:
+  - type: instructions
+    text: |
+      Finance is a downstream tracker. It does not store bank credentials or
+      connect to any provider directly.
+
+      Sync source trackers first, then sync this tracker to rebuild combined
+      accounts, normalized transactions, holdings, cashflow, net worth, and
+      parent-draw views from source-owned finance export views.
+
+      Finance discovers views named `*_finance_accounts_export`,
+      `*_finance_transactions_export`, `*_finance_holdings_export`, and
+      optional `*_finance_holding_snapshots_export`.
+      Each source owns its setup/export choices. Owner drives behavior:
+      `self` accounts are included in net worth, while `parents` accounts are
+      excluded from net worth and count positive outflows as parent draw.
+schedule:
+  every: 4h
+time_column: date
+granularity: event
+schema:
+  tables:
+    finance_accounts:
+      columns:
+        finance_account_id:   {type: TEXT, semantic: "Synthetic source-prefixed account id"}
+        source:               {type: TEXT, semantic: "Source tracker, such as plaid or monarch"}
+        source_account_id:    {type: TEXT, semantic: "Account id in the source tracker"}
+        owner:                {type: TEXT, semantic: "Owner label, usually self or parents"}
+        account_group:        {type: TEXT, semantic: "cash, credit_card, investments, or other"}
+        institution_name:     {type: TEXT, semantic: "Financial institution"}
+        account_name:         {type: TEXT, semantic: "Account display name"}
+        mask:                 {type: TEXT, semantic: "Masked account suffix"}
+        type:                 {type: TEXT, semantic: "Source account type"}
+        subtype:              {type: TEXT, semantic: "Source account subtype"}
+        current_balance:      {type: REAL, semantic: "Current balance in source sign convention"}
+        available_balance:    {type: REAL, semantic: "Available balance when provided"}
+        iso_currency_code:    {type: TEXT, semantic: "ISO currency code"}
+        include_in_net_worth: {type: INTEGER, semantic: "1 if this account contributes to personal net worth"}
+        parent_draw_source:   {type: INTEGER, semantic: "1 if outflows count as parent draw"}
+        as_of:                {type: TEXT, semantic: "Timestamp of the source balance"}
+        raw_json:             {type: TEXT, semantic: "Compact source-row JSON"}
+    finance_transactions:
+      columns:
+        finance_transaction_id: {type: TEXT, semantic: "Synthetic source-prefixed transaction id"}
+        source:                 {type: TEXT, semantic: "Source tracker, such as plaid or monarch"}
+        source_transaction_id:  {type: TEXT, semantic: "Transaction id in the source tracker"}
+        finance_account_id:     {type: TEXT, semantic: "Synthetic source-prefixed account id"}
+        source_account_id:      {type: TEXT, semantic: "Account id in the source tracker"}
+        date:                   {type: TEXT, semantic: "Posted date YYYY-MM-DD"}
+        name:                   {type: TEXT, semantic: "Transaction name"}
+        merchant_name:          {type: TEXT, semantic: "Merchant display name"}
+        amount:                 {type: REAL, semantic: "Normalized amount; positive is outflow, negative is inflow"}
+        source_amount:          {type: REAL, semantic: "Original source amount"}
+        pending:                {type: INTEGER, semantic: "1 if pending"}
+        category:               {type: TEXT, semantic: "Source category label"}
+        owner:                  {type: TEXT, semantic: "Owner label from account settings"}
+        account_group:          {type: TEXT, semantic: "Account group from account settings"}
+        is_credit_card_payment: {type: INTEGER, semantic: "1 if excluded as a credit-card payment"}
+        is_internal_transfer:   {type: INTEGER, semantic: "1 if excluded as an internal transfer"}
+        parent_draw:            {type: REAL, semantic: "Outflow from parent-managed account"}
+        raw_json:               {type: TEXT, semantic: "Compact source-row JSON"}
+    finance_holdings:
+      columns:
+        finance_holding_id: {type: TEXT, semantic: "Synthetic source-prefixed holding id"}
+        source:             {type: TEXT, semantic: "Source tracker"}
+        source_holding_id:  {type: TEXT, semantic: "Holding id in the source tracker"}
+        finance_account_id: {type: TEXT, semantic: "Synthetic source-prefixed account id"}
+        source_account_id:  {type: TEXT, semantic: "Account id in the source tracker"}
+        owner:              {type: TEXT, semantic: "Owner label from exported account"}
+        account_group:      {type: TEXT, semantic: "Account group from exported account"}
+        institution_name:   {type: TEXT, semantic: "Financial institution"}
+        account_name:       {type: TEXT, semantic: "Account display name"}
+        security_id:        {type: TEXT, semantic: "Security id in the source tracker"}
+        security_name:      {type: TEXT, semantic: "Security display name"}
+        ticker:             {type: TEXT, semantic: "Ticker symbol, if present"}
+        type:               {type: TEXT, semantic: "Security or holding type"}
+        quantity:           {type: REAL, semantic: "Quantity held"}
+        cost_basis:         {type: REAL, semantic: "Cost basis, if provided"}
+        price:              {type: REAL, semantic: "Latest source price"}
+        value:              {type: REAL, semantic: "Holding market value"}
+        as_of:              {type: TEXT, semantic: "Source holding timestamp"}
+        raw_json:           {type: TEXT, semantic: "Compact source-row JSON"}
+    finance_holding_snapshots:
+      columns:
+        finance_holding_snapshot_id: {type: TEXT, semantic: "Synthetic source-prefixed holding snapshot id"}
+        date:                        {type: TEXT, semantic: "Snapshot date YYYY-MM-DD"}
+        source:                      {type: TEXT, semantic: "Source tracker"}
+        source_holding_snapshot_id:  {type: TEXT, semantic: "Holding snapshot id in the source tracker"}
+        finance_holding_id:          {type: TEXT, semantic: "Synthetic source-prefixed holding id"}
+        source_holding_id:           {type: TEXT, semantic: "Holding id in the source tracker"}
+        finance_account_id:          {type: TEXT, semantic: "Synthetic source-prefixed account id"}
+        source_account_id:           {type: TEXT, semantic: "Account id in the source tracker"}
+        owner:                       {type: TEXT, semantic: "Owner label from exported account"}
+        account_group:               {type: TEXT, semantic: "Account group from exported account"}
+        institution_name:            {type: TEXT, semantic: "Financial institution"}
+        account_name:                {type: TEXT, semantic: "Account display name"}
+        security_id:                 {type: TEXT, semantic: "Security id in the source tracker"}
+        security_name:               {type: TEXT, semantic: "Security display name"}
+        ticker:                      {type: TEXT, semantic: "Ticker symbol, if present"}
+        type:                        {type: TEXT, semantic: "Security or holding type"}
+        quantity:                    {type: REAL, semantic: "Quantity held"}
+        cost_basis:                  {type: REAL, semantic: "Cost basis, if provided"}
+        price:                       {type: REAL, semantic: "Source price"}
+        value:                       {type: REAL, semantic: "Holding market value"}
+        as_of:                       {type: TEXT, semantic: "Source holding timestamp"}
+        raw_json:                    {type: TEXT, semantic: "Compact source-row JSON"}
+    finance_account_snapshots:
+      columns:
+        snapshot_id:          {type: TEXT, semantic: "Synthetic date/account snapshot id"}
+        date:                 {type: TEXT, semantic: "Snapshot date YYYY-MM-DD"}
+        finance_account_id:   {type: TEXT, semantic: "Synthetic source-prefixed account id"}
+        source:               {type: TEXT, semantic: "Source tracker"}
+        source_account_id:    {type: TEXT, semantic: "Source account id"}
+        owner:                {type: TEXT, semantic: "Owner label"}
+        account_group:        {type: TEXT, semantic: "Account group"}
+        institution_name:     {type: TEXT, semantic: "Financial institution"}
+        account_name:         {type: TEXT, semantic: "Account display name"}
+        balance:              {type: REAL, semantic: "Source balance"}
+        net_worth_value:      {type: REAL, semantic: "Signed contribution to personal net worth"}
+        debt_value:           {type: REAL, semantic: "Positive liability value"}
+        iso_currency_code:    {type: TEXT, semantic: "ISO currency code"}
+        include_in_net_worth: {type: INTEGER, semantic: "1 if included in net worth"}
+        as_of:                {type: TEXT, semantic: "Timestamp of the source balance"}
+    finance_daily_cashflow:
+      columns:
+        date:                 {type: TEXT, semantic: "Transaction date"}
+        owner:                {type: TEXT, semantic: "Owner label or all"}
+        income:               {type: REAL, semantic: "Income excluding card payments and internal transfers"}
+        spending:             {type: REAL, semantic: "Spending excluding card payments and internal transfers"}
+        net:                  {type: REAL, semantic: "Income minus spending"}
+        parent_draw:          {type: REAL, semantic: "Parent-managed outflows"}
+        credit_card_payments: {type: REAL, semantic: "Excluded card payments"}
+        internal_transfers:   {type: REAL, semantic: "Excluded internal transfers"}
+        txn_count:            {type: INTEGER, semantic: "Included transaction count"}
+    finance_daily_net_worth:
+      columns:
+        date:             {type: TEXT, semantic: "Snapshot date"}
+        owner:            {type: TEXT, semantic: "Owner label or all"}
+        cash:             {type: REAL, semantic: "Cash/checking net worth"}
+        investments:      {type: REAL, semantic: "Investment net worth"}
+        credit_card_debt: {type: REAL, semantic: "Credit-card liabilities"}
+        other:            {type: REAL, semantic: "Other included net worth"}
+        assets:           {type: REAL, semantic: "Positive included net worth"}
+        debts:            {type: REAL, semantic: "Negative included net worth"}
+        net_worth:        {type: REAL, semantic: "Assets minus debts"}
+    finance_parent_draws:
+      columns:
+        finance_transaction_id: {type: TEXT, semantic: "Synthetic source-prefixed transaction id"}
+        source:                 {type: TEXT, semantic: "Source tracker"}
+        source_transaction_id:  {type: TEXT, semantic: "Source transaction id"}
+        date:                   {type: TEXT, semantic: "Transaction date"}
+        owner:                  {type: TEXT, semantic: "Owner label"}
+        finance_account_id:     {type: TEXT, semantic: "Synthetic source-prefixed account id"}
+        source_account_id:      {type: TEXT, semantic: "Source account id"}
+        institution:            {type: TEXT, semantic: "Financial institution"}
+        account_name:           {type: TEXT, semantic: "Account display name"}
+        merchant_name:          {type: TEXT, semantic: "Merchant display name"}
+        name:                   {type: TEXT, semantic: "Transaction name"}
+        amount:                 {type: REAL, semantic: "Parent-draw outflow amount"}
+        category:               {type: TEXT, semantic: "Source category"}
+related_entities: []

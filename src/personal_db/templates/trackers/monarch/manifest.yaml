@@ -1,0 +1,173 @@
+name: monarch
+description: Monarch Money accounts, transactions, balances, holdings, and selected finance exports
+permission_type: api_key
+setup_steps:
+  - type: instructions
+    text: |
+      This tracker uses a small vendored read-only client against Monarch
+      Money's private API. Login creates a local session token at:
+
+        <root>/state/monarch/session.json
+
+      Use the setup page to:
+
+        1. Review these instructions.
+        2. Save MONARCH_EMAIL.
+        3. Save MONARCH_PASSWORD.
+        4. Choose the transaction history window.
+        5. Save MONARCH_TOTP_SECRET if Monarch requires MFA.
+        6. Click "Login to Monarch".
+        7. Run sync and choose which Monarch accounts should be included in finance views.
+
+      Monarch data remains in `monarch_*` source tables. Account ownership and
+      group labels are stored in `monarch_account_labels`; account export
+      choices are stored in `monarch_account_exports`. The setup page controls
+      both, and neither writes into Plaid tables.
+
+      Monarch exposes source-owned finance export views for the downstream
+      finance tracker:
+
+        monarch_finance_accounts_export
+        monarch_finance_transactions_export
+        monarch_finance_holdings_export
+
+      Those views normalize selected accounts, Monarch transaction signs,
+      card-payment flags, and internal-transfer flags without writing into
+      finance tables.
+  - type: env_var
+    name: MONARCH_EMAIL
+    prompt: "Monarch Money email"
+    secret: true
+  - type: env_var
+    name: MONARCH_PASSWORD
+    prompt: "Monarch Money password"
+    secret: true
+  - type: env_var
+    name: MONARCH_TRANSACTIONS_DAYS
+    prompt: "Transaction history days to sync (press Enter to use 730)"
+    optional: true
+  - type: env_var
+    name: MONARCH_TOTP_SECRET
+    prompt: "Monarch TOTP secret key for MFA (optional; not the one-time 6-digit code)"
+    secret: true
+    optional: true
+  - type: action
+    title: Monarch login
+    description: "Log in using saved MONARCH_EMAIL and MONARCH_PASSWORD. If MONARCH_TOTP_SECRET is set, personal_db generates the current MFA code locally."
+    action: login
+    button_label: "Login to Monarch"
+    status_action: login_status
+    status_label: "Session"
+schedule:
+  every: 4h
+time_column: date
+granularity: event
+schema:
+  tables:
+    monarch_accounts:
+      columns:
+        account_id:                    {type: TEXT, semantic: "Monarch account id, primary key"}
+        display_name:                  {type: TEXT, semantic: "Account display name"}
+        mask:                          {type: TEXT, semantic: "Masked account suffix, if present"}
+        type_name:                     {type: TEXT, semantic: "Monarch account type name"}
+        type_display:                  {type: TEXT, semantic: "Monarch account type display label"}
+        subtype_name:                  {type: TEXT, semantic: "Monarch account subtype name"}
+        subtype_display:               {type: TEXT, semantic: "Monarch account subtype display label"}
+        institution_id:                {type: TEXT, semantic: "Monarch institution id, if present"}
+        institution_name:              {type: TEXT, semantic: "Institution display name, if present"}
+        credential_id:                 {type: TEXT, semantic: "Monarch credential id, if present"}
+        data_provider:                 {type: TEXT, semantic: "Data provider used by Monarch"}
+        data_provider_account_id:      {type: TEXT, semantic: "Provider account id inside Monarch"}
+        current_balance:               {type: REAL, semantic: "Current balance from Monarch"}
+        display_balance:               {type: REAL, semantic: "Display balance from Monarch"}
+        include_in_net_worth:          {type: INTEGER, semantic: "Monarch account setting"}
+        include_balance_in_net_worth:  {type: INTEGER, semantic: "Monarch balance setting"}
+        hide_from_list:                {type: INTEGER, semantic: "Monarch hide-from-list setting"}
+        hide_transactions_from_reports: {type: INTEGER, semantic: "Monarch hide-transactions setting"}
+        is_hidden:                     {type: INTEGER, semantic: "1 if hidden in Monarch"}
+        is_asset:                      {type: INTEGER, semantic: "1 if Monarch treats this as an asset"}
+        is_manual:                     {type: INTEGER, semantic: "1 if manually tracked in Monarch"}
+        sync_disabled:                 {type: INTEGER, semantic: "1 if sync is disabled in Monarch"}
+        transactions_count:            {type: INTEGER, semantic: "Monarch transaction count"}
+        holdings_count:                {type: INTEGER, semantic: "Monarch holdings count"}
+        display_last_updated_at:       {type: TEXT, semantic: "Monarch last-updated timestamp"}
+        updated_at:                    {type: TEXT, semantic: "Local sync timestamp"}
+        raw_json:                      {type: TEXT, semantic: "Compact raw account JSON"}
+    monarch_transactions:
+      columns:
+        transaction_id:     {type: TEXT, semantic: "Monarch transaction id, primary key"}
+        account_id:         {type: TEXT, semantic: "Monarch account id"}
+        account_name:       {type: TEXT, semantic: "Account display name from transaction payload"}
+        date:               {type: TEXT, semantic: "Transaction date YYYY-MM-DD"}
+        amount:             {type: REAL, semantic: "Monarch amount"}
+        pending:            {type: INTEGER, semantic: "1 if pending"}
+        merchant_id:        {type: TEXT, semantic: "Merchant id, if present"}
+        merchant_name:      {type: TEXT, semantic: "Merchant display name, if present"}
+        category_id:        {type: TEXT, semantic: "Monarch category id, if present"}
+        category_name:      {type: TEXT, semantic: "Monarch category display name, if present"}
+        hide_from_reports:  {type: INTEGER, semantic: "1 if hidden from reports"}
+        needs_review:       {type: INTEGER, semantic: "1 if marked needs review"}
+        review_status:      {type: TEXT, semantic: "Monarch review status"}
+        is_recurring:       {type: INTEGER, semantic: "1 if recurring"}
+        is_split:           {type: INTEGER, semantic: "1 if split"}
+        notes:              {type: TEXT, semantic: "Transaction notes"}
+        plaid_name:         {type: TEXT, semantic: "Plaid/source transaction name stored by Monarch"}
+        created_at:         {type: TEXT, semantic: "Monarch created timestamp"}
+        updated_at:         {type: TEXT, semantic: "Monarch updated timestamp"}
+        raw_json:           {type: TEXT, semantic: "Compact raw transaction JSON"}
+    monarch_account_balances:
+      columns:
+        balance_id: {type: TEXT, semantic: "Synthetic id account_id:date, primary key"}
+        account_id: {type: TEXT, semantic: "Monarch account id"}
+        date:       {type: TEXT, semantic: "Balance date YYYY-MM-DD"}
+        balance:    {type: REAL, semantic: "Account balance on date"}
+        updated_at: {type: TEXT, semantic: "Local sync timestamp"}
+    monarch_holdings:
+      columns:
+        holding_id:       {type: TEXT, semantic: "Synthetic holding id, primary key"}
+        account_id:       {type: TEXT, semantic: "Monarch investment account id"}
+        security_id:      {type: TEXT, semantic: "Monarch security id, if present"}
+        security_name:    {type: TEXT, semantic: "Security name"}
+        ticker:           {type: TEXT, semantic: "Ticker symbol, if present"}
+        type:             {type: TEXT, semantic: "Holding type"}
+        quantity:         {type: REAL, semantic: "Quantity held"}
+        basis:            {type: REAL, semantic: "Cost basis"}
+        total_value:      {type: REAL, semantic: "Total holding value"}
+        closing_price:    {type: REAL, semantic: "Closing price"}
+        current_price:    {type: REAL, semantic: "Current price"}
+        last_synced_at:   {type: TEXT, semantic: "Monarch holding sync timestamp"}
+        updated_at:       {type: TEXT, semantic: "Local sync timestamp"}
+        raw_json:         {type: TEXT, semantic: "Compact raw holding JSON"}
+    monarch_holding_snapshots:
+      columns:
+        snapshot_id:    {type: TEXT, semantic: "Synthetic date/holding snapshot id, primary key"}
+        date:           {type: TEXT, semantic: "Snapshot date YYYY-MM-DD"}
+        holding_id:     {type: TEXT, semantic: "Synthetic current holding id"}
+        account_id:     {type: TEXT, semantic: "Monarch investment account id"}
+        security_id:    {type: TEXT, semantic: "Monarch security id, if present"}
+        security_name:  {type: TEXT, semantic: "Security name"}
+        ticker:         {type: TEXT, semantic: "Ticker symbol, if present"}
+        type:           {type: TEXT, semantic: "Holding type"}
+        quantity:       {type: REAL, semantic: "Quantity held"}
+        basis:          {type: REAL, semantic: "Cost basis"}
+        total_value:    {type: REAL, semantic: "Total holding value"}
+        closing_price:  {type: REAL, semantic: "Closing price"}
+        current_price:  {type: REAL, semantic: "Current price"}
+        last_synced_at: {type: TEXT, semantic: "Monarch holding sync timestamp"}
+        fetched_at:     {type: TEXT, semantic: "Local snapshot fetch timestamp"}
+        raw_json:       {type: TEXT, semantic: "Compact raw holding JSON"}
+    monarch_account_labels:
+      columns:
+        account_id:            {type: TEXT, semantic: "Monarch account id, primary key"}
+        label:                 {type: TEXT, semantic: "Optional user-facing account label"}
+        owner:                 {type: TEXT, semantic: "Owner label such as self or parents"}
+        account_group:         {type: TEXT, semantic: "cash, credit_card, investments, or other"}
+        include_in_net_worth:  {type: INTEGER, semantic: "Derived from owner; parents are excluded"}
+        parent_draw_source:    {type: INTEGER, semantic: "Derived from owner; parents count as parent draw source"}
+        updated_at:            {type: TEXT, semantic: "Local sync timestamp"}
+    monarch_account_exports:
+      columns:
+        account_id:            {type: TEXT, semantic: "Monarch account id, primary key"}
+        export_enabled:        {type: INTEGER, semantic: "1 if selected for combined finance views"}
+        updated_at:            {type: TEXT, semantic: "Local sync timestamp"}
+related_entities: []

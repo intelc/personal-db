@@ -5,6 +5,8 @@ import importlib.util
 import json
 import secrets
 import socketserver
+import ssl
+import subprocess
 import threading
 import time
 import urllib.parse
@@ -16,10 +18,54 @@ import requests
 from personal_db.config import Config
 
 
-class OAuthFlow:
-    """Local HTTP server that captures the OAuth callback ?code=…&state=…."""
+def _get_ssl_context(state_dir: Path) -> ssl.SSLContext:
+    """Self-signed cert+key for `https://localhost` OAuth callbacks.
 
-    def __init__(self, state: str, port: int = 0):
+    Some providers (Instagram Login) require an HTTPS redirect URI even
+    for localhost. We generate a 10-year self-signed cert under
+    state_dir/oauth/.ssl/ on first use and reuse it on every subsequent
+    OAuth flow. The user clicks through the browser's cert warning once
+    per browser; the callback itself only does a 302 redirect back to
+    the daemon, so the warning is brief.
+    """
+    ssl_dir = state_dir / "oauth" / ".ssl"
+    ssl_dir.mkdir(parents=True, exist_ok=True)
+    cert = ssl_dir / "localhost.crt"
+    key = ssl_dir / "localhost.key"
+    if not cert.exists() or not key.exists():
+        subprocess.run(
+            [
+                "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+                "-keyout", str(key), "-out", str(cert),
+                "-days", "3650", "-subj", "/CN=localhost",
+                "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1",
+            ],
+            check=True,
+            capture_output=True,
+        )
+        cert.chmod(0o600)
+        key.chmod(0o600)
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(certfile=str(cert), keyfile=str(key))
+    return ctx
+
+
+class OAuthFlow:
+    """Local HTTP(S) server that captures the OAuth callback ?code=…&state=….
+
+    Pass `scheme="https"` (and a state_dir) when the provider requires an
+    HTTPS redirect URI (e.g. Instagram Login). The server then wraps its
+    socket with a self-signed cert auto-generated under state_dir.
+    """
+
+    def __init__(
+        self,
+        state: str,
+        port: int = 0,
+        *,
+        scheme: str = "http",
+        state_dir: Path | None = None,
+    ):
         self._state_param = state
         self._code: str | None = None
         self._event = threading.Event()
@@ -46,6 +92,11 @@ class OAuthFlow:
                 pass
 
         self._server = socketserver.TCPServer(("127.0.0.1", port), _Handler)
+        if scheme == "https":
+            if state_dir is None:
+                raise ValueError("state_dir is required when scheme='https'")
+            ctx = _get_ssl_context(state_dir)
+            self._server.socket = ctx.wrap_socket(self._server.socket, server_side=True)
         self.port = self._server.server_address[1]
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
 
@@ -286,6 +337,8 @@ def start_web_oauth(
     success_redirect: str,
     failure_redirect: str | None = None,
     timeout_s: float = 600,
+    scheme: str = "http",
+    scope_separator: str = " ",
 ) -> str:
     """Spawn a one-shot HTTP server on (redirect_host, redirect_port). On
     callback, validate state, exchange the code, persist the token via
@@ -299,7 +352,7 @@ def start_web_oauth(
     _shutdown_existing(provider)
 
     state = secrets.token_urlsafe(16)
-    redirect_uri = f"http://{redirect_host}:{redirect_port}{redirect_path}"
+    redirect_uri = f"{scheme}://{redirect_host}:{redirect_port}{redirect_path}"
     failure_redirect = failure_redirect or success_redirect
 
     def _with_error(target: str, err: str) -> str:
@@ -355,6 +408,9 @@ def start_web_oauth(
             pass
 
     server = _ReusableTCPServer((redirect_host, redirect_port), _Handler)
+    if scheme == "https":
+        ctx = _get_ssl_context(cfg.state_dir)
+        server.socket = ctx.wrap_socket(server.socket, server_side=True)
     server_holder["s"] = server
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -380,7 +436,7 @@ def start_web_oauth(
         "state": state,
     }
     if scopes:
-        auth_params["scope"] = " ".join(scopes)
+        auth_params["scope"] = scope_separator.join(scopes)
     return auth_url + "?" + urllib.parse.urlencode(auth_params)
 
 

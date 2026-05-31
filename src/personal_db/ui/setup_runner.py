@@ -31,6 +31,7 @@ from personal_db.manifest import (
     Manifest,
     NoteStep,
     OAuthStep,
+    TrackerActionStep,
     VerifyHooksStep,
     load_manifest,
 )
@@ -66,6 +67,10 @@ class StepView:
     oauth_index: int | None = None  # nth OAuth step in the manifest (0-based)
     oauth_authorized: bool = False  # token already saved on disk
     oauth_creds_present: bool = False  # client_id_env + client_secret_env both set
+    action: str | None = None
+    button_label: str | None = None
+    status_action: str | None = None
+    status_label: str | None = None
 
 
 @dataclass
@@ -95,7 +100,7 @@ def list_overview(cfg: Config) -> list[TrackerOverview]:
                     summary=summary,
                 )
             )
-        except Exception as e:  # noqa: BLE001 — broken manifest shouldn't kill the page
+        except Exception as e:
             out.append(
                 TrackerOverview(
                     name=name,
@@ -258,6 +263,21 @@ def list_step_views(cfg: Config, manifest: Manifest) -> list[StepView]:
                     current_value=None,
                 )
             )
+        elif isinstance(step, TrackerActionStep):
+            views.append(
+                StepView(
+                    index=i,
+                    type_="action",
+                    label=step.title,
+                    description=step.description or "",
+                    field_name=None,
+                    current_value=None,
+                    action=step.action,
+                    button_label=step.button_label,
+                    status_action=step.status_action,
+                    status_label=step.status_label,
+                )
+            )
     return views
 
 
@@ -282,7 +302,7 @@ def process_form(
 
     try:
         sync_one(cfg, name)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         write_status(cfg, name, success=False, detail=f"test sync failed: {e}")
         return results, RunResult(success=False, detail=f"test sync failed: {e}")
 
@@ -349,7 +369,7 @@ def _process_step(
             f"`personal-db tracker setup {tracker_name}` in your terminal)",
         )
 
-    if isinstance(step, (InstallHooksStep, VerifyHooksStep, NoteStep)):
+    if isinstance(step, (InstallHooksStep, VerifyHooksStep, NoteStep, TrackerActionStep)):
         # These steps are handled client-side (fetch/display) or are informational.
         # They never block the wizard from advancing.
         return StepResult("ok", "n/a")

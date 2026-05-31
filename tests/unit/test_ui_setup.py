@@ -314,3 +314,21 @@ def test_note_step_renders_body(tmp_path):
     assert r.status_code == 200
     assert "Codex CLI requires no setup" in r.text
     assert "~/.codex/sessions/" in r.text
+
+
+def test_tracker_action_step_renders_button_and_status(tmp_path):
+    """Plaid setup exposes Link/backup actions directly in the web setup UI."""
+    cfg = _init(tmp_path)
+    _install(cfg.root, "plaid")
+
+    client = TestClient(build_app(cfg))
+    r = client.get("/setup/plaid")
+    assert r.status_code == 200
+    assert "Connect institution" in r.text
+    assert "Backup Plaid tokens" in r.text
+    assert "Finance export accounts" in r.text
+    assert "Save export settings" in r.text
+    assert 'data-step-type="action"' in r.text
+    assert 'data-action="link_item"' in r.text
+    assert 'data-status-action="token_status"' in r.text
+    assert "tracker-action-status" in r.text

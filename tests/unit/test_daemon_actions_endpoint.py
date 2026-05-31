@@ -24,6 +24,12 @@ def client(tmp_path: Path) -> TestClient:
     )
     (tracker_dir / "actions.py").write_text(
         "def hello(cfg):\n    return {'ok': True, 'message': 'hi'}\n"
+        "def echo(cfg, payload):\n    return {'ok': True, 'payload': payload}\n"
+        "def nested_asyncio(cfg):\n"
+        "    import asyncio\n"
+        "    async def inner():\n"
+        "        return {'ok': True, 'message': 'threaded'}\n"
+        "    return asyncio.run(inner())\n"
         "def boom(cfg):\n    raise RuntimeError('intentional')\n"
     )
 
@@ -37,6 +43,20 @@ def test_calls_tracker_action(client: TestClient) -> None:
     body = r.json()
     assert body["ok"] is True
     assert body["message"] == "hi"
+
+
+def test_calls_tracker_action_with_json_payload(client: TestClient) -> None:
+    r = client.post("/api/trackers/stub/actions/echo", json={"x": 1})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["payload"] == {"x": 1}
+
+
+def test_calls_sync_action_in_worker_thread(client: TestClient) -> None:
+    r = client.post("/api/trackers/stub/actions/nested_asyncio")
+    assert r.status_code == 200
+    assert r.json()["message"] == "threaded"
 
 
 def test_unknown_tracker_404(client: TestClient) -> None:

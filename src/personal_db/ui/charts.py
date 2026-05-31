@@ -269,8 +269,9 @@ def line_chart(
 
 def multi_line_chart(
     x_labels: list[str],
-    series: list[tuple[str, list[float | None], str]],
+    series: list,
     *,
+    x_values: list[float] | None = None,
     height_px: int = 140,
     show_every_nth_label: int = 5,
     y_min: float | None = None,
@@ -279,14 +280,27 @@ def multi_line_chart(
     connect_gaps: bool = True,
     annotate_extremes: bool = True,
     value_attr: str | None = None,
+    viewbox_width: int = 1000,
 ) -> str:
     """Multi-series SVG line chart sharing one x-axis.
 
-    `series` is a list of `(name, values, color)`. By default lines connect
-    across None values (a "sparse but continuous" series); pass
-    `connect_gaps=False` to break the line at every None instead. Dots carry
-    `<title>` tooltips with the x-label and value. The highest and lowest
-    point per series are annotated when `annotate_extremes=True`.
+    `series` is a list of `(name, values, color)` or
+    `(name, values, color, style)`. `style` is an optional dict with any of:
+      - `dash` (str): SVG `stroke-dasharray`, e.g. `"4,4"`.
+      - `opacity` (float): stroke/text opacity 0..1.
+      - `width` (float): stroke width (default 1.5).
+      - `dots` (bool): override top-level `show_dots` for this series.
+      - `annotate_extremes` (bool): override top-level annotate flag.
+      - `end_label` (str): text rendered next to the series' last point.
+
+    By default lines connect across None values; pass `connect_gaps=False` to
+    break the line at every None instead.
+
+    `x_values`: optional list of numeric x-coordinates (one per label). When
+    provided, point x-positions scale to the value range so a 5-day gap is
+    visually 5× wider than a 1-day gap. Without it, points are spaced
+    uniformly by index — fine for daily series but wrong for irregular ones
+    (sparse early samples, dense later ones, etc).
 
     `value_attr`: if set (e.g. `"data-kg"`), the raw numeric value is also
     written to that HTML attribute on every numeric `<text>` and `<title>` in
@@ -299,7 +313,14 @@ def multi_line_chart(
     n = len(x_labels)
     if n == 0 or not series:
         return '<p class="meta">no data</p>'
-    real = [v for _, vs, _ in series for v in vs if v is not None]
+    norm_series: list[tuple[str, list, str, dict]] = []
+    for s in series:
+        if len(s) == 4:
+            norm_series.append((s[0], s[1], s[2], s[3] or {}))
+        else:
+            norm_series.append((s[0], s[1], s[2], {}))
+    series = norm_series
+    real = [v for _, vs, _, _ in series for v in vs if v is not None]
     if not real:
         return '<p class="meta">no data</p>'
 
@@ -308,22 +329,43 @@ def multi_line_chart(
     if hi == lo:
         hi = lo + 1
 
-    width = 1000
+    # viewBox width is the internal coord system. With
+    # preserveAspectRatio="none" and the SVG sized via CSS to its container,
+    # the content gets stretched non-uniformly: text glyphs render at
+    # (actual_width / viewbox_width). For full-page charts the default of
+    # 1000 is fine, but multi-column layouts should pass a value closer to
+    # the actual rendered pixel width, or text will squish.
+    width = viewbox_width
     m_left, m_right, m_top, m_bot = 40, 24, 14, 18
     plot_w = width - m_left - m_right
     plot_h = height_px - m_top - m_bot
 
-    def x_for(i: int) -> float:
-        return m_left + (i / max(n - 1, 1)) * plot_w
+    if x_values is not None and len(x_values) == n and n >= 2:
+        x_min = min(x_values)
+        x_max = max(x_values)
+        x_span = (x_max - x_min) if x_max > x_min else 1.0
+        _xv = list(x_values)
+
+        def x_for(i: int) -> float:
+            return m_left + ((_xv[i] - x_min) / x_span) * plot_w
+    else:
+        def x_for(i: int) -> float:
+            return m_left + (i / max(n - 1, 1)) * plot_w
 
     def y_for(v: float) -> float:
         return m_top + (1 - (v - lo) / (hi - lo)) * plot_h
 
     parts: list[str] = []
-    for _, values, color in series:
+    for _, values, color, style in series:
         indexed = [(i, v) for i, v in enumerate(values) if v is not None]
         if not indexed:
             continue
+
+        sw = float(style.get("width", 1.5))
+        dash = style.get("dash", "")
+        op = float(style.get("opacity", 1.0))
+        dash_attr = f' stroke-dasharray="{dash}"' if dash else ""
+        op_attr = f' stroke-opacity="{op:g}"' if op != 1.0 else ""
 
         if connect_gaps:
             segs = [[(x_for(i), y_for(v)) for i, v in indexed]]
@@ -345,19 +387,19 @@ def multi_line_chart(
                 pts = " ".join(f"{x:.1f},{y:.1f}" for x, y in s)
                 parts.append(
                     f'<polyline points="{pts}" fill="none" '
-                    f'stroke="{color}" stroke-width="1.5"/>'
+                    f'stroke="{color}" stroke-width="{sw:g}"{dash_attr}{op_attr}/>'
                 )
 
-        if show_dots:
+        if style.get("dots", show_dots):
             for i, v in indexed:
                 parts.append(
                     f'<circle cx="{x_for(i):.1f}" cy="{y_for(v):.1f}" r="2.5" '
-                    f'fill="{color}">'
+                    f'fill="{color}"{op_attr.replace("stroke-opacity", "fill-opacity")}>'
                     f"<title{_vattr(v)}>{escape(str(x_labels[i]))}: {v:g}</title>"
                     f"</circle>"
                 )
 
-        if annotate_extremes and len(indexed) >= 2:
+        if style.get("annotate_extremes", annotate_extremes) and len(indexed) >= 2:
             hi_i, hi_v = max(indexed, key=lambda iv: iv[1])
             lo_i, lo_v = min(indexed, key=lambda iv: iv[1])
             if hi_v != lo_v:
@@ -370,6 +412,19 @@ def multi_line_chart(
                     f'font-size="9" text-anchor="middle" fill="{color}">{lo_v:g}</text>'
                 )
 
+        end_label = style.get("end_label")
+        if end_label and indexed:
+            last_i, last_v = indexed[-1]
+            ex = x_for(last_i)
+            ey = y_for(last_v)
+            ex = min(ex, width - m_right - 2)
+            ey = max(m_top + 8, min(ey, height_px - m_bot - 2))
+            parts.append(
+                f'<text x="{ex + 3:.1f}" y="{ey + 3:.1f}" '
+                f'font-size="10" text-anchor="start" fill="{color}" '
+                f'font-weight="700">{escape(str(end_label))}</text>'
+            )
+
     # X-axis tick labels. Anchor first label at start, last at end so they
     # don't clip the SVG viewBox edges.
     for i, lbl in enumerate(x_labels):
@@ -380,15 +435,24 @@ def multi_line_chart(
                 f'font-size="10" text-anchor="{anchor}" fill="#666">{escape(str(lbl))}</text>'
             )
 
+    def _axis_label(v: float) -> str:
+        # Round to integer for axis bounds so float headroom multipliers
+        # (e.g. `y_max * 1.05`) don't produce labels like "52003.1" that
+        # overflow the left margin. `:g` is fine for small / fractional
+        # series like Withings weight where sub-integer precision matters.
+        if abs(v) >= 100:
+            return f"{int(round(v))}"
+        return f"{v:g}"
+
     parts.append(
         f'<text{_vattr(hi)} x="{m_left - 4:.1f}" y="{m_top + 4:.1f}" '
-        f'font-size="10" text-anchor="end" fill="#666">{hi:g}</text>'
+        f'font-size="10" text-anchor="end" fill="#666">{_axis_label(hi)}</text>'
         f'<text{_vattr(lo)} x="{m_left - 4:.1f}" y="{m_top + plot_h:.1f}" '
-        f'font-size="10" text-anchor="end" fill="#666">{lo:g}</text>'
+        f'font-size="10" text-anchor="end" fill="#666">{_axis_label(lo)}</text>'
     )
 
     legend = ""
-    named = [(name, c) for name, _, c in series if name]
+    named = [(s[0], s[2]) for s in series if s[0]]
     if named:
         chips = "".join(
             f'<span style="margin-right:1em">'

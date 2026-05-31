@@ -1,0 +1,85 @@
+name: instagram
+description: Instagram Reels analytics (views, reach, engagement) via the Graph API
+permission_type: oauth
+setup_steps:
+  - type: env_var
+    name: INSTAGRAM_APP_ID
+    prompt: "Instagram app ID (Meta dashboard → your app → Use cases → API setup with Instagram login → Instagram app ID)"
+  - type: env_var
+    name: INSTAGRAM_APP_SECRET
+    prompt: "Instagram app secret (same panel → Show)"
+    secret: true
+  - type: instructions
+    text: |
+      Two things to confirm in the Meta dashboard before authorizing:
+        1. Use cases → API setup with Instagram login → Permissions and
+           features: `instagram_business_manage_insights` must be added.
+        2. Use cases → API setup with Instagram login → "Set up Instagram
+           business login" → register this exact OAuth redirect URI:
+                https://localhost:9876/instagram/callback
+
+      When you click Authorize below, your browser will show a "Your
+      connection is not private" warning on `https://localhost:9876` —
+      that's our self-signed cert for the callback. Click Advanced →
+      Proceed (you'll only see this once per browser).
+  - type: oauth
+    provider: instagram
+    adapter: oauth_adapter:InstagramAdapter
+    client_id_env: INSTAGRAM_APP_ID
+    client_secret_env: INSTAGRAM_APP_SECRET
+    auth_url: "https://www.instagram.com/oauth/authorize"
+    token_url: "https://api.instagram.com/oauth/access_token"
+    scopes:
+      - instagram_business_basic
+      - instagram_business_manage_insights
+    scope_separator: ","
+    redirect_host: localhost
+    redirect_port: 9876
+    redirect_path: /instagram/callback
+    scheme: https
+schedule:
+  every: 1h
+time_column: timestamp
+granularity: event
+schema:
+  tables:
+    reels_media:
+      columns:
+        media_id:           {type: TEXT, semantic: "Instagram media ID, primary key"}
+        ig_user_id:         {type: TEXT, semantic: "Instagram business/creator user ID that owns the media"}
+        media_product_type: {type: TEXT, semantic: "REELS | FEED | STORY | AD — we only ingest REELS but store all so cursor walks work"}
+        media_type:         {type: TEXT, semantic: "VIDEO | IMAGE | CAROUSEL_ALBUM"}
+        permalink:          {type: TEXT, semantic: "instagram.com canonical URL"}
+        caption:            {type: TEXT, semantic: "post caption (may be long; IG may truncate server-side)"}
+        thumbnail_url:      {type: TEXT, semantic: "CDN thumbnail URL (expires; refetch if needed)"}
+        timestamp:          {type: TEXT, semantic: "ISO-8601 when the reel was posted (UTC)"}
+        fetched_at:         {type: TEXT, semantic: "ISO-8601 when first ingested into personal_db"}
+    instagram_account_snapshots:
+      columns:
+        ig_user_id:      {type: TEXT, semantic: "Instagram business/creator user ID"}
+        snapshot_at:     {type: TEXT, semantic: "ISO-8601 of when this account snapshot was taken"}
+        username:        {type: TEXT, semantic: "Instagram username at snapshot time"}
+        name:            {type: TEXT, semantic: "Profile display name when returned by the API"}
+        account_type:    {type: TEXT, semantic: "BUSINESS / MEDIA_CREATOR / PERSONAL when returned by the API"}
+        media_count:     {type: INTEGER, semantic: "Total media count at snapshot time"}
+        followers_count: {type: INTEGER, semantic: "Follower count at snapshot time"}
+        follows_count:   {type: INTEGER, semantic: "Following count at snapshot time"}
+        raw_json:        {type: TEXT, semantic: "Raw profile response JSON for future field compatibility"}
+    reels_insights_snapshots:
+      columns:
+        media_id:                          {type: TEXT,    semantic: "FK to reels_media.media_id"}
+        snapshot_at:                       {type: TEXT,    semantic: "ISO-8601 of when this snapshot was taken"}
+        views:                             {type: INTEGER, semantic: "plays on Instagram (replaces deprecated `plays`)"}
+        reach:                             {type: INTEGER, semantic: "unique accounts that saw it (estimated)"}
+        likes:                             {type: INTEGER, semantic: "like count"}
+        comments:                          {type: INTEGER, semantic: "comment count"}
+        shares:                            {type: INTEGER, semantic: "share count"}
+        saved:                             {type: INTEGER, semantic: "save count"}
+        reposts:                           {type: INTEGER, semantic: "reposts minus deleted reposts"}
+        total_interactions:                {type: INTEGER, semantic: "likes+saves+comments+shares net of undo/delete"}
+        ig_reels_avg_watch_time_ms:        {type: INTEGER, semantic: "average watch time across viewers (ms)"}
+        ig_reels_video_view_total_time_ms: {type: INTEGER, semantic: "total watch time across all viewers (ms)"}
+        reels_skip_rate_pct:               {type: REAL,    semantic: "% who skipped within first 3s (estimated, in development)"}
+        crossposted_views:                 {type: INTEGER, semantic: "plays aggregated across IG + FB"}
+        facebook_views:                    {type: INTEGER, semantic: "plays on Facebook (when crossposted)"}
+related_entities: []

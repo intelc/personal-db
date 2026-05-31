@@ -35,6 +35,7 @@ import yaml
 
 from personal_db.config import Config
 from personal_db.manifest import Manifest, ManifestError, load_manifest
+from personal_db.ui.aggrid import table_grid
 
 _BUILTIN_TRACKER = "_builtin"
 _RECENT_LIMIT = 20
@@ -119,21 +120,14 @@ def _synthesize_recent_viz(name: str, manifest: Manifest) -> Visualization:
         finally:
             con.close()
 
-        header_cells = "".join(f"<th>{escape(c)}</th>" for c in cols)
-        body_rows = []
-        for r in rows:
-            cells = "".join(f"<td>{escape(_truncate(v))}</td>" for v in r)
-            body_rows.append(f"<tr>{cells}</tr>")
         meta_bits = [f"{count:,} rows"]
         if tmin and tmax:
             meta_bits.append(f"{escape(str(tmin)[:19])} → {escape(str(tmax)[:19])}")
         meta_line = " · ".join(meta_bits)
+        grid_rows = [tuple(_truncate(v) for v in r) for r in rows]
         return (
             f'<p class="meta">{meta_line}</p>'
-            f'<div class="recent-rows-wrap">'
-            f'<table class="recent-rows">'
-            f"<thead><tr>{header_cells}</tr></thead>"
-            f"<tbody>{''.join(body_rows)}</tbody></table></div>"
+            f"{table_grid(grid_rows, cols, class_name='recent-rows-grid', page_size=_RECENT_LIMIT)}"
             f'<p class="meta">showing latest {min(len(rows), _RECENT_LIMIT)} '
             f"by <code>{escape(time_col)}</code></p>"
         )

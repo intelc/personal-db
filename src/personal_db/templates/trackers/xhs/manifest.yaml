@@ -1,0 +1,69 @@
+name: xhs
+description: Xiaohongshu / RedNote own-post status snapshots from a logged-in Chrome session
+permission_type: manual
+setup_steps:
+  - type: env_var
+    name: XHS_POST_LIMIT
+    prompt: "Optional max recent posts to snapshot per sync (default 30)"
+    optional: true
+  - type: env_var
+    name: XHS_CREATOR_MAX_SCROLLS
+    prompt: "Optional creator note-manager scroll passes during discovery (default 30)"
+    optional: true
+  - type: instructions
+    text: |
+      This tracker uses your real Google Chrome session and the Xiaohongshu
+      creator note manager as the source of truth. Before syncing, sign in to
+      Xiaohongshu / RedNote in Chrome and make sure
+      https://creator.xiaohongshu.com/new/note-manager can load. macOS may ask
+      you to allow the daemon's Python process to control Google Chrome; allow
+      it.
+
+      The tracker opens only the creator note manager, discovers own posts from
+      the 已发布 / 全部笔记 list, and snapshots the creator-center view, comment,
+      like, collect, and share counts. Rows marked archived or private are
+      stored with is_archived=1 so active analytics can exclude them.
+schedule:
+  every: 3h
+time_column: posted_at
+granularity: event
+schema:
+  tables:
+    xhs_notes:
+      columns:
+        note_id:         {type: TEXT, semantic: "Xiaohongshu note id, primary key"}
+        xhs_user_id:     {type: TEXT, semantic: "Author user id when available"}
+        author_nickname: {type: TEXT, semantic: "Author display nickname at latest fetch"}
+        note_type:       {type: TEXT, semantic: "Normal, video, or other platform note type when available"}
+        title:           {type: TEXT, semantic: "Note title or display title"}
+        description:     {type: TEXT, semantic: "Note body/description text"}
+        permalink:       {type: TEXT, semantic: "Canonical Xiaohongshu note URL inferred from the creator-center note id"}
+        thumbnail_url:   {type: TEXT, semantic: "First image/thumbnail URL when available"}
+        posted_at:       {type: TEXT, semantic: "ISO-8601 note publish time; first_seen_at fallback if unavailable"}
+        visibility_label: {type: TEXT, semantic: "Creator-center visibility label, e.g. public/private/archive text when visible"}
+        is_archived:     {type: INTEGER, semantic: "1 when creator center marks the note private/archived so active analytics can exclude it"}
+        creator_last_seen_at: {type: TEXT, semantic: "ISO-8601 when the note was last seen in creator note-manager"}
+        first_seen_at:   {type: TEXT, semantic: "ISO-8601 when personal_db first discovered this note"}
+        last_fetched_at: {type: TEXT, semantic: "ISO-8601 when metadata was last refreshed"}
+    xhs_note_snapshots:
+      columns:
+        note_id:         {type: TEXT, semantic: "FK to xhs_notes.note_id"}
+        snapshot_at:     {type: TEXT, semantic: "ISO-8601 of when this status snapshot was taken"}
+        view_count:      {type: INTEGER, semantic: "Creator-center view/read count"}
+        liked_count:     {type: INTEGER, semantic: "Public like count"}
+        collected_count: {type: INTEGER, semantic: "Public collect/save count"}
+        comment_count:   {type: INTEGER, semantic: "Public comment count"}
+        share_count:     {type: INTEGER, semantic: "Public share count when exposed"}
+        raw_json:        {type: TEXT, semantic: "Compact raw note/status JSON for future parser compatibility"}
+    xhs_account_snapshots:
+      columns:
+        profile_url:             {type: TEXT, semantic: "Source URL for the account-level snapshot"}
+        snapshot_at:             {type: TEXT, semantic: "ISO-8601 of when this profile snapshot was taken"}
+        nickname:                {type: TEXT, semantic: "Profile nickname when visible"}
+        following_count:         {type: INTEGER, semantic: "Visible following count"}
+        followers_count:         {type: INTEGER, semantic: "Visible follower count"}
+        liked_collected_count:   {type: INTEGER, semantic: "Visible aggregate likes+collects count when shown"}
+        visible_note_count:      {type: INTEGER, semantic: "Number of active notes discovered in creator note-manager during this sync"}
+        raw_json:                {type: TEXT, semantic: "Best-effort raw creator note-manager summary"}
+related_entities: []
+local_only: false

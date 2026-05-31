@@ -1,8 +1,7 @@
 """project_time — derived tracker.
 
 Aggregates hours per (date, project) from:
-  - claude_sessions   (start..last_msg, capped per session)
-  - codex_sessions    (start..last_event, capped per session)
+  - code_agent_sessions (Claude Code + Codex CLI sessions, capped per session)
   - screen_time_app_usage (matched by bundle_id)
   - github_commits    (commit count only — not attributed as hours)
 
@@ -15,11 +14,10 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import yaml
-
 
 # ---------- helpers ----------
 
@@ -47,7 +45,7 @@ def _parse_iso(s: str) -> datetime | None:
     except ValueError:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt
 
 
@@ -99,62 +97,23 @@ def _match_cwd(path: str, cwd_prefixes: list[tuple[str, str]]) -> str | None:
     return None
 
 
-def _slug_to_cwd(slug: str) -> str:
-    """Claude project_slug encoding: '/' -> '-'. Reverse it heuristically."""
-    if not slug:
-        return ""
-    # leading '-' becomes '/'
-    if slug.startswith("-"):
-        return "/" + slug[1:].replace("-", "/")
-    return slug.replace("-", "/")
-
-
 # ---------- per-source extractors ----------
 
-def _collect_claude(con, start_dt, end_dt, cwd_prefixes, cap_h, tz, agg):
-    if not _table_exists(con, "claude_sessions"):
+def _collect_code_agents(con, start_dt, end_dt, cwd_prefixes, cap_h, tz, agg):
+    if not _table_exists(con, "code_agent_sessions"):
         return
     rows = con.execute(
         """
-        SELECT project_slug, started_at, last_msg_at
-        FROM claude_sessions
+        SELECT agent, cwd, started_at, last_msg_at
+        FROM code_agent_sessions
         WHERE started_at >= ? AND started_at < ?
+          AND agent IN ('claude_code', 'codex_cli')
         """,
         (start_dt.isoformat(), end_dt.isoformat()),
     ).fetchall()
-    for slug, started, last_msg in rows:
+    for agent, cwd, started, last_msg in rows:
         s = _parse_iso(started)
         e = _parse_iso(last_msg) or s
-        if s is None:
-            continue
-        # try direct slug match (in case slug already matches a registered cwd via reverse)
-        # but the canonical matcher is reverse-encode the slug back into a path.
-        path_guess = _slug_to_cwd(slug)
-        proj = _match_cwd(path_guess, cwd_prefixes)
-        if not proj:
-            continue
-        hours = max(0.0, (e - s).total_seconds() / 3600.0)
-        hours = min(hours, cap_h)
-        if hours <= 0:
-            continue
-        date = _local_date(s, tz)
-        agg[(date, proj)]["claude"] += hours
-
-
-def _collect_codex(con, start_dt, end_dt, cwd_prefixes, cap_h, tz, agg):
-    if not _table_exists(con, "codex_sessions"):
-        return
-    rows = con.execute(
-        """
-        SELECT cwd, started_at, last_event_at
-        FROM codex_sessions
-        WHERE started_at >= ? AND started_at < ?
-        """,
-        (start_dt.isoformat(), end_dt.isoformat()),
-    ).fetchall()
-    for cwd, started, last_event in rows:
-        s = _parse_iso(started)
-        e = _parse_iso(last_event) or s
         if s is None:
             continue
         proj = _match_cwd(cwd or "", cwd_prefixes)
@@ -165,7 +124,8 @@ def _collect_codex(con, start_dt, end_dt, cwd_prefixes, cap_h, tz, agg):
         if hours <= 0:
             continue
         date = _local_date(s, tz)
-        agg[(date, proj)]["codex"] += hours
+        bucket = "claude" if agent == "claude_code" else "codex"
+        agg[(date, proj)][bucket] += hours
 
 
 def _collect_app(con, start_dt, end_dt, bundle_to_proj, tz, agg):
@@ -239,8 +199,7 @@ def _compute(t, start_dt: datetime, end_dt: datetime) -> list[dict]:
 
     con = sqlite3.connect(t.cfg.db_path)
     try:
-        _collect_claude(con, start_dt, end_dt, cwd_prefixes, cap_h, tz, agg)
-        _collect_codex(con, start_dt, end_dt, cwd_prefixes, cap_h, tz, agg)
+        _collect_code_agents(con, start_dt, end_dt, cwd_prefixes, cap_h, tz, agg)
         _collect_app(con, start_dt, end_dt, bundle_to_proj, tz, agg)
         _collect_commits(con, start_dt, end_dt, repo_to_proj, tz, commit_agg)
     finally:
@@ -300,10 +259,10 @@ def sync(t) -> None:
     end_local = today_local  # inclusive of today
 
     # Convert local-date window to UTC datetime range that covers any local date in [start, end]
-    start_dt = datetime.combine(start_local, datetime.min.time(), tz).astimezone(timezone.utc)
+    start_dt = datetime.combine(start_local, datetime.min.time(), tz).astimezone(UTC)
     end_dt = datetime.combine(
         end_local + timedelta(days=1), datetime.min.time(), tz
-    ).astimezone(timezone.utc)
+    ).astimezone(UTC)
 
     rows = _compute(t, start_dt, end_dt)
 
@@ -333,10 +292,10 @@ def backfill(t, start, end) -> None:
     if end_local < start_local:
         start_local, end_local = end_local, start_local
 
-    start_dt = datetime.combine(start_local, datetime.min.time(), tz).astimezone(timezone.utc)
+    start_dt = datetime.combine(start_local, datetime.min.time(), tz).astimezone(UTC)
     end_dt = datetime.combine(
         end_local + timedelta(days=1), datetime.min.time(), tz
-    ).astimezone(timezone.utc)
+    ).astimezone(UTC)
 
     rows = _compute(t, start_dt, end_dt)
     _delete_window(t, start_local.isoformat(), end_local.isoformat())

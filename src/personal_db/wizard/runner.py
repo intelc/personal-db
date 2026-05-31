@@ -12,6 +12,7 @@ from personal_db.manifest import (
     FdaCheckStep,
     InstructionsStep,
     OAuthStep,
+    TrackerActionStep,
     load_manifest,
 )
 from personal_db.sync import sync_one
@@ -26,6 +27,7 @@ from personal_db.wizard.steps import (
     handle_fda_check,
     handle_instructions,
     handle_oauth,
+    handle_tracker_action,
 )
 
 
@@ -41,6 +43,7 @@ _DISPATCH = {
     FdaCheckStep: handle_fda_check,
     InstructionsStep: handle_instructions,
     CommandTestStep: handle_command_test,
+    TrackerActionStep: handle_tracker_action,
 }
 
 

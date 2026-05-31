@@ -1,0 +1,273 @@
+name: plaid
+description: Plaid-linked financial accounts, transactions, balances, and investment data
+permission_type: api_key
+setup_steps:
+  - type: instructions
+    text: |
+      Create or open your Plaid app in the Dashboard:
+
+        https://dashboard.plaid.com/developers/keys
+
+      Copy the client_id and the secret for the environment you are using.
+      For a personal trial with real institutions, PLAID_ENV is usually
+      "development". Use "sandbox" only for Plaid test institutions.
+
+      The setup page can say DONE before any bank is linked; that only means
+      the Plaid credentials were saved and an empty test sync did not crash.
+      After setup finishes, link each institution through Plaid Link by running:
+
+        curl -X POST http://127.0.0.1:8765/api/trackers/plaid/actions/link_item
+
+      The action opens a local Plaid Link page. Repeat it for each Item
+      (for example Wells Fargo, Amex, Chase, HSBC, Robinhood, Schwab, Guideline).
+      Plaid access tokens are saved under <root>/state/plaid/items.json with
+      mode 0600, and every save creates timestamped private backups under
+      <root>/state/plaid/backups/. You can also force a backup at any time:
+
+        curl -X POST http://127.0.0.1:8765/api/trackers/plaid/actions/backup_tokens
+
+      To inspect linked Item and backup counts without printing tokens:
+
+        curl -X POST http://127.0.0.1:8765/api/trackers/plaid/actions/token_status
+
+      For OAuth institutions, add this Allowed redirect URI in the Plaid
+      Dashboard and save the same value as PLAID_REDIRECT_URI:
+
+        https://localhost:9878/oauth-return
+
+      Plaid exposes source-owned finance export views for the downstream
+      finance tracker:
+
+        plaid_finance_accounts_export
+        plaid_finance_transactions_export
+        plaid_finance_holdings_export
+        plaid_finance_holding_snapshots_export
+
+      Those views normalize account ownership, account grouping, card-payment
+      flags, and internal-transfer flags without writing into finance tables.
+      Use the Plaid setup page to decide which linked Plaid accounts are
+      exported into those finance views.
+  - type: env_var
+    name: PLAID_CLIENT_ID
+    prompt: "Plaid client_id from https://dashboard.plaid.com/developers/keys"
+    secret: true
+  - type: env_var
+    name: PLAID_SECRET
+    prompt: "Plaid secret for your selected environment"
+    secret: true
+  - type: env_var
+    name: PLAID_ENV
+    prompt: "Plaid environment: development, sandbox, or production (press Enter to use development)"
+    optional: true
+  - type: env_var
+    name: PLAID_PRODUCTS
+    prompt: "Required Plaid products for Link, comma-separated (press Enter to use transactions)"
+    optional: true
+  - type: env_var
+    name: PLAID_OPTIONAL_PRODUCTS
+    prompt: "Optional Plaid products, comma-separated (press Enter to use investments)"
+    optional: true
+  - type: env_var
+    name: PLAID_COUNTRY_CODES
+    prompt: "Plaid country codes, comma-separated (press Enter to use US)"
+    optional: true
+  - type: env_var
+    name: PLAID_BALANCE_MODE
+    prompt: "Balance mode: cached or real_time (press Enter to use cached; real_time calls /accounts/balance/get)"
+    optional: true
+  - type: env_var
+    name: PLAID_TRANSACTIONS_DAYS_REQUESTED
+    prompt: "Transaction history days requested during Link, 1-730 (press Enter to use 730)"
+    optional: true
+  - type: env_var
+    name: PLAID_REDIRECT_URI
+    prompt: "Optional OAuth redirect URI allowlisted in Plaid Dashboard (press Enter to omit)"
+    optional: true
+  - type: action
+    title: Plaid Link
+    description: "Open Plaid Link to connect one institution. Repeat for each institution you want to count against your trial Items."
+    action: link_item
+    button_label: "Connect institution"
+    status_action: token_status
+    status_label: "Connections"
+  - type: action
+    title: Token backup
+    description: "Create an immediate private backup of the saved Plaid Item tokens."
+    action: backup_tokens
+    button_label: "Backup Plaid tokens"
+    status_action: token_status
+    status_label: "Token store"
+schedule:
+  every: 4h
+time_column: date
+granularity: event
+schema:
+  tables:
+    plaid_items:
+      columns:
+        item_id:                 {type: TEXT, semantic: "Plaid Item id, primary key"}
+        institution_id:          {type: TEXT, semantic: "Plaid institution id selected in Link"}
+        institution_name:        {type: TEXT, semantic: "Institution display name from Link or /item/get"}
+        webhook:                 {type: TEXT, semantic: "Webhook URL configured for the Item, if any"}
+        products:                {type: TEXT, semantic: "JSON array of billed/enabled products reported by Plaid"}
+        available_products:      {type: TEXT, semantic: "JSON array of available products reported by Plaid"}
+        billed_products:         {type: TEXT, semantic: "JSON array of billed products reported by Plaid"}
+        consent_expiration_time: {type: TEXT, semantic: "ISO-8601 consent expiration timestamp, if any"}
+        error_json:              {type: TEXT, semantic: "Current Plaid Item error as compact JSON, if any"}
+        created_at:              {type: TEXT, semantic: "ISO-8601 time the Item was saved locally"}
+        updated_at:              {type: TEXT, semantic: "ISO-8601 time this row was last refreshed"}
+    plaid_accounts:
+      columns:
+        account_id:               {type: TEXT, semantic: "Plaid account id, primary key"}
+        item_id:                  {type: TEXT, semantic: "Plaid Item id"}
+        institution_name:         {type: TEXT, semantic: "Institution display name"}
+        name:                     {type: TEXT, semantic: "Account display name"}
+        official_name:            {type: TEXT, semantic: "Official account name, if provided"}
+        mask:                     {type: TEXT, semantic: "Masked account number suffix"}
+        type:                     {type: TEXT, semantic: "Plaid account type"}
+        subtype:                  {type: TEXT, semantic: "Plaid account subtype"}
+        verification_status:      {type: TEXT, semantic: "Verification status, if applicable"}
+        current_balance:          {type: REAL, semantic: "Current balance from cached or real-time Plaid balance data"}
+        available_balance:        {type: REAL, semantic: "Available balance from cached or real-time Plaid balance data"}
+        limit_balance:            {type: REAL, semantic: "Credit limit or account limit from Plaid balances"}
+        iso_currency_code:        {type: TEXT, semantic: "ISO currency code"}
+        unofficial_currency_code: {type: TEXT, semantic: "Unofficial currency code, if any"}
+        balance_mode:             {type: TEXT, semantic: "cached or real_time"}
+        balance_as_of:            {type: TEXT, semantic: "ISO-8601 time this balance was fetched"}
+        raw_json:                 {type: TEXT, semantic: "Compact raw account JSON"}
+    plaid_transactions:
+      columns:
+        transaction_id:              {type: TEXT, semantic: "Plaid transaction id, primary key"}
+        item_id:                     {type: TEXT, semantic: "Plaid Item id"}
+        account_id:                  {type: TEXT, semantic: "Plaid account id"}
+        date:                        {type: TEXT, semantic: "Posted date in institution local date, YYYY-MM-DD"}
+        authorized_date:             {type: TEXT, semantic: "Authorized date, YYYY-MM-DD, if available"}
+        datetime:                    {type: TEXT, semantic: "Posted datetime, if available"}
+        authorized_datetime:         {type: TEXT, semantic: "Authorized datetime, if available"}
+        name:                        {type: TEXT, semantic: "Transaction name"}
+        merchant_name:               {type: TEXT, semantic: "Cleaned merchant name, if provided"}
+        amount:                      {type: REAL, semantic: "Plaid amount; positive is outflow, negative is inflow"}
+        iso_currency_code:           {type: TEXT, semantic: "ISO currency code"}
+        unofficial_currency_code:    {type: TEXT, semantic: "Unofficial currency code, if any"}
+        pending:                     {type: INTEGER, semantic: "1 if pending, 0 otherwise"}
+        pending_transaction_id:      {type: TEXT, semantic: "Related pending transaction id, if any"}
+        payment_channel:             {type: TEXT, semantic: "Payment channel such as online, in store, or other"}
+        category:                    {type: TEXT, semantic: "Legacy Plaid category as JSON array"}
+        personal_finance_primary:    {type: TEXT, semantic: "Primary personal finance category"}
+        personal_finance_detailed:   {type: TEXT, semantic: "Detailed personal finance category"}
+        personal_finance_confidence: {type: TEXT, semantic: "Plaid category confidence level, if provided"}
+        check_number:                {type: TEXT, semantic: "Check number, if any"}
+        website:                     {type: TEXT, semantic: "Merchant website, if any"}
+        logo_url:                    {type: TEXT, semantic: "Merchant logo URL, if any"}
+        removed_at:                  {type: TEXT, semantic: "ISO-8601 time Plaid reported this transaction removed"}
+        raw_json:                    {type: TEXT, semantic: "Compact raw transaction JSON"}
+    plaid_investment_holdings:
+      columns:
+        snapshot_id:                {type: TEXT, semantic: "Synthetic id: item/account/security/as_of, primary key"}
+        item_id:                    {type: TEXT, semantic: "Plaid Item id"}
+        account_id:                 {type: TEXT, semantic: "Plaid investment account id"}
+        security_id:                {type: TEXT, semantic: "Plaid security id"}
+        as_of:                      {type: TEXT, semantic: "ISO-8601 time this holding snapshot was fetched"}
+        quantity:                   {type: REAL, semantic: "Quantity held"}
+        cost_basis:                 {type: REAL, semantic: "Cost basis, if provided"}
+        institution_price:          {type: REAL, semantic: "Institution-reported security price"}
+        institution_price_as_of:    {type: TEXT, semantic: "Price date, if provided"}
+        institution_price_datetime: {type: TEXT, semantic: "Price datetime, if provided"}
+        institution_value:          {type: REAL, semantic: "Institution-reported holding value"}
+        iso_currency_code:          {type: TEXT, semantic: "ISO currency code"}
+        unofficial_currency_code:   {type: TEXT, semantic: "Unofficial currency code, if any"}
+        raw_json:                   {type: TEXT, semantic: "Compact raw holding JSON"}
+    plaid_investment_securities:
+      columns:
+        security_id:              {type: TEXT, semantic: "Plaid security id, primary key"}
+        name:                     {type: TEXT, semantic: "Security name"}
+        ticker_symbol:            {type: TEXT, semantic: "Ticker symbol, if any"}
+        type:                     {type: TEXT, semantic: "Security type"}
+        subtype:                  {type: TEXT, semantic: "Security subtype"}
+        close_price:              {type: REAL, semantic: "Latest close price from Plaid"}
+        close_price_as_of:        {type: TEXT, semantic: "Close price date, if provided"}
+        iso_currency_code:        {type: TEXT, semantic: "ISO currency code"}
+        unofficial_currency_code: {type: TEXT, semantic: "Unofficial currency code, if any"}
+        raw_json:                 {type: TEXT, semantic: "Compact raw security JSON"}
+    plaid_investment_transactions:
+      columns:
+        investment_transaction_id: {type: TEXT, semantic: "Plaid investment transaction id, primary key"}
+        item_id:                   {type: TEXT, semantic: "Plaid Item id"}
+        account_id:                {type: TEXT, semantic: "Plaid investment account id"}
+        security_id:               {type: TEXT, semantic: "Plaid security id, if applicable"}
+        date:                      {type: TEXT, semantic: "Investment transaction date, YYYY-MM-DD"}
+        name:                      {type: TEXT, semantic: "Transaction name"}
+        type:                      {type: TEXT, semantic: "Investment transaction type"}
+        subtype:                   {type: TEXT, semantic: "Investment transaction subtype"}
+        amount:                    {type: REAL, semantic: "Amount; Plaid uses negative for inflows such as sales"}
+        quantity:                  {type: REAL, semantic: "Quantity transacted"}
+        price:                     {type: REAL, semantic: "Price per security unit"}
+        fees:                      {type: REAL, semantic: "Fees"}
+        iso_currency_code:         {type: TEXT, semantic: "ISO currency code"}
+        unofficial_currency_code:  {type: TEXT, semantic: "Unofficial currency code, if any"}
+        cancel_transaction_id:     {type: TEXT, semantic: "Canceled transaction id, if any"}
+        raw_json:                  {type: TEXT, semantic: "Compact raw investment transaction JSON"}
+    plaid_account_labels:
+      columns:
+        account_id:           {type: TEXT, semantic: "Plaid account id, primary key"}
+        owner:                {type: TEXT, semantic: "Editable account owner label such as self or parents"}
+        account_group:        {type: TEXT, semantic: "Finance grouping: cash, credit_card, investments, or other"}
+        label:                {type: TEXT, semantic: "Editable display label for the account"}
+        include_in_net_worth: {type: INTEGER, semantic: "1 if the account contributes to net worth"}
+        parent_draw_source:   {type: INTEGER, semantic: "1 to count positive outflows as draws from a parent-managed account"}
+        notes:                {type: TEXT, semantic: "User notes from account_labels.yaml"}
+        updated_at:           {type: TEXT, semantic: "ISO-8601 time labels were last materialized"}
+    plaid_account_exports:
+      columns:
+        account_id:      {type: TEXT, semantic: "Plaid account id, primary key"}
+        export_enabled: {type: INTEGER, semantic: "1 if this account is exported to downstream finance views"}
+        updated_at:     {type: TEXT, semantic: "ISO-8601 time export settings were last materialized"}
+    plaid_account_snapshots:
+      columns:
+        snapshot_id:       {type: TEXT, semantic: "Synthetic id date:account_id, primary key"}
+        date:              {type: TEXT, semantic: "Snapshot date, YYYY-MM-DD"}
+        account_id:        {type: TEXT, semantic: "Plaid account id"}
+        owner:             {type: TEXT, semantic: "Owner label from plaid_account_labels"}
+        account_group:     {type: TEXT, semantic: "Finance grouping from plaid_account_labels"}
+        institution_name:  {type: TEXT, semantic: "Institution display name"}
+        account_name:      {type: TEXT, semantic: "Account display name"}
+        balance:           {type: REAL, semantic: "Raw current balance"}
+        net_worth_value:   {type: REAL, semantic: "Signed value for net worth; credit cards are negative liabilities"}
+        debt_value:        {type: REAL, semantic: "Positive debt amount for liabilities"}
+        iso_currency_code: {type: TEXT, semantic: "ISO currency code"}
+        as_of:             {type: TEXT, semantic: "Source balance timestamp"}
+    plaid_daily_cashflow:
+      columns:
+        date:                 {type: TEXT, semantic: "Transaction date, YYYY-MM-DD"}
+        owner:                {type: TEXT, semantic: "Owner label, plus an all aggregate"}
+        income:               {type: REAL, semantic: "Positive income from non-transfer, non-card-payment transactions"}
+        spending:             {type: REAL, semantic: "Positive spending from non-transfer, non-card-payment transactions"}
+        net:                  {type: REAL, semantic: "Income minus spending"}
+        parent_draw:          {type: REAL, semantic: "Positive outflows from parent-labeled accounts, excluding card payments"}
+        credit_card_payments: {type: REAL, semantic: "Credit card payment volume excluded from cashflow"}
+        internal_transfers:   {type: REAL, semantic: "Transfer volume excluded from cashflow"}
+        txn_count:            {type: INTEGER, semantic: "Count of transactions included in income/spending/net"}
+    plaid_daily_net_worth:
+      columns:
+        date:             {type: TEXT, semantic: "Snapshot date, YYYY-MM-DD"}
+        owner:            {type: TEXT, semantic: "Owner label, plus an all aggregate"}
+        cash:             {type: REAL, semantic: "Net cash/checking/savings value"}
+        investments:      {type: REAL, semantic: "Net investment account value"}
+        credit_card_debt: {type: REAL, semantic: "Positive credit card debt amount"}
+        other:            {type: REAL, semantic: "Other account net value"}
+        assets:           {type: REAL, semantic: "Positive asset total"}
+        debts:            {type: REAL, semantic: "Positive debt total"}
+        net_worth:        {type: REAL, semantic: "Assets minus debts"}
+    plaid_parent_draws:
+      columns:
+        transaction_id: {type: TEXT, semantic: "Plaid transaction id, primary key"}
+        date:           {type: TEXT, semantic: "Transaction date, YYYY-MM-DD"}
+        owner:          {type: TEXT, semantic: "Parent/account owner label"}
+        account_id:     {type: TEXT, semantic: "Plaid account id"}
+        institution:    {type: TEXT, semantic: "Institution display name"}
+        account_name:   {type: TEXT, semantic: "Account display name"}
+        merchant_name:  {type: TEXT, semantic: "Merchant name, if provided"}
+        name:           {type: TEXT, semantic: "Raw transaction name"}
+        amount:         {type: REAL, semantic: "Positive outflow counted as parent draw"}
+        category:       {type: TEXT, semantic: "Plaid personal finance category"}
+related_entities: []

@@ -645,6 +645,7 @@ name = "personal-db"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "cryptography" },
     { name = "fastapi" },
     { name = "jinja2" },
     { name = "keyring" },
@@ -669,6 +670,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = ">=47.0" },
     { name = "fastapi", specifier = ">=0.100" },
     { name = "jinja2", specifier = ">=3.0" },
     { name = "keyring", specifier = ">=24.0" },

@@ -2,8 +2,8 @@
 #
 # Each project lists the signals that count toward it:
 #   repos       — GitHub repo full_names (matches github_commits.repo exactly)
-#   cwds        — working directory paths (matches codex_sessions.cwd by exact-or-prefix,
-#                 and claude_sessions.project_slug after re-encoding "/" -> "-")
+#   cwds        — working directory paths (matches code_agent_sessions.cwd by
+#                 exact-or-prefix)
 #   bundle_ids  — macOS app bundle ids (matches screen_time_app_usage.bundle_id exactly)
 #
 # Edits to this file only re-attribute the last 2 days on `sync`.

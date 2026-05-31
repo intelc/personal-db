@@ -10,3 +10,9 @@
     </form>
   {% endif %}
 {% endmacro %}
+
+{% macro setup_btn(tracker) %}
+  {% if tracker and tracker != "_builtin" %}
+    <a href="/setup/{{ tracker }}" class="refresh-btn setup-btn" title="configure {{ tracker }}">setup</a>
+  {% endif %}
+{% endmacro %}

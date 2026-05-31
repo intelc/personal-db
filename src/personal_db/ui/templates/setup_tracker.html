@@ -41,7 +41,7 @@
 
   {% for step in steps %}
     {% set r = step_results[loop.index0] if step_results else None %}
-    <section class="block setup-step{% if r and r.status == 'failed' %} fail{% elif r and r.status == 'ok' %} ok{% endif %}"{% if step.type_ in ('install_hooks', 'verify_hooks') %} data-step-type="{{ step.type_ }}" data-tracker="{{ tracker_name }}"{% endif %}>
+    <section class="block setup-step{% if r and r.status == 'failed' %} fail{% elif r and r.status == 'ok' %} ok{% endif %}"{% if step.type_ in ('install_hooks', 'verify_hooks') %} data-step-type="{{ step.type_ }}" data-tracker="{{ tracker_name }}"{% elif step.type_ == 'action' %} data-step-type="action" data-tracker="{{ tracker_name }}" data-action="{{ step.action }}" data-status-action="{{ step.status_action or '' }}"{% endif %}>
       <h3 class="block-h">
         {{ loop.index }}. {{ step.label }}
         <span class="setup-step-type">[{{ step.type_ }}]</span>
@@ -102,6 +102,21 @@
       {% elif step.type_ == 'note' %}
         <p class="meta">{{ step.description }}</p>
 
+      {% elif step.type_ == 'action' %}
+        {% if step.description %}<p class="meta">{{ step.description }}</p>{% endif %}
+        {% if step.status_action %}
+          <p class="meta">
+            {{ step.status_label or "Status" }}:
+            <span class="tracker-action-status">checking…</span>
+          </p>
+        {% endif %}
+        <button
+          type="button"
+          class="btn-primary"
+          onclick="runTrackerAction(this, '{{ tracker_name }}', '{{ step.action }}')"
+        >{{ step.button_label }}</button>
+        <pre class="action-output" hidden></pre>
+
       {% elif step.type_ == 'oauth' %}
         <p class="meta">{{ step.description }}</p>
         {% if step.oauth_creds_present or step.oauth_authorized %}
@@ -132,6 +147,71 @@
     <button type="submit" class="btn-primary">save &amp; test sync</button>
   </section>
 </form>
+
+{% if tracker_name == 'plaid' %}
+<section class="block" id="plaid-account-labels" data-tracker="{{ tracker_name }}">
+  <h2 class="block-h">Finance export accounts</h2>
+  <p class="meta">
+    Select Plaid accounts to include in combined finance views, and label parent-managed accounts.
+    These edits are saved to <code>~/personal_db/trackers/plaid/account_labels.yaml</code>.
+  </p>
+  <div class="plaid-labels-body">
+    <p class="meta">loading accounts…</p>
+  </div>
+  <p>
+    <button type="button" class="btn-primary" onclick="savePlaidAccountLabels(this)">Save export settings</button>
+    <button type="button" class="btn-primary" onclick="syncPlaidAfterLabels(this)">Save exports &amp; sync</button>
+  </p>
+  <pre class="action-output" hidden></pre>
+</section>
+{% endif %}
+
+{% if tracker_name == 'monarch' %}
+<section class="block" id="monarch-account-exports" data-tracker="{{ tracker_name }}">
+  <h2 class="block-h">Finance export accounts</h2>
+  <p class="meta">
+    Select Monarch accounts to include in combined finance views. This saves to
+    <code>~/personal_db/trackers/monarch/account_exports.yaml</code>.
+  </p>
+  <div class="monarch-exports-body">
+    <p class="meta">loading accounts…</p>
+  </div>
+  <p>
+    <button type="button" class="btn-primary" onclick="saveMonarchExports(this)">Save export settings</button>
+    <button type="button" class="btn-primary" onclick="syncMonarchAfterExports(this)">Save exports &amp; sync</button>
+  </p>
+  <pre class="action-output" hidden></pre>
+</section>
+{% endif %}
+
+{% if tracker_name == 'crypto_wallet' %}
+<section class="block" id="crypto-wallet-manager" data-tracker="{{ tracker_name }}">
+  <h2 class="block-h">Wallets</h2>
+  <p class="meta">
+    Add public EVM or Bitcoin wallets to validate with Moralis and export into combined finance views.
+    Wallet settings are saved to <code>~/personal_db/trackers/crypto_wallet/wallets.yaml</code>.
+  </p>
+  <div class="crypto-wallet-add">
+    <input class="setup-input crypto-new-label" placeholder="Label" autocomplete="off">
+    <select class="setup-input crypto-new-type">
+      <option value="auto">Auto</option>
+      <option value="evm">EVM</option>
+      <option value="bitcoin">Bitcoin</option>
+    </select>
+    <input class="setup-input crypto-new-address" placeholder="0x, bc1, or xpub" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    <input class="setup-input crypto-new-chains" placeholder="eth,base,arbitrum,optimism,polygon,bsc" autocomplete="off">
+    <button type="button" class="btn-primary" onclick="addCryptoWallet(this)">Add &amp; validate</button>
+  </div>
+  <div class="crypto-wallet-body">
+    <p class="meta">loading wallets…</p>
+  </div>
+  <p>
+    <button type="button" class="btn-primary" onclick="saveCryptoWallets(this)">Save wallets</button>
+    <button type="button" class="btn-primary" onclick="syncCryptoWallets(this)">Save wallets &amp; sync</button>
+  </p>
+  <pre class="action-output" hidden></pre>
+</section>
+{% endif %}
 
 <script>
 async function installHooks(button, tracker) {
@@ -170,6 +250,558 @@ async function refreshHookStatus(el) {
 }
 
 document.querySelectorAll(`[data-step-type="verify_hooks"]`).forEach(refreshHookStatus);
+
+function summarizeActionStatus(body) {
+  if (Number.isInteger(body.item_count)) {
+    const label = body.item_count === 1 ? "1 linked Item" : `${body.item_count} linked Items`;
+    const backups = Number.isInteger(body.backup_count) ? ` · ${body.backup_count} backups` : "";
+    const names = Array.isArray(body.items)
+      ? body.items.map((item) => item.institution_name || item.institution_id || item.item_id).filter(Boolean)
+      : [];
+    if (body.item_count > 0) {
+      return `✓ ${label}${backups}${names.length ? " · " + names.join(", ") : ""}`;
+    }
+    return `— no linked Items yet${backups}`;
+  }
+  return body.message || JSON.stringify(body);
+}
+
+async function refreshTrackerActionStatus(el) {
+  const tracker = el.dataset.tracker;
+  const statusAction = el.dataset.statusAction;
+  const badge = el.querySelector(".tracker-action-status");
+  if (!badge || !statusAction) return;
+  try {
+    const r = await fetch(`/api/trackers/${tracker}/actions/${statusAction}`, {method: "POST"});
+    const body = await r.json();
+    badge.textContent = summarizeActionStatus(body);
+    badge.className = `tracker-action-status ${body.ok ? "ok" : "warn"}`;
+  } catch {
+    badge.textContent = "daemon unreachable";
+    badge.className = "tracker-action-status error";
+  }
+}
+
+async function runTrackerAction(button, tracker, action) {
+  button.disabled = true;
+  const section = button.closest(".setup-step");
+  const out = section.querySelector('.action-output');
+  out.hidden = false;
+  out.textContent = "running…";
+  out.classList.remove("error");
+  try {
+    const r = await fetch(`/api/trackers/${tracker}/actions/${action}`, {method: "POST"});
+    const body = await r.json();
+    out.textContent = body.message || JSON.stringify(body, null, 2);
+    if (body.url) window.open(body.url, "_blank", "noopener");
+    if (!body.ok) out.classList.add("error");
+    await refreshTrackerActionStatus(section);
+  } catch {
+    out.textContent = `Daemon not reachable — run \`personal-db daemon install\``;
+    out.classList.add("error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+document.querySelectorAll(`[data-step-type="action"]`).forEach(refreshTrackerActionStatus);
+
+function money(value) {
+  const num = Number(value || 0);
+  return num.toLocaleString(undefined, {style: "currency", currency: "USD", maximumFractionDigits: 0});
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+async function loadPlaidAccountLabels() {
+  const section = document.getElementById("plaid-account-labels");
+  if (!section) return;
+  const bodyEl = section.querySelector(".plaid-labels-body");
+  try {
+    const r = await fetch(`/api/trackers/plaid/actions/account_labels_status`, {method: "POST"});
+    const body = await r.json();
+    if (!body.ok) throw new Error(body.message || JSON.stringify(body));
+    if (!body.accounts.length) {
+      bodyEl.innerHTML = '<p class="meta">No Plaid accounts found yet. Connect an institution and sync first.</p>';
+      return;
+    }
+    const rows = body.accounts.map((account) => `
+      <tr data-account-id="${escapeHtml(account.account_id)}">
+        <td><input type="checkbox" class="plaid-export" ${account.export_enabled === false ? "" : "checked"}></td>
+        <td>
+          <strong>${escapeHtml(account.institution_name || "")}</strong><br>
+          <span class="meta">${escapeHtml(account.account_name || "")}${account.mask ? " ..." + escapeHtml(account.mask) : ""}</span>
+        </td>
+        <td>
+          <input class="setup-input plaid-label" value="${escapeHtml(account.label || "")}" autocomplete="off">
+        </td>
+        <td>
+          <select class="setup-input plaid-owner" onchange="onPlaidOwnerChange(this)">
+            ${["self", "parents"].map((owner) => (
+              `<option value="${owner}" ${owner === (account.owner || "self") ? "selected" : ""}>${owner}</option>`
+            )).join("")}
+          </select>
+        </td>
+        <td>
+          <select class="setup-input plaid-group">
+            ${["cash", "credit_card", "investments", "other"].map((group) => (
+              `<option value="${group}" ${group === account.account_group ? "selected" : ""}>${group}</option>`
+            )).join("")}
+          </select>
+        </td>
+        <td>${escapeHtml(account.type || "")}<br><span class="meta">${escapeHtml(account.subtype || "")}</span></td>
+        <td>${money(account.current_balance)}</td>
+        <td class="plaid-treatment">${plaidOwnerTreatment(account.owner || "self")}</td>
+      </tr>
+    `).join("");
+    bodyEl.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Export</th>
+            <th>Account</th>
+            <th>Label</th>
+            <th>Owner</th>
+            <th>Group</th>
+            <th>Type</th>
+            <th>Balance</th>
+            <th>Treatment</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <p class="meta">Only exported accounts feed finance. <code>self</code> accounts count toward net worth. <code>parents</code> accounts are excluded from net worth and positive outflows count as parent draw.</p>
+    `;
+  } catch (err) {
+    bodyEl.innerHTML = `<p class="meta error">Could not load Plaid account labels: ${escapeHtml(err.message || err)}</p>`;
+  }
+}
+
+function collectPlaidAccountLabels() {
+  return Array.from(document.querySelectorAll("#plaid-account-labels tbody tr")).map((row) => ({
+    account_id: row.dataset.accountId,
+    export_enabled: row.querySelector(".plaid-export").checked,
+    label: row.querySelector(".plaid-label").value,
+    owner: row.querySelector(".plaid-owner").value,
+    account_group: row.querySelector(".plaid-group").value,
+  }));
+}
+
+function plaidOwnerTreatment(owner) {
+  return owner === "parents"
+    ? "excluded from net worth; parent draw source"
+    : "included in net worth";
+}
+
+function onPlaidOwnerChange(select) {
+  const row = select.closest("tr");
+  row.querySelector(".plaid-treatment").textContent = plaidOwnerTreatment(select.value);
+}
+
+async function savePlaidAccountLabels(button) {
+  button.disabled = true;
+  const out = document.querySelector("#plaid-account-labels .action-output");
+  out.hidden = false;
+  out.classList.remove("error");
+  out.textContent = "saving…";
+  try {
+    const r = await fetch(`/api/trackers/plaid/actions/save_account_labels`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({accounts: collectPlaidAccountLabels()}),
+    });
+    const body = await r.json();
+    if (!r.ok || !body.ok) throw new Error(body.detail || body.message || JSON.stringify(body));
+    out.textContent = body.message || "saved";
+    await loadPlaidAccountLabels();
+  } catch (err) {
+    out.textContent = err.message || String(err);
+    out.classList.add("error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function syncPlaidAfterLabels(button) {
+  await savePlaidAccountLabels(button);
+  const out = document.querySelector("#plaid-account-labels .action-output");
+  if (out.classList.contains("error")) return;
+  button.disabled = true;
+  out.textContent = "saved; syncing plaid…";
+  try {
+    const r = await fetch(`/api/sync/plaid`, {method: "POST"});
+    const body = await r.json();
+    if (!r.ok || !body.ok) throw new Error(body.detail || JSON.stringify(body));
+    out.textContent = "saved and synced plaid";
+    await loadPlaidAccountLabels();
+  } catch (err) {
+    out.textContent = err.message || String(err);
+    out.classList.add("error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+loadPlaidAccountLabels();
+
+function monarchOwnerTreatment(owner) {
+  return owner === "parents"
+    ? "excluded from net worth; parent draw source"
+    : "included in net worth";
+}
+
+function onMonarchOwnerChange(select) {
+  const row = select.closest("tr");
+  row.querySelector(".monarch-treatment").textContent = monarchOwnerTreatment(select.value);
+}
+
+async function loadMonarchExports() {
+  const section = document.getElementById("monarch-account-exports");
+  if (!section) return;
+  const bodyEl = section.querySelector(".monarch-exports-body");
+  try {
+    const r = await fetch(`/api/trackers/monarch/actions/accounts_status`, {method: "POST"});
+    const body = await r.json();
+    if (!body.ok) throw new Error(body.message || JSON.stringify(body));
+    if (!body.accounts.length) {
+      bodyEl.innerHTML = '<p class="meta">No Monarch accounts synced yet. Log in, then run sync monarch.</p>';
+      return;
+    }
+    const rows = body.accounts.map((account) => `
+      <tr data-account-id="${escapeHtml(account.account_id)}">
+        <td><input type="checkbox" class="monarch-export" ${account.export_enabled ? "checked" : ""}></td>
+        <td>
+          <strong>${escapeHtml(account.institution_name || "")}</strong><br>
+          <span class="meta">${escapeHtml(account.display_name || "")}${account.mask ? " ..." + escapeHtml(account.mask) : ""}</span>
+        </td>
+        <td>
+          <select class="setup-input monarch-owner" onchange="onMonarchOwnerChange(this)">
+            ${["self", "parents"].map((owner) => (
+              `<option value="${owner}" ${owner === (account.owner || "self") ? "selected" : ""}>${owner}</option>`
+            )).join("")}
+          </select>
+        </td>
+        <td>
+          <select class="setup-input monarch-group">
+            ${["cash", "credit_card", "investments", "other"].map((group) => (
+              `<option value="${group}" ${group === account.account_group ? "selected" : ""}>${group}</option>`
+            )).join("")}
+          </select>
+        </td>
+        <td>${escapeHtml(account.type_display || account.type_name || "")}<br><span class="meta">${escapeHtml(account.subtype_display || account.subtype_name || "")}</span></td>
+        <td>${money(account.current_balance ?? account.display_balance)}</td>
+        <td class="monarch-treatment">${monarchOwnerTreatment(account.owner || "self")}</td>
+      </tr>
+    `).join("");
+    bodyEl.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Export</th>
+            <th>Account</th>
+            <th>Owner</th>
+            <th>Group</th>
+            <th>Type</th>
+            <th>Balance</th>
+            <th>Treatment</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <p class="meta">Unchecked accounts stay in raw Monarch tables but are excluded from combined finance views.</p>
+    `;
+  } catch (err) {
+    bodyEl.innerHTML = `<p class="meta error">Could not load Monarch export settings: ${escapeHtml(err.message || err)}</p>`;
+  }
+}
+
+function collectMonarchExports() {
+  return Array.from(document.querySelectorAll("#monarch-account-exports tbody tr")).map((row) => ({
+    account_id: row.dataset.accountId,
+    export_enabled: row.querySelector(".monarch-export").checked,
+    owner: row.querySelector(".monarch-owner").value,
+    account_group: row.querySelector(".monarch-group").value,
+  }));
+}
+
+async function saveMonarchExports(button) {
+  button.disabled = true;
+  const out = document.querySelector("#monarch-account-exports .action-output");
+  out.hidden = false;
+  out.classList.remove("error");
+  out.textContent = "saving…";
+  try {
+    const r = await fetch(`/api/trackers/monarch/actions/save_account_exports`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({accounts: collectMonarchExports()}),
+    });
+    const body = await r.json();
+    if (!r.ok || !body.ok) throw new Error(body.detail || body.message || JSON.stringify(body));
+    out.textContent = body.message || "saved";
+    await loadMonarchExports();
+  } catch (err) {
+    out.textContent = err.message || String(err);
+    out.classList.add("error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function syncMonarchAfterExports(button) {
+  await saveMonarchExports(button);
+  const out = document.querySelector("#monarch-account-exports .action-output");
+  if (out.classList.contains("error")) return;
+  button.disabled = true;
+  out.textContent = "saved; syncing monarch…";
+  try {
+    const r = await fetch(`/api/sync/monarch`, {method: "POST"});
+    const body = await r.json();
+    if (!r.ok || !body.ok) throw new Error(body.detail || JSON.stringify(body));
+    out.textContent = "saved and synced monarch";
+    await loadMonarchExports();
+  } catch (err) {
+    out.textContent = err.message || String(err);
+    out.classList.add("error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+loadMonarchExports();
+
+async function loadCryptoWallets() {
+  const section = document.getElementById("crypto-wallet-manager");
+  if (!section) return;
+  const bodyEl = section.querySelector(".crypto-wallet-body");
+  try {
+    const r = await fetch(`/api/trackers/crypto_wallet/actions/wallets_status`, {method: "POST"});
+    const body = await r.json();
+    if (!body.ok) throw new Error(body.message || JSON.stringify(body));
+    if (!body.wallets.length) {
+      bodyEl.innerHTML = '<p class="meta">No wallets configured yet. Add a public EVM address above.</p>';
+      return;
+    }
+    const rows = body.wallets.map((wallet) => `
+      <tr data-wallet-id="${escapeHtml(wallet.wallet_id)}">
+        <td><input type="checkbox" class="crypto-export" ${wallet.export_enabled === false ? "" : "checked"}></td>
+        <td><input class="setup-input crypto-label" value="${escapeHtml(wallet.label || "")}" autocomplete="off"></td>
+        <td>
+          <select class="setup-input crypto-type">
+            ${["evm", "bitcoin"].map((type) => (
+              `<option value="${type}" ${type === (wallet.wallet_type || "evm") ? "selected" : ""}>${type}</option>`
+            )).join("")}
+          </select>
+        </td>
+        <td>
+          <code>${escapeHtml(wallet.address)}</code>
+          <input type="hidden" class="crypto-address" value="${escapeHtml(wallet.address)}">
+        </td>
+        <td><input class="setup-input crypto-chains" value="${escapeHtml((wallet.chains || []).join(","))}" autocomplete="off"></td>
+        <td>
+          <select class="setup-input crypto-owner">
+            ${["self", "parents"].map((owner) => (
+              `<option value="${owner}" ${owner === (wallet.owner || "self") ? "selected" : ""}>${owner}</option>`
+            )).join("")}
+          </select>
+        </td>
+        <td>
+          <select class="setup-input crypto-group">
+            ${["investments", "cash", "other"].map((group) => (
+              `<option value="${group}" ${group === (wallet.account_group || "investments") ? "selected" : ""}>${group}</option>`
+            )).join("")}
+          </select>
+        </td>
+        <td>${money(wallet.total_networth_usd ?? wallet.holdings_value_usd)}</td>
+        <td class="${wallet.validation_status === "valid" ? "ok" : "warn"}">
+          ${escapeHtml(wallet.validation_status || "unvalidated")}
+          ${wallet.validation_error ? `<br><span class="meta">${escapeHtml(wallet.validation_error)}</span>` : ""}
+        </td>
+        <td>
+          <button type="button" class="btn-primary" onclick="validateCryptoWallet(this)">Validate</button>
+          <button type="button" class="btn-primary" onclick="deleteCryptoWallet(this)">Delete</button>
+        </td>
+      </tr>
+    `).join("");
+    bodyEl.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Export</th>
+            <th>Label</th>
+            <th>Type</th>
+            <th>Address</th>
+            <th>Chains</th>
+            <th>Owner</th>
+            <th>Group</th>
+            <th>Net worth</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <p class="meta">Only exported wallets feed finance. Validation calls Moralis net-worth for the configured chains.</p>
+    `;
+  } catch (err) {
+    bodyEl.innerHTML = `<p class="meta error">Could not load crypto wallets: ${escapeHtml(err.message || err)}</p>`;
+  }
+}
+
+function collectCryptoWallets() {
+  return Array.from(document.querySelectorAll("#crypto-wallet-manager tbody tr")).map((row) => ({
+    wallet_id: row.dataset.walletId,
+    address: row.querySelector(".crypto-address").value,
+    label: row.querySelector(".crypto-label").value,
+    wallet_type: row.querySelector(".crypto-type").value,
+    chains: row.querySelector(".crypto-chains").value,
+    owner: row.querySelector(".crypto-owner").value,
+    account_group: row.querySelector(".crypto-group").value,
+    export_enabled: row.querySelector(".crypto-export").checked,
+  }));
+}
+
+async function addCryptoWallet(button) {
+  button.disabled = true;
+  const section = document.getElementById("crypto-wallet-manager");
+  const out = section.querySelector(".action-output");
+  out.hidden = false;
+  out.classList.remove("error");
+  out.textContent = "validating…";
+  try {
+    const r = await fetch(`/api/trackers/crypto_wallet/actions/add_wallet`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        label: section.querySelector(".crypto-new-label").value,
+        wallet_type: section.querySelector(".crypto-new-type").value,
+        address: section.querySelector(".crypto-new-address").value,
+        chains: section.querySelector(".crypto-new-chains").value,
+        owner: "self",
+        account_group: "investments",
+        export_enabled: true,
+      }),
+    });
+    const body = await r.json();
+    if (!r.ok || !body.ok) throw new Error(body.detail || body.message || JSON.stringify(body));
+    out.textContent = body.message || "wallet added";
+    section.querySelector(".crypto-new-label").value = "";
+    section.querySelector(".crypto-new-address").value = "";
+    await loadCryptoWallets();
+  } catch (err) {
+    out.textContent = err.message || String(err);
+    out.classList.add("error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function saveCryptoWallets(button) {
+  button.disabled = true;
+  const out = document.querySelector("#crypto-wallet-manager .action-output");
+  out.hidden = false;
+  out.classList.remove("error");
+  out.textContent = "saving…";
+  try {
+    const r = await fetch(`/api/trackers/crypto_wallet/actions/save_wallets`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({wallets: collectCryptoWallets()}),
+    });
+    const body = await r.json();
+    if (!r.ok || !body.ok) throw new Error(body.detail || body.message || JSON.stringify(body));
+    out.textContent = body.message || "saved";
+    await loadCryptoWallets();
+  } catch (err) {
+    out.textContent = err.message || String(err);
+    out.classList.add("error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function validateCryptoWallet(button) {
+  button.disabled = true;
+  const row = button.closest("tr");
+  const out = document.querySelector("#crypto-wallet-manager .action-output");
+  out.hidden = false;
+  out.classList.remove("error");
+  out.textContent = "validating…";
+  try {
+    const r = await fetch(`/api/trackers/crypto_wallet/actions/validate_wallet`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        address: row.querySelector(".crypto-address").value,
+        wallet_type: row.querySelector(".crypto-type").value,
+        chains: row.querySelector(".crypto-chains").value,
+      }),
+    });
+    const body = await r.json();
+    if (!r.ok || !body.ok) throw new Error(body.detail || body.message || JSON.stringify(body));
+    out.textContent = body.message || "validated";
+    await loadCryptoWallets();
+  } catch (err) {
+    out.textContent = err.message || String(err);
+    out.classList.add("error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function deleteCryptoWallet(button) {
+  const row = button.closest("tr");
+  const label = row.querySelector(".crypto-label").value || row.querySelector(".crypto-address").value;
+  if (!window.confirm(`Delete ${label} from crypto_wallet?`)) return;
+  row.remove();
+  const out = document.querySelector("#crypto-wallet-manager .action-output");
+  out.hidden = false;
+  out.classList.remove("error");
+  out.textContent = "deleting…";
+  try {
+    const r = await fetch(`/api/trackers/crypto_wallet/actions/save_wallets`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({wallets: collectCryptoWallets()}),
+    });
+    const body = await r.json();
+    if (!r.ok || !body.ok) throw new Error(body.detail || body.message || JSON.stringify(body));
+    out.textContent = body.message || "deleted";
+    await loadCryptoWallets();
+  } catch (err) {
+    out.textContent = err.message || String(err);
+    out.classList.add("error");
+    await loadCryptoWallets();
+  }
+}
+
+async function syncCryptoWallets(button) {
+  await saveCryptoWallets(button);
+  const out = document.querySelector("#crypto-wallet-manager .action-output");
+  if (out.classList.contains("error")) return;
+  button.disabled = true;
+  out.textContent = "saved; syncing crypto_wallet…";
+  try {
+    const r = await fetch(`/api/sync/crypto_wallet`, {method: "POST"});
+    const body = await r.json();
+    if (!r.ok || !body.ok) throw new Error(body.detail || JSON.stringify(body));
+    out.textContent = "saved and synced crypto_wallet";
+    await loadCryptoWallets();
+  } catch (err) {
+    out.textContent = err.message || String(err);
+    out.classList.add("error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+loadCryptoWallets();
 </script>
 
 {% endblock %}

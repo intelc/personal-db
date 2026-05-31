@@ -1,0 +1,99 @@
+name: crypto_wallet
+description: Moralis-backed EVM crypto wallet balances, token holdings, and finance export views
+permission_type: api_key
+setup_steps:
+  - type: instructions
+    text: |
+      Crypto Wallet tracks public EVM and Bitcoin wallets through Moralis.
+
+      Save your Moralis API key below, then use the wallet manager on this setup
+      page to add each public EVM address, Bitcoin address, or Bitcoin xpub.
+      Each wallet is validated against Moralis before it is saved. Wallet
+      config is stored at:
+
+        <root>/trackers/crypto_wallet/wallets.yaml
+
+      The tracker exports wallet accounts and token holdings into the downstream
+      finance tracker through:
+
+        crypto_wallet_finance_accounts_export
+        crypto_wallet_finance_holdings_export
+
+      This tracker never asks for seed phrases or private keys. Only public
+      wallet addresses or public xpubs are needed.
+  - type: env_var
+    name: MORALIS_API_KEY
+    prompt: "Moralis API key"
+    secret: true
+  - type: env_var
+    name: MORALIS_DEFAULT_CHAINS
+    prompt: "Default EVM chains, comma-separated (press Enter to use eth,base,arbitrum,optimism,polygon,bsc)"
+    optional: true
+schedule:
+  every: 4h
+time_column: fetched_at
+granularity: event
+schema:
+  tables:
+    crypto_wallet_wallets:
+      columns:
+        wallet_id:              {type: TEXT, semantic: "Normalized lower-case EVM wallet address"}
+        address:                {type: TEXT, semantic: "Public EVM wallet address"}
+        label:                  {type: TEXT, semantic: "User-facing wallet label"}
+        chains:                 {type: TEXT, semantic: "JSON array of Moralis chains to query; bitcoin wallets use [bitcoin]"}
+        owner:                  {type: TEXT, semantic: "Owner label, usually self or parents"}
+        account_group:          {type: TEXT, semantic: "Finance account group, normally investments"}
+        export_enabled:         {type: INTEGER, semantic: "1 if this wallet feeds combined finance views"}
+        include_in_net_worth:   {type: INTEGER, semantic: "1 if this wallet contributes to personal net worth"}
+        parent_draw_source:     {type: INTEGER, semantic: "1 if activity should be treated as parent-managed"}
+        total_networth_usd:     {type: REAL, semantic: "Moralis wallet net worth in USD"}
+        native_balance_usd:     {type: REAL, semantic: "Moralis chain-level native balance value in USD"}
+        token_balance_usd:      {type: REAL, semantic: "Moralis chain-level ERC-20 token value in USD"}
+        holdings_value_usd:     {type: REAL, semantic: "Sum of synced token holding USD values"}
+        validation_status:      {type: TEXT, semantic: "valid, invalid, or unvalidated"}
+        validation_error:       {type: TEXT, semantic: "Last validation error, if any"}
+        last_validated_at:      {type: TEXT, semantic: "ISO-8601 timestamp of last wallet validation"}
+        updated_at:             {type: TEXT, semantic: "ISO-8601 timestamp of last config/materialization update"}
+        raw_json:               {type: TEXT, semantic: "Compact Moralis net-worth response JSON"}
+    crypto_wallet_token_balances:
+      columns:
+        holding_id:             {type: TEXT, semantic: "Synthetic wallet/chain/token holding id"}
+        wallet_id:              {type: TEXT, semantic: "Normalized lower-case EVM wallet address"}
+        address:                {type: TEXT, semantic: "Public EVM wallet address"}
+        chain:                  {type: TEXT, semantic: "Moralis chain id or slug"}
+        block_number:           {type: TEXT, semantic: "Moralis block number for the balance response"}
+        token_address:          {type: TEXT, semantic: "ERC-20 contract address, or native token sentinel"}
+        native_token:           {type: INTEGER, semantic: "1 if this row represents the chain native token"}
+        name:                   {type: TEXT, semantic: "Token name"}
+        symbol:                 {type: TEXT, semantic: "Token symbol"}
+        decimals:               {type: INTEGER, semantic: "Token decimals"}
+        balance_raw:            {type: TEXT, semantic: "Raw integer token balance string"}
+        balance_formatted:      {type: TEXT, semantic: "Human-readable token balance from Moralis"}
+        quantity:               {type: REAL, semantic: "Numeric token quantity"}
+        usd_price:              {type: REAL, semantic: "Current token price in USD"}
+        usd_value:              {type: REAL, semantic: "Current holding value in USD"}
+        possible_spam:          {type: INTEGER, semantic: "1 if Moralis marks this token as possible spam"}
+        verified_contract:      {type: INTEGER, semantic: "1 if Moralis marks the contract as verified"}
+        logo:                   {type: TEXT, semantic: "Token logo URL"}
+        thumbnail:              {type: TEXT, semantic: "Token thumbnail URL"}
+        fetched_at:             {type: TEXT, semantic: "ISO-8601 timestamp of sync"}
+        raw_json:               {type: TEXT, semantic: "Compact Moralis token balance JSON"}
+    crypto_wallet_token_balance_snapshots:
+      columns:
+        snapshot_id:            {type: TEXT, semantic: "Synthetic date/holding snapshot id"}
+        date:                   {type: TEXT, semantic: "Snapshot date YYYY-MM-DD"}
+        holding_id:             {type: TEXT, semantic: "Synthetic wallet/chain/token holding id"}
+        wallet_id:              {type: TEXT, semantic: "Normalized wallet id"}
+        address:                {type: TEXT, semantic: "Public wallet address"}
+        chain:                  {type: TEXT, semantic: "Chain id or slug"}
+        block_number:           {type: TEXT, semantic: "Provider block number for the balance response"}
+        token_address:          {type: TEXT, semantic: "Token contract address, or native token sentinel"}
+        native_token:           {type: INTEGER, semantic: "1 if this row represents the chain native token"}
+        name:                   {type: TEXT, semantic: "Token name"}
+        symbol:                 {type: TEXT, semantic: "Token symbol"}
+        quantity:               {type: REAL, semantic: "Numeric token quantity"}
+        usd_price:              {type: REAL, semantic: "Token price in USD"}
+        usd_value:              {type: REAL, semantic: "Holding value in USD"}
+        fetched_at:             {type: TEXT, semantic: "ISO-8601 timestamp of sync"}
+        raw_json:               {type: TEXT, semantic: "Compact provider token balance JSON"}
+related_entities: []
