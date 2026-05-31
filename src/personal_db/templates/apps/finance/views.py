@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import html
 import sqlite3
+from datetime import date, timedelta
 from typing import Any
 
 from personal_db.apps import AppContext, apply_app_schema
-from personal_db.ui import agcharts
+from personal_db.db import connect
+from personal_db.ui import agcharts, aggrid
 from personal_db.ui import components as c
 
 
@@ -53,6 +55,17 @@ def _compact_time(value: Any) -> str:
         if text.endswith(suffix):
             text = text[: -len(suffix)]
     return text.split(".", 1)[0]
+
+
+def _nav(ctx: AppContext, active: str) -> list[tuple[str, str, bool] | tuple[str, str, bool, dict[str, str]]]:
+    items: list[tuple[str, str, bool] | tuple[str, str, bool, dict[str, str]]] = []
+    for page in ctx.manifest.pages:
+        attrs = {"data-finance-parent-tab": "1"} if page.slug == "parents" else {}
+        if attrs:
+            items.append((page.title, f"/a/{ctx.manifest.name}/{page.slug}", page.slug == active, attrs))
+        else:
+            items.append((page.title, f"/a/{ctx.manifest.name}/{page.slug}", page.slug == active))
+    return items
 
 
 def _review_map(ctx: AppContext) -> dict[str, dict[str, Any]]:
@@ -249,17 +262,596 @@ def _account_table(ctx: AppContext, scope: str, *, investments: bool = False) ->
     )
 
 
-def _cashflow_section(ctx: AppContext, scope: str, title: str) -> str:
+_BURN_RATE_EVIDENCE_DAYS = 90
+_BURN_RATE_SMOOTHING_DAYS = 180
+_BURN_RATE_MONTHLY_BUCKETS = {"rent", "subscriptions"}
+_BASE_BURN_BUCKETS = [
+    ("rent", "Rent", "🏠"),
+    ("food", "Food", "🍽️"),
+    ("transportation", "Transportation", "🚕"),
+    ("ai", "AI spending", "🤖"),
+    ("health", "Health", "🩺"),
+    ("subscriptions", "Other subscriptions", "🔁"),
+]
+_OTHER_BURN_BUCKET = ("other", "Other", "📦")
+_DEFAULT_BURN_BUCKETS = [*_BASE_BURN_BUCKETS, _OTHER_BURN_BUCKET, ("wasted", "Wasted", "🗑️")]
+_BURN_BUCKET_LABELS = {key: label for key, label, _emoji in _DEFAULT_BURN_BUCKETS}
+_BURN_BUCKET_COLORS = [
+    ("", "None"),
+    ("red", "Red"),
+    ("orange", "Orange"),
+    ("yellow", "Yellow"),
+    ("green", "Green"),
+    ("blue", "Blue"),
+    ("purple", "Purple"),
+    ("pink", "Pink"),
+]
+
+
+def _ensure_burn_bucket_metadata(ctx: AppContext) -> None:
+    apply_app_schema(ctx.cfg, ctx.app_dir)
+    con = connect(ctx.cfg.db_path)
+    try:
+        columns = {str(row[1]) for row in con.execute("PRAGMA table_info(app_finance_burn_buckets)")}
+        if "color" not in columns:
+            con.execute("ALTER TABLE app_finance_burn_buckets ADD COLUMN color TEXT")
+        if "emoji" not in columns:
+            con.execute("ALTER TABLE app_finance_burn_buckets ADD COLUMN emoji TEXT")
+        con.executemany(
+            """
+            INSERT OR IGNORE INTO app_finance_burn_buckets(
+              bucket, label, emoji, sort_order, source, color
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [
+                ("rent", "Rent", "🏠", 10, "system", ""),
+                ("food", "Food", "🍽️", 20, "system", ""),
+                ("transportation", "Transportation", "🚕", 30, "system", ""),
+                ("ai", "AI spending", "🤖", 40, "system", ""),
+                ("health", "Health", "🩺", 50, "system", ""),
+                ("subscriptions", "Other subscriptions", "🔁", 60, "system", ""),
+                ("other", "Other", "📦", 800, "system", ""),
+                ("wasted", "Wasted", "🗑️", 900, "user", "red"),
+            ],
+        )
+        con.executemany(
+            """
+            UPDATE app_finance_burn_buckets
+               SET emoji=?
+             WHERE bucket=?
+               AND COALESCE(emoji, '') = ''
+            """,
+            [(emoji, key) for key, _label, emoji in _DEFAULT_BURN_BUCKETS],
+        )
+        con.execute(
+            """
+            UPDATE app_finance_burn_buckets
+               SET color='red'
+             WHERE bucket='wasted'
+               AND COALESCE(color, '') = ''
+            """
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
+def _burn_buckets(ctx: AppContext) -> list[tuple[str, str, str, str]]:
+    _ensure_burn_bucket_metadata(ctx)
+    bucket_rows = _q(ctx, "burn_buckets")
+    metadata = {
+        str(row["bucket"]): {
+            "label": str(row["label"]),
+            "emoji": str(row.get("emoji") or ""),
+            "color": str(row.get("color") or ""),
+        }
+        for row in bucket_rows
+        if row.get("bucket") and row.get("label")
+    }
+    base_keys = {key for key, _label, _emoji in [*_BASE_BURN_BUCKETS, _OTHER_BURN_BUCKET]}
+    base = [
+        (
+            key,
+            label,
+            str(metadata.get(key, {}).get("emoji") or emoji),
+            str(metadata.get(key, {}).get("color") or ""),
+        )
+        for key, label, emoji in _BASE_BURN_BUCKETS
+    ]
+    custom = [
+        (key, str(item["label"]), str(item.get("emoji") or ""), str(item.get("color") or ""))
+        for key, item in metadata.items()
+        if key not in base_keys
+    ]
+    custom_order = {
+        str(row["bucket"]): index
+        for index, row in enumerate(bucket_rows)
+        if row.get("bucket")
+    }
+    custom.sort(key=lambda item: (custom_order.get(item[0], 9999), item[1].lower()))
+    other_key, other_label, other_emoji = _OTHER_BURN_BUCKET
+    other = (
+        other_key,
+        other_label,
+        str(metadata.get(other_key, {}).get("emoji") or other_emoji),
+        str(metadata.get(other_key, {}).get("color") or ""),
+    )
+    return [*base, *custom, other]
+
+
+def _burn_rules(ctx: AppContext) -> list[dict[str, Any]]:
+    apply_app_schema(ctx.cfg, ctx.app_dir)
+    return _q(ctx, "burn_rules")
+
+
+def _burn_overrides(ctx: AppContext) -> dict[str, dict[str, Any]]:
+    apply_app_schema(ctx.cfg, ctx.app_dir)
+    return {str(row["finance_transaction_id"]): row for row in _q(ctx, "burn_overrides")}
+
+
+def _parse_date(value: Any) -> date | None:
+    try:
+        return date.fromisoformat(str(value or "")[:10])
+    except ValueError:
+        return None
+
+
+def _category_matches(category: str, pattern: str, match_type: str) -> bool:
+    category_upper = category.upper()
+    pattern_upper = pattern.upper()
+    if match_type == "exact":
+        return category_upper == pattern_upper
+    if match_type == "starts":
+        return category_upper.startswith(pattern_upper)
+    return pattern_upper in category_upper
+
+
+def _burn_rule_matches(row: dict[str, Any], rule: dict[str, Any]) -> bool:
+    amount = _float(row.get("amount"))
+    merchant = str(row.get("merchant") or "")
+    category = str(row.get("category") or "")
+    direction = str(rule.get("amount_direction") or "any")
+    if direction == "positive" and amount <= 0:
+        return False
+    if direction == "negative" and amount >= 0:
+        return False
+    min_amount = rule.get("min_amount")
+    if min_amount is not None and amount < _float(min_amount):
+        return False
+    flag_name = str(rule.get("flag_name") or "")
+    if flag_name and not int(row.get(flag_name) or 0):
+        return False
+    merchant_pattern = str(rule.get("merchant_pattern") or "").lower().strip()
+    if merchant_pattern and merchant_pattern not in merchant.lower():
+        return False
+    category_pattern = str(rule.get("category_pattern") or "").strip()
+    if category_pattern and not _category_matches(
+        category, category_pattern, str(rule.get("category_match_type") or "contains")
+    ):
+        return False
+    return bool(flag_name or merchant_pattern or category_pattern)
+
+
+def _classify_burn_row(
+    row: dict[str, Any], rules: list[dict[str, Any]], overrides: dict[str, dict[str, Any]]
+) -> tuple[str, float, str] | None:
+    amount = _float(row.get("amount"))
+    transaction_id = str(row.get("finance_transaction_id") or "")
+    override = overrides.get(transaction_id)
+    if override:
+        bucket = str(override.get("bucket") or "")
+        if bucket == "exclude":
+            return None
+        return (bucket, amount, "transaction override")
+    for rule in rules:
+        if not _burn_rule_matches(row, rule):
+            continue
+        bucket = str(rule.get("bucket") or "")
+        if bucket == "exclude":
+            return None
+        return (bucket, amount, str(rule.get("reason") or rule.get("label") or "burn rule"))
+    if amount <= 0:
+        return None
+    return ("other", amount, "fallback")
+
+
+def _classified_burn_rows(
+    rows: list[dict[str, Any]], rules: list[dict[str, Any]], overrides: dict[str, dict[str, Any]]
+) -> list[dict[str, Any]]:
+    classified_rows = []
+    for row in rows:
+        classified = _classify_burn_row(row, rules, overrides)
+        if classified is None:
+            continue
+        bucket, amount, reason = classified
+        classified_rows.append(
+            {
+                "bucket": bucket,
+                "finance_transaction_id": row.get("finance_transaction_id") or "",
+                "date": row.get("date") or "",
+                "merchant": row.get("merchant") or "",
+                "amount": amount,
+                "category": row.get("category") or "",
+                "reason": reason,
+            }
+        )
+    return classified_rows
+
+
+def _is_complete_burn_month(month_key: str, today: date) -> bool:
+    year_text, month_text = month_key.split("-", 1)
+    year = int(year_text)
+    month = int(month_text)
+    if (year, month) < (today.year, today.month):
+        return True
+    return (year, month) == (today.year, today.month) and today.day >= 25
+
+
+def _smoothed_monthly_burn(bucket: str, rows: list[dict[str, Any]], today: date) -> float:
+    bucket_rows = [row for row in rows if row["bucket"] == bucket]
+    if not bucket_rows:
+        return 0.0
+    if bucket in _BURN_RATE_MONTHLY_BUCKETS:
+        by_month: dict[str, float] = {}
+        payment_by_month: dict[str, float] = {}
+        for row in bucket_rows:
+            parsed = _parse_date(row["date"])
+            if parsed is None:
+                continue
+            month_key = f"{parsed.year:04d}-{parsed.month:02d}"
+            amount = _float(row["amount"])
+            by_month[month_key] = by_month.get(month_key, 0.0) + amount
+            if bucket == "rent" and amount > 0 and row.get("reason") == "rent payment":
+                payment_by_month[month_key] = payment_by_month.get(month_key, 0.0) + amount
+        complete_months = [
+            month for month in sorted(by_month) if _is_complete_burn_month(month, today)
+        ]
+        if bucket == "rent":
+            complete_months = [
+                month for month in complete_months if payment_by_month.get(month, 0.0) >= 1000
+            ]
+        selected_months = (complete_months or sorted(by_month))[-4:]
+        if not selected_months:
+            return 0.0
+        return sum(by_month[month] for month in selected_months) / len(selected_months)
+
+    cutoff = today - timedelta(days=_BURN_RATE_EVIDENCE_DAYS)
+    recent_total = 0.0
+    long_total = 0.0
+    for row in bucket_rows:
+        amount = _float(row["amount"])
+        parsed = _parse_date(row["date"])
+        long_total += amount
+        if parsed is not None and parsed >= cutoff:
+            recent_total += amount
+    recent_monthly = recent_total * 30.0 / _BURN_RATE_EVIDENCE_DAYS
+    long_monthly = long_total * 30.0 / _BURN_RATE_SMOOTHING_DAYS
+    return recent_monthly * 0.7 + long_monthly * 0.3
+
+
+def _burn_bucket_color_select(current: str) -> str:
+    options = []
+    for value, label in _BURN_BUCKET_COLORS:
+        selected = " selected" if value == current else ""
+        options.append(
+            f'<option value="{html.escape(value, quote=True)}"{selected}>{html.escape(label)}</option>'
+        )
+    return '<select name="color" aria-label="Bucket color">' + "".join(options) + "</select>"
+
+
+def _burn_bucket_display(label: str, emoji: str) -> str:
+    return f"{emoji} {label}" if emoji else label
+
+
+def _burn_rate_add_card(ctx: AppContext) -> str:
+    action = html.escape(ctx.action_url("create_burn_bucket"), quote=True)
+    return (
+        '<div class="burn-rate-add" data-burn-add>'
+        '<button type="button" class="burn-rate-card burn-rate-add-button" data-burn-add-button '
+        'aria-label="Add burn category">+</button>'
+        f'<form class="burn-rate-add-form" method="post" action="{action}" data-burn-add-form hidden>'
+        '<input type="text" name="emoji" placeholder="Emoji" maxlength="12">'
+        '<input type="text" name="label" placeholder="New category" maxlength="40" required>'
+        f"{_burn_bucket_color_select('')}"
+        '<button type="submit">add</button>'
+        "</form>"
+        "</div>"
+    )
+
+
+def _burn_rate_cards(
+    ctx: AppContext, by_bucket: dict[str, dict[str, Any]], buckets: list[tuple[str, str, str, str]]
+) -> str:
+    cards = []
+    for key, label, emoji, color in buckets:
+        item = by_bucket[key]
+        monthly = _float(item["monthly"])
+        escaped_key = html.escape(key, quote=True)
+        display_label = _burn_bucket_display(label, emoji)
+        escaped_label = html.escape(display_label)
+        color_class = " has-color" if color else ""
+        color_style = (
+            f' style="--burn-bucket-color:{html.escape(color, quote=True)}"' if color else ""
+        )
+        cards.append(
+            f'<button type="button" class="burn-rate-card{color_class}" data-burn-bucket="{escaped_key}" '
+            f'data-burn-label="{html.escape(display_label, quote=True)}" '
+            f'aria-pressed="false"{color_style}>'
+            f'<span>{escaped_label}</span>'
+            f"<strong>{html.escape(_money(monthly))}</strong>"
+            f"<small>smoothed / mo - {int(item['count'])} txns / {_BURN_RATE_EVIDENCE_DAYS}d</small>"
+            "</button>"
+        )
+    cards.append(_burn_rate_add_card(ctx))
+    return f'<div class="burn-rate-grid" data-burn-rate-cards>{"".join(cards)}</div>'
+
+
+def _burn_bucket_select(current: str, buckets: list[tuple[str, str, str, str]]) -> str:
+    options = []
+    bucket_options = [
+        (bucket, _burn_bucket_display(label, emoji)) for bucket, label, emoji, _color in buckets
+    ]
+    for bucket, label in [*bucket_options, ("exclude", "Exclude")]:
+        selected = " selected" if bucket == current else ""
+        options.append(
+            f'<option value="{html.escape(bucket, quote=True)}"{selected}>{html.escape(label)}</option>'
+        )
+    return '<select name="bucket">' + "".join(options) + "</select>"
+
+
+def _burn_classification_controls(
+    ctx: AppContext, row: dict[str, Any], buckets: list[tuple[str, str, str, str]]
+) -> str:
+    action = html.escape(ctx.action_url("set_burn_classification"), quote=True)
+    transaction_id = html.escape(str(row["finance_transaction_id"]), quote=True)
+    merchant = html.escape(str(row["merchant"]), quote=True)
+    category = html.escape(str(row["category"]), quote=True)
+    bucket = str(row["bucket"])
+    return (
+        f'<form class="burn-action" method="post" action="{action}">'
+        f'<input type="hidden" name="finance_transaction_id" value="{transaction_id}">'
+        f'<input type="hidden" name="merchant" value="{merchant}">'
+        f'<input type="hidden" name="source_category" value="{category}">'
+        f"{_burn_bucket_select(bucket, buckets)}"
+        '<select name="scope">'
+        '<option value="transaction">this txn</option>'
+        '<option value="merchant">merchant</option>'
+        '<option value="category">category</option>'
+        "</select>"
+        '<button type="submit">save</button>'
+        "</form>"
+    )
+
+
+def _burn_rate_table(
+    ctx: AppContext, rows: list[dict[str, Any]], buckets: list[tuple[str, str, str, str]]
+) -> str:
+    if not rows:
+        return c.notice("No burn-rate transactions matched the current rule set.")
+    grid_rows = []
+    bucket_labels = {
+        bucket: _burn_bucket_display(label, emoji) for bucket, label, emoji, _color in buckets
+    }
+    for row in rows:
+        bucket = str(row["bucket"])
+        grid_rows.append(
+            {
+                "__burnBucket": bucket,
+                "bucket": bucket_labels.get(bucket, bucket),
+                "date": row["date"],
+                "merchant": row["merchant"],
+                "amount": _money(row["amount"], cents=True),
+                "source_category": row["category"],
+                "matched_rule": row["reason"],
+                "classify": _burn_classification_controls(ctx, row, buckets),
+            }
+        )
+    columns = [
+        {"field": "bucket", "headerName": "Bucket", "minWidth": 105},
+        {"field": "date", "headerName": "Date", "minWidth": 110},
+        {"field": "merchant", "headerName": "Merchant", "minWidth": 240},
+        {"field": "amount", "headerName": "Amount", "minWidth": 100},
+        {"field": "source_category", "headerName": "Source Category", "minWidth": 220},
+        {
+            "field": "matched_rule",
+            "headerName": "Matched Rule",
+            "minWidth": 150,
+            "headerTooltip": "The rule or override that placed this transaction in its burn bucket.",
+        },
+        {
+            "field": "classify",
+            "headerName": "Classify",
+            "cellRenderer": "html",
+            "sortable": False,
+            "filter": False,
+            "minWidth": 310,
+        },
+    ]
+    return (
+        '<div class="burn-rate-detail" data-burn-rate-detail>'
+        '<p class="meta" data-burn-rate-status>Showing all burn-rate transactions</p>'
+        + aggrid.grid(
+            columns,
+            grid_rows,
+            class_name="finance-grid burn-rate-tx-grid",
+            page_size=25,
+            height_px=560,
+        )
+        + "</div>"
+    )
+
+
+def _render_burn_rate(ctx: AppContext) -> str:
+    buckets = _burn_buckets(ctx)
+    rules = _burn_rules(ctx)
+    overrides = _burn_overrides(ctx)
+    smoothing_rows = _classified_burn_rows(
+        _q(ctx, "burn_rate_transactions", days=_BURN_RATE_SMOOTHING_DAYS), rules, overrides
+    )
+    evidence_rows = _classified_burn_rows(
+        _q(ctx, "burn_rate_transactions", days=_BURN_RATE_EVIDENCE_DAYS), rules, overrides
+    )
+    today = date.today()
+    by_bucket = {
+        key: {
+            "monthly": _smoothed_monthly_burn(key, smoothing_rows, today),
+            "count": 0,
+        }
+        for key, _label, _emoji, _color in buckets
+    }
+    detail_rows = []
+    for row in evidence_rows:
+        bucket = str(row["bucket"])
+        if bucket not in by_bucket:
+            by_bucket[bucket] = {"monthly": _smoothed_monthly_burn(bucket, smoothing_rows, today), "count": 0}
+            buckets.insert(-1, (bucket, bucket.replace("_", " ").title(), "", ""))
+        entry = by_bucket[bucket]
+        entry["count"] = int(entry["count"]) + 1
+        detail_rows.append(row)
+
+    return c.section(
+        "Personal Burn Rate",
+        f'<div data-burn-rate>{_burn_rate_cards(ctx, by_bucket, buckets)}'
+        f"{_burn_rate_table(ctx, detail_rows, buckets)}</div>",
+        subtitle=(
+            "Smoothed monthly estimate from up to 180 days; table shows the last 90 days. "
+            "Rent is net of Curiosity Research and Oliver Zou reimbursements."
+        ),
+    )
+
+
+def _burn_rule_match_label(rule: dict[str, Any]) -> str:
+    parts = []
+    merchant = str(rule.get("merchant_pattern") or "")
+    category = str(rule.get("category_pattern") or "")
+    flag = str(rule.get("flag_name") or "")
+    direction = str(rule.get("amount_direction") or "any")
+    min_amount = rule.get("min_amount")
+    if flag:
+        parts.append(f"{flag} is true")
+    if merchant:
+        parts.append(f'merchant contains "{merchant}"')
+    if category:
+        match_type = str(rule.get("category_match_type") or "contains")
+        parts.append(f"category {match_type} {category}")
+    if direction != "any":
+        parts.append(f"amount is {direction}")
+    if min_amount is not None:
+        parts.append(f"amount >= {_money(min_amount)}")
+    return " + ".join(parts) if parts else "always"
+
+
+def _burn_rules_section(ctx: AppContext) -> str:
+    bucket_labels = {
+        bucket: _burn_bucket_display(label, emoji)
+        for bucket, label, emoji, _color in _burn_buckets(ctx)
+    }
+    rows = [
+        (
+            int(rule.get("priority") or 0),
+            rule.get("label") or "",
+            bucket_labels.get(str(rule.get("bucket") or ""), str(rule.get("bucket") or "")),
+            _burn_rule_match_label(rule),
+            rule.get("reason") or "",
+            rule.get("source") or "",
+        )
+        for rule in _burn_rules(ctx)
+    ]
+    return c.section(
+        "Burn Rate Rules",
+        c.data_grid(
+            rows,
+            ["Priority", "Label", "Bucket", "Match", "Reason", "Source"],
+            class_name="finance-grid",
+            page_size=25,
+        ),
+        subtitle="Seed rules plus inline merchant/category rules created from the overview.",
+    )
+
+
+def _burn_bucket_color_controls(
+    ctx: AppContext, bucket: str, label: str, emoji: str, color: str
+) -> str:
+    action = html.escape(ctx.action_url("set_burn_bucket_color"), quote=True)
+    escaped_bucket = html.escape(bucket, quote=True)
+    escaped_label = html.escape(label, quote=True)
+    escaped_emoji = html.escape(emoji, quote=True)
+    return (
+        f'<form class="burn-bucket-color-form" method="post" action="{action}">'
+        f'<input type="hidden" name="bucket" value="{escaped_bucket}">'
+        f'<input type="hidden" name="label" value="{escaped_label}">'
+        f'<input type="text" name="emoji" value="{escaped_emoji}" maxlength="12" '
+        'aria-label="Bucket emoji">'
+        f"{_burn_bucket_color_select(color)}"
+        '<button type="submit">save</button>'
+        "</form>"
+    )
+
+
+def _burn_buckets_section(ctx: AppContext) -> str:
+    buckets = _burn_buckets(ctx)
+    rows = "".join(
+        "<tr>"
+        f"<td>{html.escape(emoji)}</td>"
+        f"<td>{html.escape(label)}</td>"
+        f"<td>{html.escape(color.title() if color else 'None')}</td>"
+        f"<td>{_burn_bucket_color_controls(ctx, bucket, label, emoji, color)}</td>"
+        "</tr>"
+        for bucket, label, emoji, color in buckets
+    )
+    table = (
+        '<table class="recent-rows burn-bucket-table">'
+        "<thead><tr><th>Emoji</th><th>Bucket</th><th>Color</th><th>Customize</th></tr></thead>"
+        f"<tbody>{rows}</tbody>"
+        "</table>"
+    )
+    return c.section(
+        "Burn Rate Buckets",
+        table,
+        subtitle="Bucket colors are optional. Colored buckets show up on the overview cards.",
+    )
+
+
+def render_rules(ctx: AppContext) -> str:
+    return c.page(
+        "Finance Rules",
+        _burn_buckets_section(ctx),
+        _burn_rules_section(ctx),
+        subtitle="Auditable burn-rate classification rules. Inline overview changes create transaction overrides or user rules here.",
+        nav=_nav(ctx, "rules"),
+    )
+
+
+def _cashflow_section(ctx: AppContext, scope: str, title: str, *, show_table: bool = True) -> str:
     rows = _q(ctx, "cashflow_rows", owner=_scope_owner(scope), limit=180)
     ordered = list(reversed(rows))
     labels = [str(row["date"])[5:] for row in ordered]
     dates = [str(row["date"]) for row in ordered]
     net = [_float(row["net"]) for row in ordered]
+    tooltip_fields = [
+        {"key": "income", "label": "Income", "format": "usd"},
+        {"key": "spending", "label": "Spending", "format": "usd"},
+        {"key": "net", "label": "Net", "format": "usd"},
+        {"key": "parent_draw", "label": "Parent draw", "format": "usd"},
+        {"key": "credit_card_payments", "label": "Card payments", "format": "usd"},
+        {"key": "internal_transfers", "label": "Transfers", "format": "usd"},
+        {"key": "txn_count", "label": "Transactions", "format": "integer"},
+    ]
     chart = ""
     if rows:
         chart = agcharts.gain_loss_area_chart(
             labels,
             net,
+            extra_values={
+                "income": [_float(row["income"]) for row in ordered],
+                "spending": [_float(row["spending"]) for row in ordered],
+                "parent_draw": [_float(row["parent_draw"]) for row in ordered],
+                "credit_card_payments": [_float(row["credit_card_payments"]) for row in ordered],
+                "internal_transfers": [_float(row["internal_transfers"]) for row in ordered],
+                "txn_count": [_float(row["txn_count"]) for row in ordered],
+            },
+            tooltip_fields=tooltip_fields,
             height_px=250,
             value_attr="data-usd",
             month_markers=True,
@@ -267,8 +859,19 @@ def _cashflow_section(ctx: AppContext, scope: str, title: str) -> str:
             date_values=dates,
             aggregation=True,
             aggregation_default_mode="week",
+            aggregation_sum_keys=[
+                "net",
+                "income",
+                "spending",
+                "parent_draw",
+                "credit_card_payments",
+                "internal_transfers",
+                "txn_count",
+            ],
             scale_default_mode="full",
         )
+    if not show_table:
+        return c.section(title, chart)
     table_rows = [
         (
             row["date"],
@@ -300,6 +903,53 @@ def _cashflow_section(ctx: AppContext, scope: str, title: str) -> str:
             class_name="finance-grid",
             page_size=20,
         ),
+    )
+
+
+def _parent_draw_section(ctx: AppContext) -> str:
+    daily = _q(ctx, "parent_draw_daily_rows", limit=180)
+    labels = [str(row["date"])[5:] for row in daily]
+    dates = [str(row["date"]) for row in daily]
+    draws = [-_float(row["parent_draw"]) for row in daily]
+    chart = ""
+    if daily:
+        chart = agcharts.gain_loss_area_chart(
+            labels,
+            draws,
+            height_px=220,
+            value_attr="data-usd",
+            positive_color="#167a3f",
+            negative_color="#b23a48",
+            line_color="#111111",
+            month_markers=True,
+            zoom_default_window=90,
+            date_values=dates,
+            aggregation=True,
+            aggregation_default_mode="week",
+            scale_default_mode="full",
+        )
+    rows = [
+        (
+            row.get("date") or "",
+            row.get("institution") or "",
+            row.get("account_name") or "",
+            row.get("source") or "",
+            row.get("merchant") or "",
+            _money(row.get("amount"), cents=True),
+            row.get("category") or "",
+        )
+        for row in _q(ctx, "parent_draw_rows", limit=300)
+    ]
+    return c.section(
+        "Parent Account Draws",
+        chart,
+        c.data_grid(
+            rows,
+            ["Date", "Institution", "Account", "Source", "Merchant", "Amount", "Category"],
+            class_name="finance-grid",
+            page_size=25,
+        ),
+        subtitle="Outflows from parent-managed accounts. Parent accounts stay out of personal net worth.",
     )
 
 
@@ -380,15 +1030,16 @@ def _holding_section(ctx: AppContext, scope: str, title: str) -> str:
 def _scope_page(ctx: AppContext, scope: str, title: str) -> str:
     metrics, latest_date = _latest_metrics(ctx, scope)
     subtitle = f"Latest finance mart snapshot: {latest_date}" if latest_date else ""
-    return c.page(
-        title,
+    sections = [
         c.metric_grid(metrics),
         _net_worth_section(ctx, scope, f"{title} Net Worth"),
         _cashflow_section(ctx, scope, f"{title} Cashflow"),
         c.section(f"{title} Accounts", _account_table(ctx, scope)),
         _holding_section(ctx, scope, f"{title} Investments"),
-        subtitle=subtitle,
-    )
+    ]
+    if scope == "parents":
+        sections.append(_parent_draw_section(ctx))
+    return c.page(title, *sections, subtitle=subtitle, nav=_nav(ctx, scope))
 
 
 def render_overview(ctx: AppContext) -> str:
@@ -399,14 +1050,35 @@ def render_overview(ctx: AppContext) -> str:
         return c.page(
             "Finance Overview",
             c.notice("No combined finance data yet. Sync Plaid and/or Monarch, then sync finance."),
+            nav=_nav(ctx, "overview"),
         )
+    toggle = (
+        '<div class="finance-dashboard-controls">'
+        '<label class="finance-toggle">'
+        '<input type="checkbox" data-finance-self-only checked> '
+        "<span>Only show self</span>"
+        "</label>"
+        "</div>"
+    )
+    dashboard = (
+        '<div class="finance-dashboard finance-self-only" data-finance-dashboard>'
+        + toggle
+        + c.section("Self", c.metric_grid(self_metrics))
+        + '<div data-finance-parent="1">'
+        + c.section("Parents", c.metric_grid(parent_metrics), class_name="finance-parent-section")
+        + "</div>"
+        + _cashflow_section(ctx, "self", "Self Cashflow", show_table=False)
+        + '<div data-finance-parent="1">'
+        + _cashflow_section(ctx, "parents", "Parent Cashflow", show_table=False)
+        + "</div>"
+        + _render_burn_rate(ctx)
+        + "</div>"
+    )
     return c.page(
         "Finance Overview",
-        c.section("Self", c.metric_grid(self_metrics)),
-        c.section("Parents", c.metric_grid(parent_metrics), class_name="finance-parent-section"),
-        _cashflow_section(ctx, "self", "Self Cashflow"),
-        _cashflow_section(ctx, "parents", "Parent Cashflow"),
+        dashboard,
         subtitle="A local app surface over the finance mart.",
+        nav=_nav(ctx, "overview"),
     )
 
 
@@ -420,12 +1092,13 @@ def render_parents(ctx: AppContext) -> str:
 
 def render_review(ctx: AppContext) -> str:
     categories = _category_map(ctx)
+    reviews = _review_map(ctx)
     presets = _category_presets(ctx)
-    rows = []
+    transaction_rows = []
     for row in _q(ctx, "transaction_category_candidates", limit=250):
         transaction_id = str(row["finance_transaction_id"])
         state = categories.get(transaction_id)
-        rows.append(
+        transaction_rows.append(
             (
                 row.get("date") or "",
                 row.get("merchant") or "",
@@ -437,13 +1110,46 @@ def render_review(ctx: AppContext) -> str:
                 _category_controls(ctx, transaction_id, state),
             )
         )
+    parent_rows = []
+    for row in _q(ctx, "parent_draw_rows", limit=250):
+        review_key = str(row["finance_transaction_id"])
+        state = reviews.get(review_key)
+        parent_rows.append(
+            (
+                row.get("date") or "",
+                row.get("institution") or "",
+                row.get("account_name") or "",
+                row.get("merchant") or "",
+                _money(row.get("amount"), cents=True),
+                row.get("category") or "",
+                _review_status_cell(state),
+                _review_controls(ctx, review_key, "parent_draw", state),
+            )
+        )
+    recurring_rows = []
+    for row in _q(ctx, "recurring_candidates", limit=100):
+        review_key = _review_key_for_recurring(row)
+        state = reviews.get(review_key)
+        recurring_rows.append(
+            (
+                row.get("merchant") or "",
+                row.get("owner") or "",
+                str(row.get("txn_count") or ""),
+                _money(row.get("avg_amount"), cents=True),
+                row.get("first_seen") or "",
+                row.get("last_seen") or "",
+                row.get("category") or "",
+                _review_status_cell(state),
+                _review_controls(ctx, review_key, "recurring_candidate", state),
+            )
+        )
     return c.page(
-        "Transaction Categorization",
+        "Finance Review",
         _category_datalist(presets),
         c.section(
-            "Recent Transactions",
+            "Transaction Categorization",
             c.data_grid(
-                rows,
+                transaction_rows,
                 [
                     "Date",
                     "Merchant",
@@ -460,6 +1166,48 @@ def render_review(ctx: AppContext) -> str:
             ),
             subtitle="App categories are local overrides; source transactions are not mutated.",
         ),
+        c.section(
+            "Parent Draws",
+            c.data_grid(
+                parent_rows,
+                [
+                    "Date",
+                    "Institution",
+                    "Account",
+                    "Merchant",
+                    "Amount",
+                    "Category",
+                    "Status",
+                    "Actions",
+                ],
+                class_name="finance-grid",
+                page_size=25,
+                html_columns={7},
+            ),
+            subtitle="Review parent-managed outflows without mutating source transactions.",
+        ),
+        c.section(
+            "Recurring Candidates",
+            c.data_grid(
+                recurring_rows,
+                [
+                    "Merchant",
+                    "Owner",
+                    "Count",
+                    "Average",
+                    "First Seen",
+                    "Last Seen",
+                    "Category",
+                    "Status",
+                    "Actions",
+                ],
+                class_name="finance-grid",
+                page_size=25,
+                html_columns={8},
+            ),
+            subtitle="Repeated merchants from the last 180 days.",
+        ),
+        nav=_nav(ctx, "review"),
     )
 
 
@@ -479,4 +1227,5 @@ def render_settings(ctx: AppContext) -> str:
         c.notice(
             "Display preferences will live here; source account ownership stays in trackers and marts."
         ),
+        nav=_nav(ctx, "settings"),
     )

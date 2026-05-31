@@ -1,0 +1,76 @@
+name: calendar
+description: macOS Calendar events and planned-vs-actual reality blocks
+permission_type: full_disk_access
+setup_steps:
+  - type: fda_check
+    probe_path: "~/Library/Group Containers/group.com.apple.calendar"
+  - type: instructions
+    text: |
+      Reads local macOS Calendar SQLite stores in read-only mode.
+
+      Default search root:
+        ~/Library/Group Containers/group.com.apple.calendar
+
+      Override with:
+        PERSONAL_DB_CALENDAR_DB=/path/to/calendar.sqlite
+
+      The tracker stores calendar event metadata and hashes notes content; it
+      does not store full notes/description text. After ingest it materializes
+      calendar_reality_blocks by comparing planned event windows to available
+      activity data:
+        - screen_time_app_usage
+        - mosspath_lite_events
+        - chrome_visits
+        - project_time
+
+      Recurring events are imported when they are present as concrete rows in
+      the local Calendar store. Some macOS versions store only recurrence
+      masters; those can be expanded in a later EventKit-backed adapter.
+schedule:
+  every: 30m
+time_column: start_at
+granularity: event
+schema:
+  tables:
+    calendar_events:
+      columns:
+        event_id:        {type: TEXT, semantic: "stable event id derived from source database and event UID/primary key"}
+        source:          {type: TEXT, semantic: "source adapter, currently macos_calendar"}
+        source_db:       {type: TEXT, semantic: "calendar source database path"}
+        source_pk:       {type: TEXT, semantic: "source row primary key"}
+        calendar_id:     {type: TEXT, semantic: "source calendar id when available"}
+        calendar_title:  {type: TEXT, semantic: "calendar name when available"}
+        title:           {type: TEXT, semantic: "event title"}
+        location:        {type: TEXT, semantic: "event location"}
+        notes_hash:      {type: TEXT, semantic: "sha256 hash of notes/description text, not the text itself"}
+        start_at:        {type: TEXT, semantic: "ISO-8601 UTC event start"}
+        end_at:          {type: TEXT, semantic: "ISO-8601 UTC event end"}
+        all_day:         {type: INTEGER, semantic: "1 when all-day event"}
+        timezone:        {type: TEXT, semantic: "source timezone identifier when available"}
+        url:             {type: TEXT, semantic: "event URL when available"}
+        status:          {type: TEXT, semantic: "source status when available"}
+        availability:    {type: TEXT, semantic: "source availability/free-busy value when available"}
+        imported_at:     {type: TEXT, semantic: "ISO-8601 UTC import time"}
+    calendar_reality_blocks:
+      columns:
+        event_id:            {type: TEXT, semantic: "calendar_events.event_id"}
+        date:                {type: TEXT, semantic: "local date YYYY-MM-DD"}
+        title:               {type: TEXT, semantic: "event title"}
+        calendar_title:      {type: TEXT, semantic: "calendar title"}
+        start_at:            {type: TEXT, semantic: "ISO-8601 UTC event start"}
+        end_at:              {type: TEXT, semantic: "ISO-8601 UTC event end"}
+        planned_minutes:     {type: INTEGER, semantic: "scheduled event duration"}
+        actual_minutes:      {type: INTEGER, semantic: "best available active-computer minutes overlapping event"}
+        screen_time_minutes: {type: INTEGER, semantic: "overlapping macOS Screen Time app minutes"}
+        mosspath_events:     {type: INTEGER, semantic: "Mosspath Lite event count during block"}
+        chrome_visits:       {type: INTEGER, semantic: "Chrome visit count during block"}
+        app_count:           {type: INTEGER, semantic: "distinct observed foreground apps"}
+        domain_count:        {type: INTEGER, semantic: "distinct observed browser domains"}
+        top_apps_json:       {type: TEXT, semantic: "JSON ranked app observations during the event"}
+        top_domains_json:    {type: TEXT, semantic: "JSON ranked browser domains during the event"}
+        projects_json:       {type: TEXT, semantic: "JSON project_time rows from the local event date"}
+        reality_label:       {type: TEXT, semantic: "no_activity, light_activity, focused, fragmented, or calendar_only"}
+        fragmentation_score: {type: REAL, semantic: "0-1 heuristic fragmentation based on app/domain variety"}
+        computed_at:         {type: TEXT, semantic: "ISO-8601 UTC computation time"}
+related_entities: []
+local_only: true

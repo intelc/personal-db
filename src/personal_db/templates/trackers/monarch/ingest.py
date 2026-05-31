@@ -270,13 +270,38 @@ def _flatten_transaction(txn: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _flatten_balances(account: dict[str, Any], now: str) -> list[dict[str, Any]]:
+def _flatten_balances(
+    account: dict[str, Any],
+    now: str,
+    *,
+    start_date: str,
+    end_date: str,
+) -> list[dict[str, Any]]:
     balances = account.get("recentBalances") or []
     rows = []
-    for item in balances:
-        if not isinstance(item, dict):
+    try:
+        start_day = date.fromisoformat(start_date)
+        end_day = date.fromisoformat(end_date)
+    except ValueError:
+        start_day = end_day = date.today()
+    expected_days = (end_day - start_day).days + 1
+    if balances and all(isinstance(item, (int, float)) or item is None for item in balances):
+        # Monarch returns an undated numeric series. For recent windows it is
+        # daily, but longer or inactive-account windows can be downsampled. Only
+        # materialize when the date mapping is exact.
+        if expected_days <= 0 or len(balances) != expected_days:
+            return []
+    for idx, item in enumerate(balances):
+        if isinstance(item, (int, float)):
+            day = (start_day + timedelta(days=idx)).isoformat()
+            balance = item
+        elif isinstance(item, dict):
+            day = item.get("date")
+            balance = item.get("balance")
+        else:
             continue
-        day = item.get("date")
+        if balance is None:
+            continue
         if not day:
             continue
         rows.append(
@@ -284,12 +309,11 @@ def _flatten_balances(account: dict[str, Any], now: str) -> list[dict[str, Any]]
                 "balance_id": f"{account.get('id')}:{day}",
                 "account_id": account.get("id"),
                 "date": day,
-                "balance": item.get("balance"),
+                "balance": balance,
                 "updated_at": now,
             }
         )
     return rows
-
 
 def _flatten_holding(account_id: str, edge: dict[str, Any], now: str) -> dict[str, Any] | None:
     node = edge.get("node") or {}
@@ -405,10 +429,14 @@ def _sync(t: Tracker, *, start: str | None = None, end: str | None = None) -> No
     txn_rows = [_flatten_transaction(txn) for txn in txns if txn.get("id")]
     t.upsert("monarch_transactions", txn_rows, key=["transaction_id"])
 
-    balance_body = mm.get_recent_account_balances(start_date=start_date)
+    try:
+        balance_start = max(date.fromisoformat(start_date), date.fromisoformat(end_date) - timedelta(days=364)).isoformat()
+    except ValueError:
+        balance_start = start_date
+    balance_body = mm.get_recent_account_balances(start_date=balance_start)
     balance_rows = []
     for account in balance_body.get("accounts") or []:
-        balance_rows.extend(_flatten_balances(account, now))
+        balance_rows.extend(_flatten_balances(account, now, start_date=balance_start, end_date=end_date))
     t.upsert("monarch_account_balances", balance_rows, key=["balance_id"])
 
     holding_rows = []

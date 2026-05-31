@@ -1,0 +1,23 @@
+name: calendar_reality
+title: Calendar Reality
+description: Planned calendar time compared with actual app, browser, and project activity.
+
+reads:
+  tables:
+    - calendar_events
+    - calendar_reality_blocks
+    - mosspath_lite_events
+    - screen_time_app_usage
+    - chrome_visits
+    - project_time
+
+pages:
+  - slug: overview
+    title: Overview
+    view: render_overview
+  - slug: blocks
+    title: Blocks
+    view: render_blocks
+  - slug: sources
+    title: Sources
+    view: render_sources

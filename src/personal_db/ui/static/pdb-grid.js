@@ -2,11 +2,90 @@
   function htmlCellRenderer(params) {
     const span = document.createElement('span');
     span.innerHTML = params.value == null ? '' : String(params.value);
-    wireInlineForms(span);
+    wireInlineForms(span, params);
     return span;
   }
 
-  function wireInlineForms(root) {
+  function formPayload(form) {
+    return Object.fromEntries(Array.from(new FormData(form).entries()).map(([key, value]) => [key, String(value)]));
+  }
+
+  function burnRuleReason(scope) {
+    if (scope === 'merchant') return 'user merchant rule';
+    if (scope === 'category') return 'user category rule';
+    return 'transaction override';
+  }
+
+  async function submitBurnAction(form, params) {
+    const payload = formPayload(form);
+    const bucket = payload.bucket || '';
+    const scope = payload.scope || 'transaction';
+    const select = form.querySelector('select[name="bucket"]');
+    const bucketLabel = select && select.selectedOptions.length ? select.selectedOptions[0].textContent : bucket;
+    const previousBucket = params.data && params.data.__burnBucket ? params.data.__burnBucket : '';
+    const button = form.querySelector('button[type="submit"], button:not([type])');
+    const previousText = button ? button.textContent : '';
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'saving';
+    }
+    try {
+      const response = await fetch(form.action, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || `Save failed (${response.status})`);
+      }
+      const grid = form.closest('[data-pdb-grid]');
+      if (params.data) {
+        params.data.__burnBucket = bucket;
+        params.data.bucket = bucketLabel || bucket;
+        params.data.matched_rule = burnRuleReason(scope);
+        if (params.api && typeof params.api.applyTransaction === 'function') {
+          params.api.applyTransaction({ update: [params.data] });
+        } else if (params.api && typeof params.api.refreshCells === 'function') {
+          params.api.refreshCells({ force: true });
+        }
+      }
+      if (params.api && typeof params.api.onFilterChanged === 'function') {
+        params.api.onFilterChanged();
+      }
+      (grid || form).dispatchEvent(
+        new CustomEvent('pdb-burn-classified', {
+          bubbles: true,
+          detail: {
+            oldBucket: previousBucket,
+            newBucket: bucket,
+            bucketLabel: bucketLabel || bucket,
+          },
+        })
+      );
+    } catch (error) {
+      form.dataset.error = error && error.message ? error.message : 'Save failed';
+      if (button) {
+        button.disabled = false;
+        button.textContent = 'retry';
+      }
+      return;
+    }
+    form.dataset.saved = '1';
+    if (button) {
+      button.disabled = false;
+      button.textContent = 'saved';
+      window.setTimeout(() => {
+        button.textContent = previousText || 'save';
+        delete form.dataset.saved;
+      }, 900);
+    }
+  }
+
+  function wireInlineForms(root, params) {
     root.querySelectorAll('.category-action input[name="category"]').forEach((input) => {
       input.addEventListener('click', (event) => event.stopPropagation());
       input.addEventListener('keydown', (event) => {
@@ -22,8 +101,21 @@
         }
       });
     });
-    root.querySelectorAll('.category-action button, .review-action button').forEach((button) => {
-      button.addEventListener('click', (event) => event.stopPropagation());
+    root
+      .querySelectorAll('.category-action button, .review-action button, .burn-action button')
+      .forEach((button) => {
+        button.addEventListener('click', (event) => event.stopPropagation());
+      });
+    root.querySelectorAll('.burn-action select').forEach((select) => {
+      select.addEventListener('click', (event) => event.stopPropagation());
+      select.addEventListener('keydown', (event) => event.stopPropagation());
+    });
+    root.querySelectorAll('.burn-action').forEach((form) => {
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        submitBurnAction(form, params);
+      });
     });
   }
 
@@ -74,10 +166,15 @@
         ? (params) => Boolean(params.rowNode.data && params.rowNode.data.__pdbGroup)
         : undefined,
       fullWidthCellRenderer: grouped ? groupCellRenderer : undefined,
+      isExternalFilterPresent: () => Boolean(el.dataset.pdbBucketFilter),
+      doesExternalFilterPass: (node) =>
+        !el.dataset.pdbBucketFilter ||
+        (node.data && node.data.__burnBucket === el.dataset.pdbBucketFilter),
     };
     delete options.grouped;
-    window.agGrid.createGrid(el, options);
+    el.__pdbGridApi = window.agGrid.createGrid(el, options);
     el.dataset.pdbGridReady = '1';
+    el.dispatchEvent(new CustomEvent('pdb-grid-ready', { bubbles: true }));
   }
 
   function initAll() {

@@ -141,6 +141,17 @@ Add `personal_db.ui.components` with stable helpers:
 - `empty_state`
 - `notice`
 
+Important rendering convention: app route templates are only the outer
+container. They should not render the app title or page tabs. Each app view
+should return exactly one `components.page(...)` call, with `nav=` when the app
+has multiple pages, so title/tab chrome is not duplicated.
+
+Data grid convention: app views may pass dictionary rows with either full AG
+Grid column definitions or simple string field names. The shared
+`components.data_grid(...)` helper owns normalization from string field names
+to `{field, headerName}` so apps do not accidentally render blank AG Grid
+columns.
+
 Under the hood, these can emit server-rendered HTML plus small data attributes consumed by vendored JavaScript.
 
 Near-term component dependencies:

@@ -179,6 +179,9 @@ def gain_loss_area_chart(
     positive_color: str = "#167a3f",
     negative_color: str = "#b23a48",
     line_color: str = "#111111",
+    extra_values: dict[str, list[Any]] | None = None,
+    tooltip_fields: list[dict[str, str]] | None = None,
+    aggregation_sum_keys: list[str] | None = None,
     **_ignored: Any,
 ) -> str:
     if not x_labels or not values:
@@ -192,6 +195,9 @@ def gain_loss_area_chart(
         row: dict[str, Any] = {"x": label}
         if date_values and index < len(date_values):
             row["date"] = date_values[index]
+        for key, extra in (extra_values or {}).items():
+            if index < len(extra):
+                row[key] = extra[index]
         if raw_value is not None:
             value = float(raw_value)
             row["net"] = value
@@ -285,9 +291,11 @@ def gain_loss_area_chart(
             "defaultMode": aggregation_default_mode
             if aggregation_default_mode in {"day", "week", "month"}
             else "day",
-            "sumKeys": ["net"],
+            "sumKeys": aggregation_sum_keys or ["net"],
             "deriveGainLoss": True,
         }
+    if tooltip_fields:
+        options["pdbTooltip"] = {"fields": tooltip_fields}
     if value_format:
         options["valueFormat"] = value_format
     return chart(options, height_px=height_px, class_name="pdb-line-chart pdb-net-area-chart")

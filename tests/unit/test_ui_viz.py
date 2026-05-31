@@ -431,6 +431,20 @@ def test_aggrid_table_marks_safe_html_columns():
     assert "<\\/span>" in html
 
 
+def test_data_grid_normalizes_dict_rows_with_string_columns():
+    from personal_db.ui import components as c
+
+    html = c.data_grid(
+        [{"day": "2026-05-31", "place_name": "Studio", "points": 3}],
+        ["day", "place_name", "points"],
+    )
+
+    assert "data-pdb-grid" in html
+    assert '"field": "day"' in html
+    assert '"headerName": "Place Name"' in html
+    assert '"place_name": "Studio"' in html
+
+
 def test_agcharts_line_renders_structured_options():
     from personal_db.ui.agcharts import line_chart
 
@@ -459,8 +473,14 @@ def test_agcharts_gain_loss_area_can_enable_time_grouping():
         ["05-23", "05-24", "05-25"],
         [10.0, -12.0, 3.0],
         date_values=["2026-05-23", "2026-05-24", "2026-05-25"],
+        extra_values={"income": [20, 0, 10], "spending": [10, 12, 7]},
+        tooltip_fields=[
+            {"key": "income", "label": "Income", "format": "usd"},
+            {"key": "spending", "label": "Spending", "format": "usd"},
+        ],
         aggregation=True,
         aggregation_default_mode="week",
+        aggregation_sum_keys=["net", "income", "spending"],
         scale_default_mode="full",
         month_markers=True,
         value_attr="data-usd",
@@ -471,7 +491,8 @@ def test_agcharts_gain_loss_area_can_enable_time_grouping():
     assert '"dateKey": "date"' in html
     assert '"modes": ["day", "week", "month"]' in html
     assert '"defaultMode": "week"' in html
-    assert '"sumKeys": ["net"]' in html
+    assert '"sumKeys": ["net", "income", "spending"]' in html
+    assert '"pdbTooltip": {"fields": [{"key": "income", "label": "Income", "format": "usd"}' in html
     assert '"defaultMode": "full"' in html
     assert '"valueFormat": "usd"' in html
 
@@ -505,5 +526,7 @@ def test_base_uses_vendored_ag_assets(tmp_path):
     assert r.status_code == 200
     assert "/static/vendor/ag-grid-community/35.3.0/ag-grid-community.min.js" in r.text
     assert "/static/vendor/ag-charts-community/13.3.0/ag-charts-community.min.js" in r.text
-    assert "/static/pdb-finance.js?v=1" in r.text
+    assert "/static/pdb-grid.js?v=5" in r.text
+    assert "/static/style.css?v=finance-app-4" in r.text
+    assert "/static/pdb-finance.js?v=5" in r.text
     assert "cdn.jsdelivr.net" not in r.text

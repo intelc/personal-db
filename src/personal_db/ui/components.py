@@ -18,13 +18,29 @@ def join_html(parts: list[str]) -> str:
     return "".join(str(part) for part in parts if part)
 
 
-def page(title: str, *children: str, subtitle: str = "", nav: list[tuple[str, str, bool]] | None = None) -> str:
+def page(
+    title: str,
+    *children: str,
+    subtitle: str = "",
+    nav: list[tuple[str, str, bool] | tuple[str, str, bool, dict[str, str]]] | None = None,
+) -> str:
+    """Render a complete app page.
+
+    App route templates intentionally do not render their own app title/tabs;
+    app views should return this helper once so page chrome is not duplicated.
+    """
     nav_html = ""
     if nav:
         links = ""
-        for label, href, active in nav:
+        for item in nav:
+            label, href, active = item[:3]
+            attrs = item[3] if len(item) > 3 else {}
             active_attr = ' class="active"' if active else ""
-            links += f'<a href="{escape(href)}"{active_attr}>{escape(label)}</a>'
+            extra_attrs = "".join(
+                f' {escape(str(key), quote=True)}="{escape(str(value), quote=True)}"'
+                for key, value in attrs.items()
+            )
+            links += f'<a href="{escape(href)}"{active_attr}{extra_attrs}>{escape(label)}</a>'
         nav_html = f'<nav class="app-tabs">{links}</nav>'
     subtitle_html = f'<p class="meta">{escape(subtitle)}</p>' if subtitle else ""
     return (
@@ -75,8 +91,19 @@ def data_grid(
     if not rows:
         return empty_state("No data")
     if rows and isinstance(rows[0], dict):
+        normalized_columns: list[dict[str, Any]] = []
+        for col in columns:
+            if isinstance(col, str):
+                normalized_columns.append(
+                    {
+                        "field": col,
+                        "headerName": col.replace("_", " ").title(),
+                    }
+                )
+            else:
+                normalized_columns.append(col)
         return ag_grid(
-            columns,  # type: ignore[arg-type]
+            normalized_columns,
             rows,  # type: ignore[arg-type]
             class_name=class_name,
             page_size=page_size,

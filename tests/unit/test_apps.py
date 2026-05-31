@@ -36,6 +36,8 @@ def test_bundled_finance_app_discovered(tmp_root):
     assert "finance" in apps
     assert apps["finance"].source == "bundled"
     assert apps["finance"].manifest.default_page.slug == "overview"
+    assert "places" in apps
+    assert apps["places"].manifest.default_page.slug == "overview"
 
 
 def test_installed_app_overrides_bundled_app(tmp_root):
@@ -611,6 +613,294 @@ def _seed_finance_app_db(cfg: Config) -> None:
                     0,
                     0,
                 ),
+                (
+                    "rent-1",
+                    "demo",
+                    "rent-1",
+                    "self-cash",
+                    "self-cash",
+                    "2026-05-05",
+                    "BILT CARD HOUSING Yiheng Chen",
+                    "BILT CARD HOUSING Yiheng Chen",
+                    3000,
+                    0,
+                    "RENT_AND_UTILITIES_RENT",
+                    "self",
+                    "cash",
+                    0,
+                    0,
+                    0,
+                ),
+                (
+                    "rent-greystar-1",
+                    "demo",
+                    "rent-greystar-1",
+                    "parent-cash",
+                    "parent-cash",
+                    "2026-05-04",
+                    "To Greystar Paches Web Ypep System Generated",
+                    "Greystar",
+                    2500,
+                    0,
+                    "Mortgage",
+                    "parents",
+                    "cash",
+                    0,
+                    0,
+                    0,
+                ),
+                (
+                    "rent-bilt-transfer-1",
+                    "demo",
+                    "rent-bilt-transfer-1",
+                    "self-cash",
+                    "self-cash",
+                    "2026-05-03",
+                    "ACH PAYMENT TO BILT CARD-PMT",
+                    "To Bilt Ypep System Generated",
+                    2500,
+                    0,
+                    "Transfer",
+                    "self",
+                    "cash",
+                    0,
+                    1,
+                    0,
+                ),
+                (
+                    "rent-reimb-1",
+                    "demo",
+                    "rent-reimb-1",
+                    "self-cash",
+                    "self-cash",
+                    "2026-05-06",
+                    "ZELLE FROM OLIVER ZOU RENT",
+                    "ZELLE FROM OLIVER ZOU RENT",
+                    -1000,
+                    0,
+                    "OTHER_OTHER",
+                    "self",
+                    "cash",
+                    0,
+                    1,
+                    0,
+                ),
+                (
+                    "rent-reimb-2",
+                    "demo",
+                    "rent-reimb-2",
+                    "self-cash",
+                    "self-cash",
+                    "2026-05-06",
+                    "Curiosity Research reimbursement",
+                    "Curiosity Research reimbursement",
+                    -500,
+                    0,
+                    "INCOME_CONTRACTOR",
+                    "self",
+                    "cash",
+                    0,
+                    0,
+                    0,
+                ),
+                (
+                    "food-1",
+                    "demo",
+                    "food-1",
+                    "self-card",
+                    "self-card",
+                    "2026-05-07",
+                    "Dinner",
+                    "Dinner",
+                    90,
+                    0,
+                    "FOOD_AND_DRINK_RESTAURANT",
+                    "self",
+                    "credit_card",
+                    0,
+                    0,
+                    0,
+                ),
+                (
+                    "transport-1",
+                    "demo",
+                    "transport-1",
+                    "self-card",
+                    "self-card",
+                    "2026-05-08",
+                    "Lyft",
+                    "Lyft",
+                    45,
+                    0,
+                    "TRANSPORTATION_TAXIS_AND_RIDE_SHARES",
+                    "self",
+                    "credit_card",
+                    0,
+                    0,
+                    0,
+                ),
+                (
+                    "ai-1",
+                    "demo",
+                    "ai-1",
+                    "self-card",
+                    "self-card",
+                    "2026-05-09",
+                    "OpenAI",
+                    "OpenAI",
+                    60,
+                    0,
+                    "GENERAL_SERVICES_OTHER_GENERAL_SERVICES",
+                    "self",
+                    "credit_card",
+                    0,
+                    0,
+                    0,
+                ),
+                (
+                    "subscription-1",
+                    "demo",
+                    "subscription-1",
+                    "self-card",
+                    "self-card",
+                    "2026-05-10",
+                    "Netflix",
+                    "Netflix",
+                    30,
+                    0,
+                    "ENTERTAINMENT_TV_AND_MOVIES",
+                    "self",
+                    "credit_card",
+                    0,
+                    0,
+                    0,
+                ),
+                (
+                    "other-1",
+                    "demo",
+                    "other-1",
+                    "self-card",
+                    "self-card",
+                    "2026-05-11",
+                    "Amazon",
+                    "Amazon",
+                    20,
+                    0,
+                    "GENERAL_MERCHANDISE_ONLINE_MARKETPLACES",
+                    "self",
+                    "credit_card",
+                    0,
+                    0,
+                    0,
+                ),
+                (
+                    "ai-omi-1",
+                    "demo",
+                    "ai-omi-1",
+                    "self-card",
+                    "self-card",
+                    "2026-05-12",
+                    "Omi Based Hardware",
+                    "Omi Based Hardware",
+                    19.99,
+                    0,
+                    "HOME_IMPROVEMENT_HARDWARE",
+                    "self",
+                    "credit_card",
+                    0,
+                    0,
+                    0,
+                ),
+                (
+                    "ai-grok-1",
+                    "demo",
+                    "ai-grok-1",
+                    "self-card",
+                    "self-card",
+                    "2026-05-13",
+                    "Grok Xai",
+                    "Grok Xai",
+                    5,
+                    0,
+                    "GENERAL_SERVICES_OTHER_GENERAL_SERVICES",
+                    "self",
+                    "credit_card",
+                    0,
+                    0,
+                    0,
+                ),
+                (
+                    "ai-benjaminfire-1",
+                    "demo",
+                    "ai-benjaminfire-1",
+                    "self-card",
+                    "self-card",
+                    "2026-05-13",
+                    "Benjaminfire",
+                    "Benjaminfire",
+                    99.99,
+                    0,
+                    "GENERAL_MERCHANDISE_OTHER_GENERAL_MERCHANDISE",
+                    "self",
+                    "credit_card",
+                    0,
+                    0,
+                    0,
+                ),
+                (
+                    "health-1",
+                    "demo",
+                    "health-1",
+                    "self-card",
+                    "self-card",
+                    "2026-05-14",
+                    "My Penn Medicine",
+                    "My Penn Medicine",
+                    212.09,
+                    0,
+                    "MEDICAL_OTHER_MEDICAL",
+                    "self",
+                    "credit_card",
+                    0,
+                    0,
+                    0,
+                ),
+                (
+                    "health-2",
+                    "demo",
+                    "health-2",
+                    "self-card",
+                    "self-card",
+                    "2026-05-15",
+                    "LabCorp",
+                    "LabCorp",
+                    6.46,
+                    0,
+                    "MEDICAL_OTHER_MEDICAL",
+                    "self",
+                    "credit_card",
+                    0,
+                    0,
+                    0,
+                ),
+                (
+                    "subscription-apple-1",
+                    "demo",
+                    "subscription-apple-1",
+                    "self-card",
+                    "self-card",
+                    "2026-05-16",
+                    "Apple",
+                    "Apple",
+                    9.99,
+                    0,
+                    "GENERAL_MERCHANDISE_ELECTRONICS",
+                    "self",
+                    "credit_card",
+                    0,
+                    0,
+                    0,
+                ),
             ],
         )
         con.commit()
@@ -623,11 +913,65 @@ def test_bundled_finance_pages_render_with_synthetic_data(tmp_root):
     _seed_finance_app_db(cfg)
     client = TestClient(build_app(cfg))
 
+    overview = client.get("/a/finance")
+    assert overview.status_code == 200
+    assert 'class="finance-dashboard finance-self-only"' in overview.text
+    assert "data-finance-dashboard" in overview.text
+    assert "data-finance-self-only checked" in overview.text
+    assert 'data-finance-parent="1"' in overview.text
+    assert 'data-finance-parent-tab="1"' in overview.text
+    assert "Parent Cashflow" in overview.text
+    assert "Card Payments" not in overview.text
+    assert '"label": "Income"' in overview.text
+    assert '"label": "Spending"' in overview.text
+    assert '"label": "Transactions"' in overview.text
+    assert "Personal Burn Rate" in overview.text
+    assert "Smoothed monthly estimate from up to 180 days" in overview.text
+    assert "smoothed / mo" in overview.text
+    assert "🏠 Rent" in overview.text
+    assert "🤖 AI spending" in overview.text
+    assert "🗑️ Wasted" in overview.text
+    assert "data-burn-rate" in overview.text
+    assert 'class="burn-rate-card" data-burn-bucket="rent"' in overview.text
+    assert 'class="burn-rate-card" data-burn-bucket="food"' in overview.text
+    assert 'class="burn-rate-card" data-burn-bucket="health"' in overview.text
+    assert 'class="burn-rate-card has-color" data-burn-bucket="wasted"' in overview.text
+    assert 'style="--burn-bucket-color:red"' in overview.text
+    assert overview.text.index('data-burn-bucket="wasted"') < overview.text.index(
+        'data-burn-bucket="other"'
+    )
+    assert overview.text.index('data-burn-bucket="other"') < overview.text.index("data-burn-add")
+    assert 'data-burn-add-button' in overview.text
+    assert 'name="emoji" placeholder="Emoji"' in overview.text
+    assert 'name="label" placeholder="New category"' in overview.text
+    assert 'class=\\"burn-action\\"' in overview.text
+    assert '<option value=\\"merchant\\">merchant<\\/option>' in overview.text
+    assert '<option value=\\"category\\">category<\\/option>' in overview.text
+    assert "burn-rate-tx-grid" in overview.text
+    assert "data-pdb-grid" in overview.text
+    assert "__burnBucket" in overview.text
+    assert "Matched Rule" in overview.text
+    assert "AI spending" in overview.text
+    assert "Health" in overview.text
+    assert "Other subscriptions" in overview.text
+    assert "rent reimbursement" in overview.text
+    assert "Greystar" in overview.text
+    assert "To Bilt Ypep System Generated" not in overview.text
+    assert "Omi Based Hardware" in overview.text
+    assert "Grok Xai" in overview.text
+    assert "Benjaminfire" in overview.text
+    assert "My Penn Medicine" in overview.text
+    assert "LabCorp" in overview.text
+    assert "Apple" in overview.text
+    assert "OpenAI" in overview.text
+    assert "Netflix" in overview.text
+
     self_page = client.get("/a/finance/self")
     assert self_page.status_code == 200
     assert "Self Checking" in self_page.text
     assert "VTI" in self_page.text
     assert "Self Net Worth" in self_page.text
+    assert "Card Payments" in self_page.text
 
     parents = client.get("/a/finance/parents")
     assert parents.status_code == 200
@@ -638,9 +982,17 @@ def test_bundled_finance_pages_render_with_synthetic_data(tmp_root):
     review = client.get("/a/finance/review")
     assert review.status_code == 200
     assert "StreamCo" in review.text
+    assert "Finance Review" in review.text
     assert "Transaction Categorization" in review.text
     assert "Source Category" in review.text
     assert "App Category" in review.text
+    assert "Parent Draws" in review.text
+    assert "Parent Bank" in review.text
+    assert "Pharmacy" in review.text
+    assert "Recurring Candidates" in review.text
+    assert "Needs review" in review.text
+    assert "reviewed" in review.text
+    assert "ignore" in review.text
     assert 'id="finance-category-presets"' in review.text
     assert 'list=\\"finance-category-presets\\"' in review.text
     datalist = review.text.split("</datalist>", 1)[0]
@@ -648,6 +1000,29 @@ def test_bundled_finance_pages_render_with_synthetic_data(tmp_root):
     assert 'value="Restaurants &amp; Bars"' in datalist
     assert 'value="FOOD_AND_DRINK_RESTAURANT"' not in datalist
     assert "save" in review.text
+
+    parents_page = client.get("/a/finance/parents")
+    assert parents_page.status_code == 200
+    assert "Parent Account Draws" in parents_page.text
+    assert "Outflows from parent-managed accounts" in parents_page.text
+
+    rules = client.get("/a/finance/rules")
+    assert rules.status_code == 200
+    assert "Finance Rules" in rules.text
+    assert "Burn Rate Buckets" in rules.text
+    assert "Emoji" in rules.text
+    assert "Wasted" in rules.text
+    assert "🗑️" in rules.text
+    assert "set_burn_bucket_color" in rules.text
+    assert "Burn Rate Rules" in rules.text
+    assert "Seed rules plus inline merchant/category rules" in rules.text
+    assert "Benjaminfire AI merchant" in rules.text
+    assert "Auditable burn-rate classification rules" in rules.text
+
+    settings = client.get("/a/finance/settings")
+    assert settings.status_code == 200
+    assert "Finance Settings" in settings.text
+    assert "Burn Rate Rules" not in settings.text
 
 
 def test_finance_category_form_action_redirects_back(tmp_root):
@@ -673,3 +1048,350 @@ def test_finance_category_form_action_redirects_back(tmp_root):
     assert 'id="finance-category-presets"' in review.text
     assert 'value="Pet Projects"' in review.text
     assert "clear" in review.text
+
+
+def test_finance_burn_inline_classification_updates_overview(tmp_root):
+    cfg = Config(root=tmp_root)
+    _seed_finance_app_db(cfg)
+    client = TestClient(build_app(cfg))
+
+    marked = client.post(
+        "/api/apps/finance/actions/set_burn_classification",
+        data={
+            "finance_transaction_id": "other-1",
+            "merchant": "Amazon",
+            "source_category": "GENERAL_MERCHANDISE_ONLINE_MARKETPLACES",
+            "bucket": "ai",
+            "scope": "transaction",
+        },
+        headers={"referer": "/a/finance/overview"},
+        follow_redirects=False,
+    )
+    assert marked.status_code == 303
+    assert marked.headers["location"] == "/a/finance/overview"
+
+    overview = client.get("/a/finance")
+    assert overview.status_code == 200
+    assert "transaction override" in overview.text
+
+    rule = client.post(
+        "/api/apps/finance/actions/set_burn_classification",
+        json={
+            "merchant": "Amazon",
+            "source_category": "GENERAL_MERCHANDISE_ONLINE_MARKETPLACES",
+            "bucket": "subscriptions",
+            "scope": "merchant",
+        },
+    )
+    assert rule.status_code == 200
+    assert rule.json()["bucket"] == "subscriptions"
+
+    bucket = client.post(
+        "/api/apps/finance/actions/create_burn_bucket",
+        data={"label": "Pet Projects", "emoji": "💡"},
+        headers={"referer": "/a/finance/overview"},
+        follow_redirects=False,
+    )
+    assert bucket.status_code == 303
+    assert bucket.headers["location"] == "/a/finance/overview"
+
+    overview = client.get("/a/finance")
+    assert overview.status_code == 200
+    assert 'data-burn-bucket="pet_projects"' in overview.text
+    assert "💡 Pet Projects" in overview.text
+    assert '<option value=\\"pet_projects\\">💡 Pet Projects<\\/option>' in overview.text
+
+    colored_bucket = client.post(
+        "/api/apps/finance/actions/set_burn_bucket_color",
+        json={"bucket": "pet_projects", "label": "Pet Projects", "color": "blue"},
+    )
+    assert colored_bucket.status_code == 200
+    assert colored_bucket.json()["color"] == "blue"
+
+    overview = client.get("/a/finance")
+    assert overview.status_code == 200
+    assert 'data-burn-bucket="pet_projects"' in overview.text
+    assert "💡 Pet Projects" in overview.text
+    assert 'style="--burn-bucket-color:blue"' in overview.text
+
+
+def test_finance_burn_bucket_metadata_migrates_legacy_table(tmp_root):
+    cfg = Config(root=tmp_root)
+    _seed_finance_app_db(cfg)
+    con = sqlite3.connect(cfg.db_path)
+    try:
+        con.execute(
+            """
+            CREATE TABLE app_finance_burn_buckets (
+              bucket     TEXT PRIMARY KEY,
+              label      TEXT NOT NULL,
+              sort_order INTEGER NOT NULL DEFAULT 1000,
+              source     TEXT NOT NULL DEFAULT 'user',
+              created_at TEXT NOT NULL DEFAULT (datetime('now')),
+              updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
+        con.execute(
+            """
+            INSERT INTO app_finance_burn_buckets(bucket, label, sort_order, source)
+            VALUES ('wasted', 'Wasted', 900, 'user')
+            """
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    client = TestClient(build_app(cfg))
+    overview = client.get("/a/finance")
+    assert overview.status_code == 200
+    assert "🏠 Rent" in overview.text
+    assert "🗑️ Wasted" in overview.text
+
+    con = sqlite3.connect(cfg.db_path)
+    try:
+        columns = {str(row[1]) for row in con.execute("PRAGMA table_info(app_finance_burn_buckets)")}
+        assert {"color", "emoji"} <= columns
+        assert con.execute(
+            "SELECT emoji, color FROM app_finance_burn_buckets WHERE bucket='wasted'"
+        ).fetchone() == ("🗑️", "red")
+    finally:
+        con.close()
+
+
+def _seed_places_app_db(cfg: Config) -> None:
+    init_db(cfg.db_path)
+    con = sqlite3.connect(cfg.db_path)
+    try:
+        con.executescript(
+            """
+            CREATE TABLE raw_locations (
+              id INTEGER PRIMARY KEY,
+              lat REAL NOT NULL,
+              lon REAL NOT NULL,
+              ts TEXT NOT NULL
+            );
+            CREATE TABLE geocoded_locations (
+              source_id INTEGER PRIMARY KEY REFERENCES raw_locations(id),
+              place_name TEXT
+            );
+            CREATE TABLE daily_locations (
+              date TEXT NOT NULL,
+              place_name TEXT NOT NULL,
+              visits INTEGER NOT NULL,
+              PRIMARY KEY (date, place_name)
+            );
+            """
+        )
+        con.executemany(
+            "INSERT INTO raw_locations(id, lat, lon, ts) VALUES (?, ?, ?, ?)",
+            [
+                (1, 37.7749, -122.4194, "2026-05-29T09:00:00+00:00"),
+                (2, 37.7750, -122.4195, "2026-05-29T10:00:00+00:00"),
+                (3, 37.7890, -122.4010, "2026-05-29T14:00:00+00:00"),
+                (4, 37.7891, -122.4011, "2026-05-30T15:00:00+00:00"),
+                (5, 37.7610, -122.4260, "2026-05-30T21:00:00+00:00"),
+            ],
+        )
+        con.executemany(
+            "INSERT INTO geocoded_locations(source_id, place_name) VALUES (?, ?)",
+            [
+                (1, "Home Address"),
+                (2, "Home Address"),
+                (3, "Studio"),
+                (4, "Studio"),
+                (5, "Park"),
+            ],
+        )
+        con.executemany(
+            "INSERT INTO daily_locations(date, place_name, visits) VALUES (?, ?, ?)",
+            [
+                ("2026-05-29", "Home Address", 2),
+                ("2026-05-29", "Studio", 1),
+                ("2026-05-30", "Studio", 1),
+                ("2026-05-30", "Park", 1),
+            ],
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
+def test_bundled_places_route_renders_without_location_tables(tmp_root):
+    cfg = Config(root=tmp_root)
+    init_db(cfg.db_path)
+    client = TestClient(build_app(cfg))
+
+    overview = client.get("/a/places")
+    assert overview.status_code == 200
+    assert "Places" in overview.text
+    assert "mobile export pending" in overview.text
+    assert "Maps use exact local GPS coordinates" in overview.text
+
+
+def test_bundled_places_pages_render_with_synthetic_data(tmp_root):
+    cfg = Config(root=tmp_root)
+    _seed_places_app_db(cfg)
+    client = TestClient(build_app(cfg))
+
+    overview = client.get("/a/places")
+    assert overview.status_code == 200
+    assert "Places" in overview.text
+    assert overview.text.count("<h1>Places</h1>") == 1
+    assert "Home Address" in overview.text
+    assert "Frequent Places" in overview.text
+    assert 'class="places-leaflet-map places-map"' in overview.text
+    assert "tile.openstreetmap.org" in overview.text
+    assert "leaflet.heat" in overview.text
+
+    timeline = client.get("/a/places/timeline")
+    assert timeline.status_code == 200
+    assert "Recent Place Timeline" in timeline.text
+    assert "Studio" in timeline.text
+
+    map_page = client.get("/a/places/map")
+    assert map_page.status_code == 200
+    assert "Location Heatmap" in map_page.text
+    assert "Movement (24h)" in map_page.text
+
+    rhythm = client.get("/a/places/rhythm")
+    assert rhythm.status_code == 200
+    assert "Week By Hour" in rhythm.text
+    assert "Place Regularity" in rhythm.text
+
+    privacy = client.get("/a/places/privacy")
+    assert privacy.status_code == 200
+    assert "Display Settings" in privacy.text
+    assert "Place Aliases" in privacy.text
+
+
+def test_places_pages_render_with_raw_points_before_geocoding(tmp_root):
+    cfg = Config(root=tmp_root)
+    init_db(cfg.db_path)
+    con = sqlite3.connect(cfg.db_path)
+    try:
+        con.executescript(
+            """
+            CREATE TABLE raw_locations (
+              id INTEGER PRIMARY KEY,
+              lat REAL NOT NULL,
+              lon REAL NOT NULL,
+              ts TEXT NOT NULL
+            );
+            """
+        )
+        con.executemany(
+            "INSERT INTO raw_locations(id, lat, lon, ts) VALUES (?, ?, ?, ?)",
+            [
+                (1, 37.7749, -122.4194, "2026-05-29T09:00:00+00:00"),
+                (2, 37.7890, -122.4010, "2026-05-29T14:00:00+00:00"),
+            ],
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    client = TestClient(build_app(cfg))
+    overview = client.get("/a/places")
+    assert overview.status_code == 200
+    assert "(unlabeled)" in overview.text
+    assert 'class="places-leaflet-map places-map"' in overview.text
+
+    timeline = client.get("/a/places/timeline")
+    assert timeline.status_code == 200
+    assert "(unlabeled)" in timeline.text
+
+
+def test_places_pages_render_with_installed_location_tracker_schema(tmp_root):
+    cfg = Config(root=tmp_root)
+    init_db(cfg.db_path)
+    con = sqlite3.connect(cfg.db_path)
+    try:
+        con.executescript(
+            """
+            CREATE TABLE location_points (
+              id TEXT PRIMARY KEY,
+              recorded_at TEXT NOT NULL,
+              latitude REAL NOT NULL,
+              longitude REAL NOT NULL,
+              accuracy REAL
+            );
+            CREATE TABLE geocoded_locations (
+              recorded_at TEXT PRIMARY KEY,
+              formatted_address TEXT,
+              place_id TEXT
+            );
+            """
+        )
+        con.executemany(
+            """
+            INSERT INTO location_points(id, recorded_at, latitude, longitude, accuracy)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            [
+                ("a", "2026-05-29T09:00:00+00:00", 37.7749, -122.4194, 5),
+                ("b", "2026-05-29T10:00:00+00:00", 37.7750, -122.4195, 8),
+                ("c", "2026-05-29T14:00:00+00:00", 37.7890, -122.4010, 12),
+            ],
+        )
+        con.executemany(
+            """
+            INSERT INTO geocoded_locations(recorded_at, formatted_address, place_id)
+            VALUES (?, ?, ?)
+            """,
+            [
+                ("2026-05-29T09:00:00+00:00", "Home Address", "home"),
+                ("2026-05-29T10:00:00+00:00", "Home Address", "home"),
+                ("2026-05-29T14:00:00+00:00", "Studio", "studio"),
+            ],
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    client = TestClient(build_app(cfg))
+    overview = client.get("/a/places")
+    assert overview.status_code == 200
+    assert "Home Address" in overview.text
+    assert "Studio" in overview.text
+    assert "Points" in overview.text
+    assert 'class="places-leaflet-map places-map"' in overview.text
+    assert "tile.openstreetmap.org" in overview.text
+
+    rhythm = client.get("/a/places/rhythm")
+    assert rhythm.status_code == 200
+    assert "Week By Hour" in rhythm.text
+    assert "Home Address" in rhythm.text
+
+
+def test_places_privacy_actions_write_app_state(tmp_root):
+    cfg = Config(root=tmp_root)
+    _seed_places_app_db(cfg)
+    client = TestClient(build_app(cfg))
+
+    settings = client.post(
+        "/api/apps/places/actions/set_privacy",
+        json={"blur_precision_m": "1000", "default_days": "14", "hide_coordinates": "1"},
+    )
+    assert settings.status_code == 200
+    assert settings.json()["settings"]["default_days"] == "14"
+
+    alias = client.post(
+        "/api/apps/places/actions/set_place_alias",
+        json={"place_name": "Home Address", "alias": "Home", "hidden": "1"},
+    )
+    assert alias.status_code == 200
+    assert alias.json()["alias"] == "Home"
+    assert alias.json()["hidden"] is True
+
+    overview = client.get("/a/places")
+    assert overview.status_code == 200
+    assert "Maps use exact local GPS coordinates" in overview.text
+    assert "Home Address" not in overview.text
+
+    cleared = client.post(
+        "/api/apps/places/actions/clear_place_alias",
+        json={"place_name": "Home Address"},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["removed"] == 1

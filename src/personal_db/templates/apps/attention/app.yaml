@@ -1,0 +1,20 @@
+name: attention
+title: Attention
+description: Notification impact workspace for finding interruptions, ignored noise, and derailment patterns.
+
+reads:
+  tables:
+    - notifications_events
+    - notification_impacts
+    - mosspath_lite_events
+
+pages:
+  - slug: overview
+    title: Overview
+    view: render_overview
+  - slug: sources
+    title: Sources
+    view: render_sources
+  - slug: events
+    title: Events
+    view: render_events

@@ -201,13 +201,9 @@ def test_finance_sync_combines_sources_and_normalizes_cashflow(tmp_root):
     con.close()
 
     viz = _load_module("visualizations.py", "finance_viz_dashboard_test")
-    html = viz._render_dashboard(cfg)
-    assert 'data-finance-dashboard' in html
-    assert 'data-finance-self-only checked' in html
-    assert '<section class="finance-overview-card" data-finance-parent="1"><h3>Parents</h3>' in html
-    assert '<h2 class="finance-dashboard-band" data-finance-parent="1">Parents</h2>' in html
-    assert '<section class="finance-section" data-finance-parent="1"><h3>Parent Cashflow</h3>' in html
-    assert '<section class="finance-section"><h3>Parent Account Draws</h3>' in html
+    entries = viz.list_visualizations()
+    assert entries[0]["name"] == "Finance app"
+    assert "/a/finance" in entries[0]["render"](cfg)
 
 
 def test_finance_sync_discovers_export_views_without_source_names(tmp_root):

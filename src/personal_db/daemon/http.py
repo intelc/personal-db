@@ -184,6 +184,7 @@ def build_app(cfg: Config) -> FastAPI:
         app_nav = [
             {
                 "href": f"/a/{definition.name}/{p.slug}",
+                "slug": p.slug,
                 "title": p.title,
                 "active": p.slug == page.slug,
             }

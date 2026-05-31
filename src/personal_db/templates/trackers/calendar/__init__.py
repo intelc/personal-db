@@ -1,0 +1,1 @@
+"""Calendar tracker template."""

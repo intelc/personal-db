@@ -16,11 +16,18 @@ writes:
     - app_finance_reviews
     - app_finance_transaction_categories
     - app_finance_category_presets
+    - app_finance_burn_rules
+    - app_finance_burn_overrides
+    - app_finance_burn_buckets
   actions:
     - mark_reviewed
     - clear_review
     - set_transaction_category
     - clear_transaction_category
+    - set_burn_classification
+    - clear_burn_override
+    - create_burn_bucket
+    - set_burn_bucket_color
 
 pages:
   - slug: overview
@@ -35,6 +42,9 @@ pages:
   - slug: review
     title: Categorize
     view: render_review
+  - slug: rules
+    title: Rules
+    view: render_rules
   - slug: settings
     title: Settings
     view: render_settings
