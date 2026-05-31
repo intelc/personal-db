@@ -121,7 +121,7 @@
             ...(series.tooltip || {}),
             renderer: ({ datum, xKey, yKey, yName }) => ({
               title: yName || yKey,
-              content: `${datum[xKey]}: ${money(datum[yKey])}`,
+              data: [`${datum[xKey]}: ${money(datum[yKey])}`],
             }),
           },
       sectorLabel: series.type === 'pie'
@@ -224,6 +224,12 @@
     };
   }
 
+  function stripAxes(options) {
+    if (!options.axes) return options;
+    const { axes, ...out } = options;
+    return out;
+  }
+
   function chartOptions(rawOptions, data, scaleMode, groupMode) {
     const formatted = applyFormatters({ ...rawOptions, data });
     let { pdbZoom, pdbScale, pdbTimeMarkers, pdbAggregation, valueFormat, ...options } = formatted;
@@ -239,7 +245,7 @@
     if (groupMode !== 'month') {
       options = applyTimeMarkers(rawOptions, data, options);
     }
-    return options;
+    return stripAxes(options);
   }
 
   function zoomWindows(rawOptions) {

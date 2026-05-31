@@ -18,6 +18,7 @@ Routes:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import re
 import sys
@@ -31,6 +32,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from personal_db.apps import (
+    AppContext,
+    AppManifestError,
+    apply_app_schema,
+    discover_apps,
+    load_app_view,
+)
 from personal_db.config import Config
 from personal_db.daemon._locks import backfill_locked, sync_due_locked, sync_one_locked
 from personal_db.db import apply_tracker_schema, init_db
@@ -57,6 +65,34 @@ def _validate_name(name: str) -> None:
         raise HTTPException(status_code=400, detail=f"invalid tracker name: {name!r}")
 
 
+def _matches_request_origin(value: str, request: Request) -> bool:
+    parsed = urllib.parse.urlparse(value)
+    if not parsed.scheme and not parsed.netloc:
+        return value.startswith("/")
+    base = urllib.parse.urlparse(str(request.base_url))
+    return (
+        parsed.scheme.lower() == base.scheme.lower()
+        and parsed.netloc.lower() == base.netloc.lower()
+    )
+
+
+def _verify_same_origin_write(request: Request) -> None:
+    """Reject browser-originated writes from other origins.
+
+    Local scripts and tests often omit Origin/Referer entirely, so absence of
+    both headers is allowed. Browsers include Origin on normal POSTs; if either
+    browser provenance header is present it must point back to this daemon.
+    """
+    origin = request.headers.get("origin")
+    if origin:
+        if not _matches_request_origin(origin, request):
+            raise HTTPException(status_code=403, detail="cross-origin app action rejected")
+        return
+    referer = request.headers.get("referer")
+    if referer and not _matches_request_origin(referer, request):
+        raise HTTPException(status_code=403, detail="cross-origin app action rejected")
+
+
 def _install_daemon_safe(cfg: Config) -> str:
     """Install the launchd daemon plist. Returns a one-line status string for the
     finalize page. Idempotent. macOS-only.
@@ -65,7 +101,10 @@ def _install_daemon_safe(cfg: Config) -> str:
     so tests/demos can opt out of clobbering the user's real install."""
     import os
 
-    if os.environ.get("PERSONAL_DB_NO_DAEMON") == "1" or os.environ.get("PERSONAL_DB_NO_SCHEDULER") == "1":
+    if (
+        os.environ.get("PERSONAL_DB_NO_DAEMON") == "1"
+        or os.environ.get("PERSONAL_DB_NO_SCHEDULER") == "1"
+    ):
         return "✓ daemon skipped (PERSONAL_DB_NO_DAEMON=1)"
     if sys.platform != "darwin":
         return f"⚠ daemon is macOS-only (detected {sys.platform}); periodic sync skipped"
@@ -74,12 +113,13 @@ def _install_daemon_safe(cfg: Config) -> str:
 
         result = di.install(cfg.root)
         return f"✓ daemon installed → {result['plist']} (long-running, KeepAlive)"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return f"⚠ daemon install failed: {e}"
 
 
-def _split_nav(trackers: list[str], active: str | None,
-               limit: int = _NAV_VISIBLE_LIMIT) -> tuple[list[str], list[str]]:
+def _split_nav(
+    trackers: list[str], active: str | None, limit: int = _NAV_VISIBLE_LIMIT
+) -> tuple[list[str], list[str]]:
     """Cap inline nav at `limit`; remainder goes into a dropdown.
 
     If the active tracker would otherwise be hidden in the dropdown, swap it
@@ -114,6 +154,49 @@ def build_app(cfg: Config) -> FastAPI:
         visible, overflow = _split_nav(list_trackers_with_viz(reg), active)
         return {"nav_visible": visible, "nav_overflow": overflow}
 
+    def _app_registry():
+        # Like tracker visualizations, apps are re-discovered per request so
+        # local edits to app.yaml/views.py/queries.sql are picked up quickly.
+        return discover_apps(cfg)
+
+    def _render_app_page(app_name: str, page_slug: str | None = None) -> tuple[dict[str, Any], str]:
+        _validate_name(app_name)
+        apps = _app_registry()
+        definition = apps.get(app_name)
+        if definition is None:
+            raise HTTPException(status_code=404, detail=f"unknown app: {app_name}")
+        page = (
+            definition.manifest.default_page
+            if page_slug is None
+            else definition.manifest.page(page_slug)
+        )
+        if page is None:
+            raise HTTPException(status_code=404, detail=f"unknown app page: {app_name}/{page_slug}")
+        try:
+            apply_app_schema(cfg, definition.root)
+            view = load_app_view(definition, page)
+            ctx = AppContext(cfg=cfg, app_dir=definition.root, manifest=definition.manifest)
+            html = view(ctx)
+        except AppManifestError as e:
+            raise HTTPException(status_code=500, detail=str(e)) from e
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"error rendering app page: {e}") from e
+        app_nav = [
+            {
+                "href": f"/a/{definition.name}/{p.slug}",
+                "title": p.title,
+                "active": p.slug == page.slug,
+            }
+            for p in definition.manifest.pages
+        ]
+        return {
+            "active": "apps",
+            "app": definition,
+            "page": page,
+            "app_nav": app_nav,
+            "html": html,
+        }, html
+
     @app.get("/", response_class=HTMLResponse)
     async def dashboard(request: Request):
         reg = _registry()
@@ -125,14 +208,17 @@ def build_app(cfg: Config) -> FastAPI:
                 continue
             try:
                 html = viz.render(cfg)
-            except Exception as e:  # noqa: BLE001 — one broken viz shouldn't kill the page
+            except Exception as e:
                 html = f'<p class="meta">error rendering {slug}: {e}</p>'
             rendered.append({"viz": viz, "html": html})
         return templates.TemplateResponse(
             request=request,
             name="dashboard.html",
-            context={"active": "dashboard", "rendered": rendered,
-                     **_nav_context(reg, active="dashboard")},
+            context={
+                "active": "dashboard",
+                "rendered": rendered,
+                **_nav_context(reg, active="dashboard"),
+            },
         )
 
     @app.get("/v/{slug:path}", response_class=HTMLResponse)
@@ -143,7 +229,7 @@ def build_app(cfg: Config) -> FastAPI:
             raise HTTPException(status_code=404, detail=f"unknown viz: {slug}")
         try:
             html = viz.render(cfg)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             html = f'<p class="meta">error rendering: {e}</p>'
         return templates.TemplateResponse(
             request=request,
@@ -169,7 +255,7 @@ def build_app(cfg: Config) -> FastAPI:
         for v in viz_list:
             try:
                 html = v.render(cfg)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 html = f'<p class="meta">error: {e}</p>'
             rendered.append({"viz": v, "html": html})
         return templates.TemplateResponse(
@@ -183,6 +269,41 @@ def build_app(cfg: Config) -> FastAPI:
             },
         )
 
+    @app.get("/a", response_class=HTMLResponse)
+    async def apps_index(request: Request):
+        reg = _registry()
+        apps = _app_registry()
+        return templates.TemplateResponse(
+            request=request,
+            name="apps_index.html",
+            context={
+                "active": "apps",
+                "apps": list(apps.values()),
+                **_nav_context(reg, active=None),
+            },
+        )
+
+    @app.get("/a/{app_name}", response_class=HTMLResponse)
+    async def app_default_page(request: Request, app_name: str):
+        reg = _registry()
+        context, _html = _render_app_page(app_name)
+        return templates.TemplateResponse(
+            request=request,
+            name="app_page.html",
+            context={**context, **_nav_context(reg, active=None)},
+        )
+
+    @app.get("/a/{app_name}/{page_slug}", response_class=HTMLResponse)
+    async def app_named_page(request: Request, app_name: str, page_slug: str):
+        reg = _registry()
+        _validate_name(page_slug)
+        context, _html = _render_app_page(app_name, page_slug)
+        return templates.TemplateResponse(
+            request=request,
+            name="app_page.html",
+            context={**context, **_nav_context(reg, active=None)},
+        )
+
     @app.post("/sync/{tracker}")
     async def post_sync(request: Request, tracker: str):
         """Refresh a single tracker, then redirect back to wherever the form
@@ -192,10 +313,8 @@ def build_app(cfg: Config) -> FastAPI:
         Blocking by design: most incremental syncs are sub-second; the user
         gets immediate visual feedback (spinner) during the request, then
         sees the freshly-synced data on redirect."""
-        try:
+        with contextlib.suppress(Exception):
             sync_one(cfg, tracker)
-        except Exception:  # noqa: BLE001 — surface via logs/health, don't 500
-            pass
         referer = request.headers.get("referer") or f"/t/{tracker}"
         return RedirectResponse(url=referer, status_code=303)
 
@@ -260,9 +379,7 @@ def build_app(cfg: Config) -> FastAPI:
         # daemon may have started before any of that).
         env_file = read_env(cfg.root / ".env")
         cid = os.environ.get(step.client_id_env) or env_file.get(step.client_id_env)
-        cs = os.environ.get(step.client_secret_env) or env_file.get(
-            step.client_secret_env
-        )
+        cs = os.environ.get(step.client_secret_env) or env_file.get(step.client_secret_env)
         if not cid or not cs:
             msg = (
                 f"Set {step.client_id_env} and {step.client_secret_env} on this "
@@ -288,9 +405,7 @@ def build_app(cfg: Config) -> FastAPI:
         success_msg = urllib.parse.quote(
             f"OAuth completed for {step.provider} — click 'save & test sync' to verify."
         )
-        success_redirect = (
-            f"{str(request.base_url).rstrip('/')}/setup/{name}?msg={success_msg}"
-        )
+        success_redirect = f"{str(request.base_url).rstrip('/')}/setup/{name}?msg={success_msg}"
         try:
             auth_url = start_web_oauth(
                 cfg,
@@ -326,10 +441,7 @@ def build_app(cfg: Config) -> FastAPI:
         tracker name parameter."""
         scheduler_msg = _install_daemon_safe(cfg)
         reg = _registry()
-        targets = [
-            {"key": key, "label": tgt.label}
-            for key, tgt in _MCP_TARGETS.items()
-        ]
+        targets = [{"key": key, "label": tgt.label} for key, tgt in _MCP_TARGETS.items()]
         return templates.TemplateResponse(
             request=request,
             name="setup_finish.html",
@@ -417,15 +529,18 @@ def build_app(cfg: Config) -> FastAPI:
 
     @app.get("/api/health")
     async def api_health() -> dict[str, Any]:
-        import time
         from personal_db.installer import list_bundled
+
         installed = []
         if cfg.trackers_dir.exists():
-            installed = sorted(d.name for d in cfg.trackers_dir.iterdir()
-                               if d.is_dir() and (d / "manifest.yaml").exists())
+            installed = sorted(
+                d.name
+                for d in cfg.trackers_dir.iterdir()
+                if d.is_dir() and (d / "manifest.yaml").exists()
+            )
         return {
             "status": "ok",
-            "uptime_seconds": int(time.time() - _DAEMON_START_TS),
+            "uptime_seconds": int(_time.time() - _DAEMON_START_TS),
             "trackers": installed,
             "bundled_available": list_bundled(),
         }
@@ -437,7 +552,7 @@ def build_app(cfg: Config) -> FastAPI:
             raise HTTPException(status_code=404, detail=f"no such tracker: {tracker}")
         try:
             await asyncio.to_thread(sync_one_locked, cfg, tracker)
-        except Exception as e:  # noqa: BLE001 — surface to client
+        except Exception as e:
             raise HTTPException(status_code=500, detail=f"sync failed: {e}") from e
         return {"ok": True, "tracker": tracker}
 
@@ -455,7 +570,7 @@ def build_app(cfg: Config) -> FastAPI:
         end = request.query_params.get("to")
         try:
             await asyncio.to_thread(backfill_locked, cfg, tracker, start, end)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             raise HTTPException(status_code=500, detail=f"backfill failed: {e}") from e
         return {"ok": True, "tracker": tracker, "from": start, "to": end}
 
@@ -468,7 +583,9 @@ def build_app(cfg: Config) -> FastAPI:
         _validate_name(name)
         _validate_name(action)
         if action.startswith("_"):
-            raise HTTPException(status_code=404, detail=f"action '{action}' not found on tracker '{name}'")
+            raise HTTPException(
+                status_code=404, detail=f"action '{action}' not found on tracker '{name}'"
+            )
 
         tracker_dir = cfg.trackers_dir / name
         actions_path = tracker_dir / "actions.py"
@@ -484,13 +601,15 @@ def build_app(cfg: Config) -> FastAPI:
         sys.modules[spec_name] = module  # register before exec so relative imports resolve
         try:
             spec.loader.exec_module(module)  # type: ignore[union-attr]
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             sys.modules.pop(spec_name, None)
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
         handler = getattr(module, action, None)
         if handler is None or not callable(handler):
-            raise HTTPException(status_code=404, detail=f"action '{action}' not found on tracker '{name}'")
+            raise HTTPException(
+                status_code=404, detail=f"action '{action}' not found on tracker '{name}'"
+            )
 
         try:
             params = inspect.signature(handler).parameters
@@ -509,6 +628,92 @@ def build_app(cfg: Config) -> FastAPI:
                 return handler(cfg)
 
             return await asyncio.to_thread(_call_handler)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @app.post("/api/apps/{name}/actions/{action}")
+    async def app_action(name: str, action: str, request: Request) -> dict[str, Any]:
+        import importlib.util
+        import inspect
+        import sys
+
+        _validate_name(name)
+        _validate_name(action)
+        if action.startswith("_"):
+            raise HTTPException(
+                status_code=404, detail=f"action '{action}' not found on app '{name}'"
+            )
+
+        apps = _app_registry()
+        definition = apps.get(name)
+        if definition is None:
+            raise HTTPException(status_code=404, detail=f"unknown app: {name}")
+        if action not in definition.manifest.writes.actions:
+            raise HTTPException(
+                status_code=404, detail=f"action '{action}' not declared on app '{name}'"
+            )
+        _verify_same_origin_write(request)
+        apply_app_schema(cfg, definition.root)
+
+        actions_path = definition.root / "actions.py"
+        if not actions_path.exists():
+            raise HTTPException(status_code=404, detail=f"app '{name}' has no actions.py")
+
+        spec_name = f"_pdb_app_actions_{name}"
+        sys.modules.pop(spec_name, None)
+        spec = importlib.util.spec_from_file_location(spec_name, actions_path)
+        if spec is None or spec.loader is None:
+            raise HTTPException(status_code=500, detail="failed to load actions module")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec_name] = module
+        try:
+            spec.loader.exec_module(module)  # type: ignore[union-attr]
+        except Exception as exc:
+            sys.modules.pop(spec_name, None)
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+        handler = getattr(module, action, None)
+        if handler is None or not callable(handler):
+            raise HTTPException(
+                status_code=404, detail=f"action '{action}' not found on app '{name}'"
+            )
+
+        try:
+            ctx = AppContext(cfg=cfg, app_dir=definition.root, manifest=definition.manifest)
+            params = inspect.signature(handler).parameters
+            payload: dict[str, Any] = {}
+            form_post = False
+            if len(params) >= 2 and request.headers.get("content-length", "0") != "0":
+                content_type = request.headers.get("content-type", "")
+                if content_type.startswith("application/json"):
+                    payload = await request.json()
+                else:
+                    form_post = True
+                    form = await request.form()
+                    payload = {key: str(value) for key, value in form.items()}
+
+            if inspect.iscoroutinefunction(handler):
+                if len(params) >= 2:
+                    result = await handler(ctx, payload)
+                else:
+                    result = await handler(ctx)
+                if form_post:
+                    return RedirectResponse(
+                        url=request.headers.get("referer") or f"/a/{name}", status_code=303
+                    )
+                return result
+
+            def _call_handler():
+                if len(params) >= 2:
+                    return handler(ctx, payload)
+                return handler(ctx)
+
+            result = await asyncio.to_thread(_call_handler)
+            if form_post:
+                return RedirectResponse(
+                    url=request.headers.get("referer") or f"/a/{name}", status_code=303
+                )
+            return result
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}{{ app.manifest.title }} · {{ page.title }} · personal_db{% endblock %}
+{% block content %}
+  <div class="app-shell">
+    <header class="app-shell-header">
+      <div>
+        <p class="meta">app · {{ app.name }} · {{ app.source }}</p>
+        <h1>{{ app.manifest.title }}</h1>
+      </div>
+      <a class="setup-btn refresh-btn" href="/a">all apps</a>
+    </header>
+    <nav class="app-tabs">
+      {% for item in app_nav %}
+        <a href="{{ item.href }}" {% if item.active %}class="active"{% endif %}>{{ item.title }}</a>
+      {% endfor %}
+    </nav>
+    {{ html|safe }}
+  </div>
+{% endblock %}

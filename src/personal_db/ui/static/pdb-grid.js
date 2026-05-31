@@ -2,7 +2,29 @@
   function htmlCellRenderer(params) {
     const span = document.createElement('span');
     span.innerHTML = params.value == null ? '' : String(params.value);
+    wireInlineForms(span);
     return span;
+  }
+
+  function wireInlineForms(root) {
+    root.querySelectorAll('.category-action input[name="category"]').forEach((input) => {
+      input.addEventListener('click', (event) => event.stopPropagation());
+      input.addEventListener('keydown', (event) => {
+        event.stopPropagation();
+        if (event.key !== 'Enter' || event.isComposing) return;
+        event.preventDefault();
+        const form = input.closest('form');
+        if (!form || !input.value.trim()) return;
+        if (typeof form.requestSubmit === 'function') {
+          form.requestSubmit();
+        } else {
+          form.submit();
+        }
+      });
+    });
+    root.querySelectorAll('.category-action button, .review-action button').forEach((button) => {
+      button.addEventListener('click', (event) => event.stopPropagation());
+    });
   }
 
   function groupCellRenderer(params) {

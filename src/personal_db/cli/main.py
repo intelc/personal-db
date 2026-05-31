@@ -4,6 +4,7 @@ import typer
 from dotenv import load_dotenv
 
 from personal_db.cli import (
+    app_cmd,
     code_agent_hook_cmd,
     daemon_cmd,
     init_cmd,
@@ -51,6 +52,13 @@ tracker_app.command("install")(tracker_cmd.install)
 tracker_app.command("reinstall")(tracker_cmd.reinstall)
 tracker_app.command("setup")(tracker_cmd.setup)
 app.add_typer(tracker_app, name="tracker")
+
+app_app = typer.Typer(no_args_is_help=True, help="App management")
+app_app.command("list")(app_cmd.list_cmd)
+app_app.command("available")(app_cmd.available)
+app_app.command("install")(app_cmd.install)
+app_app.command("reinstall")(app_cmd.reinstall)
+app.add_typer(app_app, name="app")
 
 permission_app = typer.Typer(no_args_is_help=True, help="OS permission helpers")
 permission_app.command("check")(permission_cmd.check)

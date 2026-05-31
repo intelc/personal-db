@@ -1,0 +1,40 @@
+name: finance
+title: Finance
+description: Rich local finance workspace for self and parent-managed accounts.
+
+reads:
+  tables:
+    - finance_accounts
+    - finance_transactions
+    - finance_holdings
+    - finance_daily_cashflow
+    - finance_daily_net_worth
+    - finance_parent_draws
+
+writes:
+  tables:
+    - app_finance_reviews
+    - app_finance_transaction_categories
+    - app_finance_category_presets
+  actions:
+    - mark_reviewed
+    - clear_review
+    - set_transaction_category
+    - clear_transaction_category
+
+pages:
+  - slug: overview
+    title: Overview
+    view: render_overview
+  - slug: self
+    title: Self
+    view: render_self
+  - slug: parents
+    title: Parents
+    view: render_parents
+  - slug: review
+    title: Categorize
+    view: render_review
+  - slug: settings
+    title: Settings
+    view: render_settings

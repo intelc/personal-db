@@ -26,6 +26,11 @@ main {
   padding: calc(var(--grid) * 3) calc(var(--grid) * 2);
 }
 
+body:has(.app-shell) main,
+body:has(.app-page) main {
+  max-width: 1200px;
+}
+
 /* Masthead ------------------------------------------------------------- */
 .masthead {
   border-bottom: 2px solid #000;
@@ -234,6 +239,140 @@ table.mosspath-story td.ms-episode {
 /* Health viz tracker links */
 table.health a { color: var(--fg); text-decoration: none; border-bottom: 1px dotted #000; }
 table.health a:hover { background: #000; color: #fff; border-bottom-color: transparent; }
+
+/* Apps ---------------------------------------------------------------- */
+.app-list {
+  display: grid;
+  gap: var(--grid);
+  margin-top: calc(var(--grid) * 2);
+}
+.app-list-item {
+  display: grid;
+  gap: 2px;
+  color: var(--fg);
+  text-decoration: none;
+  border: var(--rule);
+  padding: calc(var(--grid) * 1.5);
+}
+.app-list-item:hover { background: #000; color: #fff; }
+.app-list-item small { color: inherit; opacity: 0.7; }
+.app-shell-header,
+.app-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: calc(var(--grid) * 2);
+}
+.app-shell h1,
+.app-page h1 {
+  margin: 0 0 var(--grid);
+}
+.app-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: var(--grid) 0 calc(var(--grid) * 3);
+  border-bottom: var(--rule);
+}
+.app-tabs a {
+  color: var(--fg);
+  text-decoration: none;
+  padding: 4px 8px;
+  border: var(--rule);
+  border-bottom: none;
+  background: #fff;
+}
+.app-tabs a.active,
+.app-tabs a:hover {
+  background: #000;
+  color: #fff;
+}
+.app-section {
+  margin: calc(var(--grid) * 3) 0;
+  padding-top: var(--grid);
+  border-top: var(--rule);
+}
+.app-section h2 { margin-top: 0; }
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--grid);
+  margin: var(--grid) 0 calc(var(--grid) * 2);
+}
+.metric-card {
+  border: var(--rule);
+  padding: var(--grid);
+  min-height: 72px;
+  display: grid;
+  align-content: space-between;
+}
+.metric-label,
+.metric-hint {
+  font-size: 11px;
+  color: #555;
+}
+.metric-card strong {
+  display: block;
+  font-size: 18px;
+  line-height: 1.2;
+  margin: 4px 0;
+}
+.notice {
+  border: var(--rule);
+  padding: var(--grid);
+}
+.inline-action { display: inline-block; }
+.empty-state { border: var(--rule); padding: var(--grid); }
+.review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.review-action { margin: 0; }
+.review-action button {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 1px 6px;
+  border: 1px solid #000;
+  background: #fff;
+  color: #000;
+  cursor: pointer;
+}
+.review-action button:hover {
+  background: #000;
+  color: #fff;
+}
+.category-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.category-action {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+}
+.category-action input[type="text"] {
+  font-family: inherit;
+  font-size: 11px;
+  width: 136px;
+  padding: 1px 5px;
+  border: 1px solid #000;
+}
+.category-action button {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 1px 6px;
+  border: 1px solid #000;
+  background: #fff;
+  color: #000;
+  cursor: pointer;
+}
+.category-action button:hover {
+  background: #000;
+  color: #fff;
+}
 
 /* Horizontal bar chart -------------------------------------------------- */
 .hbar-chart {
