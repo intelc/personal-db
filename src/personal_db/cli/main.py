@@ -6,16 +6,20 @@ from dotenv import load_dotenv
 from personal_db.cli import (
     app_cmd,
     code_agent_hook_cmd,
+    context_cmd,
     daemon_cmd,
+    enrich_cmd,
     init_cmd,
     log_cmd,
     mcp_cmd,
     permission_cmd,
     query_cmd,
     setup_cmd,
+    source_cmd,
     sync_cmd,
     tracker_cmd,
     ui_cmd,
+    worker_cmd,
 )
 from personal_db.cli.state import _state, get_root
 
@@ -44,6 +48,9 @@ app.command("backfill")(sync_cmd.backfill)
 app.command("log")(log_cmd.log)
 app.command("query")(query_cmd.query)
 app.command("ui")(ui_cmd.ui)
+app.add_typer(context_cmd.app, name="context")
+app.add_typer(enrich_cmd.app, name="enrich")
+app.add_typer(source_cmd.app, name="source")
 
 tracker_app = typer.Typer(no_args_is_help=True, help="Tracker management")
 tracker_app.command("new")(tracker_cmd.new)
@@ -71,6 +78,16 @@ daemon_app.command("status")(daemon_cmd.status)
 daemon_app.command("restart")(daemon_cmd.restart)
 daemon_app.command("run")(daemon_cmd.run)
 app.add_typer(daemon_app, name="daemon")
+
+worker_app = typer.Typer(no_args_is_help=True, help="Long-running enrichment workers")
+worker_app.command("enrich")(worker_cmd.enrich)
+worker_app.command("install")(worker_cmd.install)
+worker_app.command("uninstall")(worker_cmd.uninstall)
+worker_app.command("status")(worker_cmd.status)
+worker_app.command("info")(worker_cmd.info)
+worker_app.command("log")(worker_cmd.log)
+worker_app.command("restart")(worker_cmd.restart)
+app.add_typer(worker_app, name="worker")
 
 app.add_typer(code_agent_hook_cmd.app, name="code-agent-hook-write")
 

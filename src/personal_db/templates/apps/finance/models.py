@@ -15,6 +15,7 @@ _DEFAULT_BURN_BUCKETS = [
     ("transportation", "Transportation", "🚕", 30, "system", ""),
     ("ai", "AI spending", "🤖", 40, "system", ""),
     ("health", "Health", "🩺", 50, "system", ""),
+    ("entertainment", "Entertainment", "🎬", 55, "system", ""),
     ("subscriptions", "Other subscriptions", "🔁", 60, "system", ""),
     ("other", "Other", "📦", 800, "system", ""),
     ("wasted", "Wasted", "🗑️", 900, "user", "red"),
@@ -46,10 +47,53 @@ def _display_label(label: str, emoji: str) -> str:
     return f"{emoji} {label}" if emoji else label
 
 
-def ensure_burn_bucket_metadata(ctx: AppContext) -> None:
+def _review_status(state: dict[str, Any] | None) -> str:
+    if not state:
+        return "Needs review"
+    status = str(state.get("status") or "reviewed")
+    note = str(state.get("note") or "")
+    label = "Ignored" if status == "ignored" else "Reviewed"
+    if note:
+        return f"{label} - {note}"
+    return label
+
+
+def _review_key_for_recurring(row: dict[str, Any]) -> str:
+    merchant = str(row.get("merchant") or "").strip().lower()
+    owner = str(row.get("owner") or "").strip().lower()
+    category = str(row.get("category") or "").strip().lower()
+    return f"recurring:{owner}:{merchant}:{category}"
+
+
+def _review_states(ctx: AppContext) -> dict[str, dict[str, Any]]:
     apply_app_schema(ctx.cfg, ctx.app_dir)
+    return {str(row["review_key"]): row for row in _q(ctx, "review_states")}
+
+
+def _transaction_category_states(ctx: AppContext) -> dict[str, dict[str, Any]]:
+    apply_app_schema(ctx.cfg, ctx.app_dir)
+    return {
+        str(row["finance_transaction_id"]): row for row in _q(ctx, "transaction_category_states")
+    }
+
+
+def ensure_burn_bucket_metadata(ctx: AppContext) -> None:
     con = connect(ctx.cfg.db_path)
     try:
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS app_finance_burn_buckets (
+              bucket     TEXT PRIMARY KEY,
+              label      TEXT NOT NULL,
+              emoji      TEXT,
+              sort_order INTEGER NOT NULL DEFAULT 1000,
+              source     TEXT NOT NULL DEFAULT 'user',
+              color      TEXT,
+              created_at TEXT NOT NULL DEFAULT (datetime('now')),
+              updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
         columns = {str(row[1]) for row in con.execute("PRAGMA table_info(app_finance_burn_buckets)")}
         if "color" not in columns:
             con.execute("ALTER TABLE app_finance_burn_buckets ADD COLUMN color TEXT")
@@ -258,6 +302,85 @@ def smoothed_monthly_burn(bucket: str, rows: list[dict[str, Any]], today: date) 
     return recent_monthly * 0.7 + long_monthly * 0.3
 
 
+def categorize(ctx: AppContext, _params: dict[str, Any] | None = None) -> dict[str, Any]:
+    categories = _transaction_category_states(ctx)
+    reviews = _review_states(ctx)
+    presets = [str(row["category"]) for row in _q(ctx, "category_presets") if row.get("category")]
+
+    transactions = []
+    for row in _q(ctx, "transaction_category_candidates", limit=250):
+        transaction_id = str(row["finance_transaction_id"])
+        state = categories.get(transaction_id)
+        app_category = str(state.get("category") or "") if state else ""
+        transactions.append(
+            {
+                "finance_transaction_id": transaction_id,
+                "date": row.get("date") or "",
+                "merchant": row.get("merchant") or "",
+                "owner": row.get("owner") or "",
+                "source": row.get("source") or "",
+                "amount": _float(row.get("amount")),
+                "amount_display": _money(row.get("amount"), cents=True),
+                "source_category": row.get("category") or "",
+                "app_category": app_category,
+            }
+        )
+
+    parent_draws = []
+    for row in _q(ctx, "parent_draw_rows", limit=250):
+        review_key = str(row["finance_transaction_id"])
+        state = reviews.get(review_key)
+        parent_draws.append(
+            {
+                "review_key": review_key,
+                "kind": "parent_draw",
+                "date": row.get("date") or "",
+                "institution": row.get("institution") or "",
+                "account_name": row.get("account_name") or "",
+                "merchant": row.get("merchant") or "",
+                "amount": _float(row.get("amount")),
+                "amount_display": _money(row.get("amount"), cents=True),
+                "category": row.get("category") or "",
+                "status": str(state.get("status") or "") if state else "",
+                "status_label": _review_status(state),
+            }
+        )
+
+    recurring = []
+    for row in _q(ctx, "recurring_candidates", limit=100):
+        review_key = _review_key_for_recurring(row)
+        state = reviews.get(review_key)
+        recurring.append(
+            {
+                "review_key": review_key,
+                "kind": "recurring_candidate",
+                "merchant": row.get("merchant") or "",
+                "owner": row.get("owner") or "",
+                "txn_count": int(row.get("txn_count") or 0),
+                "avg_amount": _float(row.get("avg_amount")),
+                "avg_amount_display": _money(row.get("avg_amount"), cents=True),
+                "first_seen": row.get("first_seen") or "",
+                "last_seen": row.get("last_seen") or "",
+                "category": row.get("category") or "",
+                "status": str(state.get("status") or "") if state else "",
+                "status_label": _review_status(state),
+            }
+        )
+
+    return {
+        "actions": {
+            "set_category": ctx.action_url("set_transaction_category"),
+            "clear_category": ctx.action_url("clear_transaction_category"),
+            "mark_reviewed": ctx.action_url("mark_reviewed"),
+            "clear_review": ctx.action_url("clear_review"),
+        },
+        "category_presets": presets,
+        "transactions": transactions,
+        "parent_draws": parent_draws,
+        "recurring": recurring,
+    }
+
+
 def burn_rate(ctx: AppContext, _params: dict[str, Any] | None = None) -> dict[str, Any]:
     buckets = burn_buckets(ctx)
     rules = burn_rules(ctx)
@@ -298,9 +421,57 @@ def burn_rate(ctx: AppContext, _params: dict[str, Any] | None = None) -> dict[st
         by_bucket[bucket]["count"] = int(by_bucket[bucket]["count"]) + 1
     ordered = sorted(by_bucket.values(), key=lambda item: (int(item.get("sort_order") or 1000), str(item.get("label") or "")))
     return {
+        "actions": {
+            "classify": ctx.action_url("set_burn_classification"),
+            "create_bucket": ctx.action_url("create_burn_bucket"),
+        },
         "evidence_days": _BURN_RATE_EVIDENCE_DAYS,
         "smoothing_days": _BURN_RATE_SMOOTHING_DAYS,
+        "scope_options": [
+            {"value": "transaction", "label": "this txn"},
+            {"value": "merchant", "label": "merchant"},
+            {"value": "category", "label": "category"},
+        ],
+        "color_options": [
+            {"value": "", "label": "None"},
+            {"value": "red", "label": "Red"},
+            {"value": "orange", "label": "Orange"},
+            {"value": "yellow", "label": "Yellow"},
+            {"value": "green", "label": "Green"},
+            {"value": "blue", "label": "Blue"},
+            {"value": "purple", "label": "Purple"},
+            {"value": "pink", "label": "Pink"},
+        ],
+        "grid_columns": [
+            {"field": "bucket", "headerName": "Bucket", "minWidth": 105},
+            {"field": "date", "headerName": "Date", "minWidth": 110},
+            {"field": "merchant", "headerName": "Merchant", "minWidth": 240},
+            {"field": "amount", "headerName": "Amount", "minWidth": 100},
+            {"field": "source_category", "headerName": "Source Category", "minWidth": 220},
+            {
+                "field": "matched_rule",
+                "headerName": "Matched Rule",
+                "minWidth": 150,
+                "headerTooltip": "The rule or override that placed this transaction in its burn bucket.",
+            },
+            {
+                "field": "classify",
+                "headerName": "Classify",
+                "cellRenderer": "html",
+                "sortable": False,
+                "filter": False,
+                "minWidth": 310,
+            },
+        ],
         "buckets": ordered,
+        "bucket_options": [
+            {
+                "value": str(item["bucket"]),
+                "label": str(item.get("display_label") or item.get("label") or item["bucket"]),
+            }
+            for item in ordered
+        ]
+        + [{"value": "exclude", "label": "Exclude"}],
         "bucket_counts": {str(item["bucket"]): int(item["count"]) for item in ordered},
         "bucket_monthly": {str(item["bucket"]): _float(item["monthly"]) for item in ordered},
         "rows": evidence_rows,

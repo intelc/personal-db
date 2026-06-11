@@ -159,18 +159,18 @@ ORDER BY updated_at DESC
 
 -- name: transaction_category_states
 SELECT finance_transaction_id,
-       category,
+       user_category AS category,
        note,
        updated_at
-FROM app_finance_transaction_categories
+FROM finance_transaction_user_categories
 ORDER BY updated_at DESC
 
 -- name: category_presets
 SELECT category
 FROM (
-  SELECT category FROM app_finance_category_presets
+  SELECT category FROM finance_categories
   UNION
-  SELECT category FROM app_finance_transaction_categories
+  SELECT user_category AS category FROM finance_transaction_user_categories
 )
 ORDER BY LOWER(category)
 
@@ -182,8 +182,11 @@ SELECT finance_transaction_id,
        account_group,
        COALESCE(merchant_name, name) AS merchant,
        amount,
-       category
-FROM finance_transactions
+       source_category AS category,
+       user_category,
+       effective_category,
+       category_source
+FROM finance_categorized_transactions
 WHERE pending = 0
   AND is_internal_transfer = 0
   AND is_credit_card_payment = 0
@@ -206,4 +209,55 @@ WHERE pending = 0
 GROUP BY LOWER(COALESCE(merchant_name, name)), owner, category
 HAVING COUNT(*) >= 3
 ORDER BY txn_count DESC, ABS(avg_amount) DESC
+LIMIT :limit
+
+-- name: receipt_enrichment_rows
+WITH latest_receipts AS (
+  SELECT *
+  FROM enrichment_latest
+  WHERE enrichment_name = 'finance.transaction_receipt_v1'
+    AND input_table = 'finance_transactions'
+),
+evidence_refs AS (
+  SELECT run_id,
+         GROUP_CONCAT(ref, ', ') AS evidence_refs
+  FROM enrichment_evidence
+  GROUP BY run_id
+)
+SELECT tx.finance_transaction_id,
+       tx.date,
+       COALESCE(tx.merchant_name, tx.name) AS merchant,
+       tx.amount,
+       tx.category,
+       COALESCE(latest.status, 'missing') AS receipt_status,
+       latest.confidence,
+       latest.result_summary,
+       latest.updated_at,
+       json_extract(latest.result_json, '$.decision') AS decision,
+       json_extract(latest.result_json, '$.receipt_candidate_count') AS candidate_count,
+       json_extract(latest.result_json, '$.candidate_evidence_count') AS evidence_count,
+       json_extract(latest.result_json, '$.amount_combination.total') AS combined_total,
+       json_extract(latest.result_json, '$.agent_result.receipt_match') AS agent_match,
+       json_extract(latest.result_json, '$.agent_result.reasoning') AS reasoning,
+       COALESCE(evidence.evidence_refs, '') AS evidence_refs,
+       latest.run_id
+FROM finance_transactions tx
+LEFT JOIN latest_receipts latest
+  ON latest.input_id = tx.finance_transaction_id
+LEFT JOIN evidence_refs evidence
+  ON evidence.run_id = latest.run_id
+WHERE tx.pending = 0
+  AND tx.amount > 0
+ORDER BY
+  CASE COALESCE(latest.status, 'missing')
+    WHEN 'no_match' THEN 0
+    WHEN 'uncertain' THEN 1
+    WHEN 'no_context' THEN 2
+    WHEN 'skipped' THEN 3
+    WHEN 'missing' THEN 4
+    WHEN 'enriched' THEN 5
+    ELSE 6
+  END,
+  tx.date DESC,
+  tx.finance_transaction_id
 LIMIT :limit

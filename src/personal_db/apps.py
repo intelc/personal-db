@@ -108,6 +108,15 @@ class AppContext:
         _validate_identifier(name, "action")
         return f"/api/apps/{self.manifest.name}/actions/{name}"
 
+    def require_write_tables(self, *tables: str) -> None:
+        """Assert that an app action is allowed to write the named tables."""
+        allowed = set(self.manifest.writes.tables)
+        missing = [table for table in tables if table not in allowed]
+        if missing:
+            raise AppManifestError(
+                f"app {self.manifest.name} is not allowed to write: {', '.join(missing)}"
+            )
+
     def module(self, stem: str) -> Any:
         _validate_identifier(stem, "module")
         return load_app_module(self.app_dir, self.manifest.name, stem)

@@ -50,6 +50,37 @@ CREATE INDEX IF NOT EXISTS idx_finance_transactions_date ON finance_transactions
 CREATE INDEX IF NOT EXISTS idx_finance_transactions_account ON finance_transactions(finance_account_id);
 CREATE INDEX IF NOT EXISTS idx_finance_transactions_owner ON finance_transactions(owner);
 
+CREATE TABLE IF NOT EXISTS finance_categories (
+  category   TEXT PRIMARY KEY,
+  label      TEXT NOT NULL,
+  parent     TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 1000,
+  source     TEXT NOT NULL DEFAULT 'user',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_finance_categories_parent
+  ON finance_categories(parent);
+
+DELETE FROM finance_categories
+WHERE source = 'system'
+  AND category != 'Subscriptions';
+
+INSERT OR IGNORE INTO finance_categories(category, label, parent, sort_order, source)
+VALUES
+  ('Subscriptions', 'Subscriptions', NULL, 240, 'system');
+
+CREATE TABLE IF NOT EXISTS finance_transaction_user_categories (
+  finance_transaction_id TEXT PRIMARY KEY,
+  user_category          TEXT NOT NULL,
+  note                   TEXT,
+  updated_at             TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_finance_tx_user_categories_category
+  ON finance_transaction_user_categories(user_category);
+
 CREATE TABLE IF NOT EXISTS finance_holdings (
   finance_holding_id  TEXT PRIMARY KEY,
   source              TEXT NOT NULL,
@@ -178,3 +209,43 @@ CREATE TABLE IF NOT EXISTS finance_parent_draws (
 
 CREATE INDEX IF NOT EXISTS idx_finance_parent_draws_date ON finance_parent_draws(date);
 CREATE INDEX IF NOT EXISTS idx_finance_parent_draws_owner ON finance_parent_draws(owner);
+
+DROP VIEW IF EXISTS finance_categorized_transactions;
+CREATE VIEW finance_categorized_transactions AS
+SELECT
+  tx.finance_transaction_id,
+  tx.source,
+  tx.source_transaction_id,
+  tx.finance_account_id,
+  tx.source_account_id,
+  tx.date,
+  tx.name,
+  tx.merchant_name,
+  tx.amount,
+  tx.source_amount,
+  tx.pending,
+  tx.category AS source_category,
+  uc.user_category,
+  NULL AS rule_category,
+  COALESCE(uc.user_category, tx.category, 'Uncategorized') AS effective_category,
+  CASE
+    WHEN uc.user_category IS NOT NULL THEN 'user'
+    WHEN tx.category IS NOT NULL AND TRIM(tx.category) != '' THEN 'source'
+    ELSE 'default'
+  END AS category_source,
+  CASE
+    WHEN uc.user_category IS NOT NULL THEN 1.0
+    WHEN tx.category IS NOT NULL AND TRIM(tx.category) != '' THEN 0.6
+    ELSE 0.0
+  END AS category_confidence,
+  uc.note AS user_category_note,
+  uc.updated_at AS user_category_updated_at,
+  tx.owner,
+  tx.account_group,
+  tx.is_credit_card_payment,
+  tx.is_internal_transfer,
+  tx.parent_draw,
+  tx.raw_json
+FROM finance_transactions tx
+LEFT JOIN finance_transaction_user_categories uc
+  ON uc.finance_transaction_id = tx.finance_transaction_id;

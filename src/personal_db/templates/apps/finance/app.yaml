@@ -10,17 +10,26 @@ reads:
     - finance_daily_cashflow
     - finance_daily_net_worth
     - finance_parent_draws
+    - finance_categories
+    - finance_transaction_user_categories
+    - finance_categorized_transactions
+    - enrichment_latest
+    - enrichment_runs
+    - enrichment_evidence
+    - enrichment_jobs
   models:
     - burn_rate
+    - categorize
 
 writes:
   tables:
     - app_finance_reviews
-    - app_finance_transaction_categories
-    - app_finance_category_presets
     - app_finance_burn_rules
     - app_finance_burn_overrides
     - app_finance_burn_buckets
+    - finance_categories
+    - finance_transaction_user_categories
+    - enrichment_jobs
   actions:
     - mark_reviewed
     - clear_review
@@ -30,6 +39,7 @@ writes:
     - clear_burn_override
     - create_burn_bucket
     - set_burn_bucket_color
+    - rerun_receipt_enrichment
 
 pages:
   - slug: overview
@@ -47,6 +57,9 @@ pages:
   - slug: rules
     title: Rules
     view: render_rules
+  - slug: receipts
+    title: Receipts
+    view: render_receipts
   - slug: settings
     title: Settings
     view: render_settings

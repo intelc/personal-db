@@ -58,14 +58,8 @@ def test_app_available_and_install_reinstall(tmp_path):
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='app_finance_reviews'"
         ).fetchone() == (1,)
         assert con.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='app_finance_transaction_categories'"
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='app_finance_burn_rules'"
         ).fetchone() == (1,)
-        assert con.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='app_finance_category_presets'"
-        ).fetchone() == (1,)
-        assert con.execute(
-            "SELECT category FROM app_finance_category_presets WHERE category='Restaurants & Bars'"
-        ).fetchone() == ("Restaurants & Bars",)
     finally:
         con.close()
 

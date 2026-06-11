@@ -29,6 +29,17 @@
       button.disabled = true;
       button.textContent = 'saving';
     }
+    form.dispatchEvent(
+      new CustomEvent('pdb-burn-classifying', {
+        bubbles: true,
+        detail: {
+          oldBucket: previousBucket,
+          newBucket: bucket,
+          bucketLabel: bucketLabel || bucket,
+          transactionId: payload.finance_transaction_id || '',
+        },
+      })
+    );
     try {
       const response = await fetch(form.action, {
         method: 'POST',
@@ -64,12 +75,24 @@
             oldBucket: previousBucket,
             newBucket: bucket,
             bucketLabel: bucketLabel || bucket,
+            transactionId: payload.finance_transaction_id || '',
             actionResult,
           },
         })
       );
     } catch (error) {
       form.dataset.error = error && error.message ? error.message : 'Save failed';
+      form.dispatchEvent(
+        new CustomEvent('pdb-burn-classify-error', {
+          bubbles: true,
+          detail: {
+            message: form.dataset.error,
+            oldBucket: previousBucket,
+            newBucket: bucket,
+            transactionId: payload.finance_transaction_id || '',
+          },
+        })
+      );
       if (button) {
         button.disabled = false;
         button.textContent = 'retry';

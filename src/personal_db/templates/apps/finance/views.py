@@ -7,6 +7,8 @@ from typing import Any
 
 from personal_db.apps import AppContext, apply_app_schema
 from personal_db.db import connect
+from personal_db.enrichments.core import apply_enrichment_schema
+from personal_db.enrichments.finance import DEFAULT_MAX_RECEIPT_CANDIDATE_THREADS
 from personal_db.ui import agcharts, aggrid
 from personal_db.ui import components as c
 
@@ -66,6 +68,27 @@ def _nav(ctx: AppContext, active: str) -> list[tuple[str, str, bool] | tuple[str
         else:
             items.append((page.title, f"/a/{ctx.manifest.name}/{page.slug}", page.slug == active))
     return items
+
+
+def _finance_controls() -> str:
+    return (
+        '<div class="finance-app-controls" data-finance-page>'
+        '<label class="finance-toggle">'
+        '<input type="checkbox" data-finance-self-only checked> '
+        "<span>Only show self</span>"
+        "</label>"
+        "</div>"
+    )
+
+
+def _finance_page(ctx: AppContext, active: str, title: str, *children: str, subtitle: str = "") -> str:
+    return c.page(
+        title,
+        *children,
+        subtitle=subtitle,
+        header_extra=_finance_controls(),
+        nav=_nav(ctx, active),
+    )
 
 
 def _review_map(ctx: AppContext) -> dict[str, dict[str, Any]]:
@@ -271,6 +294,7 @@ _BASE_BURN_BUCKETS = [
     ("transportation", "Transportation", "🚕"),
     ("ai", "AI spending", "🤖"),
     ("health", "Health", "🩺"),
+    ("entertainment", "Entertainment", "🎬"),
     ("subscriptions", "Other subscriptions", "🔁"),
 ]
 _OTHER_BURN_BUCKET = ("other", "Other", "📦")
@@ -289,9 +313,22 @@ _BURN_BUCKET_COLORS = [
 
 
 def _ensure_burn_bucket_metadata(ctx: AppContext) -> None:
-    apply_app_schema(ctx.cfg, ctx.app_dir)
     con = connect(ctx.cfg.db_path)
     try:
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS app_finance_burn_buckets (
+              bucket     TEXT PRIMARY KEY,
+              label      TEXT NOT NULL,
+              emoji      TEXT,
+              sort_order INTEGER NOT NULL DEFAULT 1000,
+              source     TEXT NOT NULL DEFAULT 'user',
+              color      TEXT,
+              created_at TEXT NOT NULL DEFAULT (datetime('now')),
+              updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
         columns = {str(row[1]) for row in con.execute("PRAGMA table_info(app_finance_burn_buckets)")}
         if "color" not in columns:
             con.execute("ALTER TABLE app_finance_burn_buckets ADD COLUMN color TEXT")
@@ -310,6 +347,7 @@ def _ensure_burn_bucket_metadata(ctx: AppContext) -> None:
                 ("transportation", "Transportation", "🚕", 30, "system", ""),
                 ("ai", "AI spending", "🤖", 40, "system", ""),
                 ("health", "Health", "🩺", 50, "system", ""),
+                ("entertainment", "Entertainment", "🎬", 55, "system", ""),
                 ("subscriptions", "Other subscriptions", "🔁", 60, "system", ""),
                 ("other", "Other", "📦", 800, "system", ""),
                 ("wasted", "Wasted", "🗑️", 900, "user", "red"),
@@ -818,12 +856,18 @@ def _burn_buckets_section(ctx: AppContext) -> str:
 
 
 def render_rules(ctx: AppContext) -> str:
-    return c.page(
+    rules_body = (
+        '<div data-finance-rules data-pdb-island="finance-rules">'
+        '<div class="finance-rules-feedback" data-finance-rules-status></div>'
+        f"{_burn_buckets_section(ctx)}{_burn_rules_section(ctx)}"
+        "</div>"
+    )
+    return _finance_page(
+        ctx,
+        "rules",
         "Finance Rules",
-        _burn_buckets_section(ctx),
-        _burn_rules_section(ctx),
+        rules_body,
         subtitle="Auditable burn-rate classification rules. Inline overview changes create transaction overrides or user rules here.",
-        nav=_nav(ctx, "rules"),
     )
 
 
@@ -1043,7 +1087,7 @@ def _scope_page(ctx: AppContext, scope: str, title: str) -> str:
     ]
     if scope == "parents":
         sections.append(_parent_draw_section(ctx))
-    return c.page(title, *sections, subtitle=subtitle, nav=_nav(ctx, scope))
+    return _finance_page(ctx, scope, title, *sections, subtitle=subtitle)
 
 
 def render_overview(ctx: AppContext) -> str:
@@ -1051,22 +1095,14 @@ def render_overview(ctx: AppContext) -> str:
     parent_metrics, _parent_date = _latest_metrics(ctx, "parents")
     has_data = bool(_q(ctx, "account_rows", scope="all"))
     if not has_data:
-        return c.page(
+        return _finance_page(
+            ctx,
+            "overview",
             "Finance Overview",
             c.notice("No combined finance data yet. Sync Plaid and/or Monarch, then sync finance."),
-            nav=_nav(ctx, "overview"),
         )
-    toggle = (
-        '<div class="finance-dashboard-controls">'
-        '<label class="finance-toggle">'
-        '<input type="checkbox" data-finance-self-only checked> '
-        "<span>Only show self</span>"
-        "</label>"
-        "</div>"
-    )
     dashboard = (
-        '<div class="finance-dashboard finance-self-only" data-finance-dashboard>'
-        + toggle
+        '<div class="finance-dashboard" data-finance-dashboard>'
         + c.section("Self", c.metric_grid(self_metrics))
         + '<div data-finance-parent="1">'
         + c.section("Parents", c.metric_grid(parent_metrics), class_name="finance-parent-section")
@@ -1078,11 +1114,12 @@ def render_overview(ctx: AppContext) -> str:
         + _render_burn_rate(ctx)
         + "</div>"
     )
-    return c.page(
+    return _finance_page(
+        ctx,
+        "overview",
         "Finance Overview",
         dashboard,
         subtitle="A local app surface over the finance mart.",
-        nav=_nav(ctx, "overview"),
     )
 
 
@@ -1147,71 +1184,203 @@ def render_review(ctx: AppContext) -> str:
                 _review_controls(ctx, review_key, "recurring_candidate", state),
             )
         )
-    return c.page(
+    review_body = "".join(
+        (
+            '<div data-finance-categorize data-pdb-island="finance-categorize" '
+            f'data-categorize-state-url="{html.escape(ctx.model_url("categorize"), quote=True)}">'
+            '<div class="finance-categorize-feedback" data-finance-categorize-status></div>',
+            c.section(
+                "Transaction Categorization",
+                c.data_grid(
+                    transaction_rows,
+                    [
+                        "Date",
+                        "Merchant",
+                        "Owner",
+                        "Source",
+                        "Amount",
+                        "Source Category",
+                        "App Category",
+                        "Actions",
+                    ],
+                    class_name="finance-grid",
+                    page_size=25,
+                    html_columns={7},
+                ),
+                subtitle="App categories are local overrides; source transactions are not mutated.",
+                class_name="finance-categorize-transactions",
+            ),
+            c.section(
+                "Parent Draws",
+                c.data_grid(
+                    parent_rows,
+                    [
+                        "Date",
+                        "Institution",
+                        "Account",
+                        "Merchant",
+                        "Amount",
+                        "Category",
+                        "Status",
+                        "Actions",
+                    ],
+                    class_name="finance-grid",
+                    page_size=25,
+                    html_columns={7},
+                ),
+                subtitle="Review parent-managed outflows without mutating source transactions.",
+                class_name="finance-categorize-parent-draws",
+            ),
+            c.section(
+                "Recurring Candidates",
+                c.data_grid(
+                    recurring_rows,
+                    [
+                        "Merchant",
+                        "Owner",
+                        "Count",
+                        "Average",
+                        "First Seen",
+                        "Last Seen",
+                        "Category",
+                        "Status",
+                        "Actions",
+                    ],
+                    class_name="finance-grid",
+                    page_size=25,
+                    html_columns={8},
+                ),
+                subtitle="Repeated merchants from the last 180 days.",
+                class_name="finance-categorize-recurring",
+            ),
+            "</div>",
+        )
+    )
+    return _finance_page(
+        ctx,
+        "review",
         "Finance Review",
         _category_datalist(presets),
-        c.section(
-            "Transaction Categorization",
-            c.data_grid(
-                transaction_rows,
-                [
-                    "Date",
-                    "Merchant",
-                    "Owner",
-                    "Source",
-                    "Amount",
-                    "Source Category",
-                    "App Category",
-                    "Actions",
-                ],
-                class_name="finance-grid",
+        review_body,
+    )
+
+
+def _receipt_rows(ctx: AppContext) -> list[dict[str, Any]]:
+    apply_enrichment_schema(ctx.cfg)
+    return _q(ctx, "receipt_enrichment_rows", limit=200)
+
+
+def _receipt_metrics(rows: list[dict[str, Any]]) -> list[tuple[str, str, str]]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        status = str(row.get("receipt_status") or "missing")
+        counts[status] = counts.get(status, 0) + 1
+    attention = counts.get("no_match", 0) + counts.get("uncertain", 0) + counts.get("no_context", 0)
+    return [
+        ("Enriched", str(counts.get("enriched", 0)), "latest v1 matched"),
+        ("Needs attention", str(attention), "no match, uncertain, or no context"),
+        ("Missing", str(counts.get("missing", 0)), "not run yet"),
+        ("Visible rows", str(len(rows)), "recent positive transactions"),
+    ]
+
+
+def _confidence(value: Any) -> str:
+    if value is None:
+        return ""
+    try:
+        return f"{float(value) * 100:.0f}%"
+    except (TypeError, ValueError):
+        return ""
+
+
+def _evidence_cell(refs_text: Any) -> str:
+    refs = [ref.strip() for ref in str(refs_text or "").split(",") if ref.strip()]
+    if not refs:
+        return ""
+    title = html.escape("\n".join(refs), quote=True)
+    first = html.escape(refs[0])
+    suffix = f" +{len(refs) - 1}" if len(refs) > 1 else ""
+    return f'<span title="{title}">{first}{html.escape(suffix)}</span>'
+
+
+def _receipt_rerun_controls(ctx: AppContext, transaction_id: str) -> str:
+    action = html.escape(ctx.action_url("rerun_receipt_enrichment"), quote=True)
+    escaped_id = html.escape(transaction_id, quote=True)
+    return (
+        f'<form class="receipt-rerun-action" method="post" action="{action}">'
+        f'<input type="hidden" name="finance_transaction_id" value="{escaped_id}">'
+        '<input type="hidden" name="window_days" value="7">'
+        '<input type="hidden" name="max_threads" value="3">'
+        f'<input type="hidden" name="max_candidate_threads" value="{DEFAULT_MAX_RECEIPT_CANDIDATE_THREADS}">'
+        '<input type="hidden" name="snippet_window_chars" value="300">'
+        '<button type="submit">rerun</button>'
+        "</form>"
+    )
+
+
+def render_receipts(ctx: AppContext) -> str:
+    rows = _receipt_rows(ctx)
+    if not rows:
+        body = c.empty_state("No finance transactions or enrichment tables are available yet.")
+    else:
+        grid_rows = []
+        for row in rows:
+            transaction_id = str(row.get("finance_transaction_id") or "")
+            grid_rows.append(
+                {
+                    "status": row.get("receipt_status") or "missing",
+                    "date": row.get("date") or "",
+                    "merchant": row.get("merchant") or "",
+                    "amount": _money(row.get("amount"), cents=True),
+                    "match": row.get("agent_match") or row.get("decision") or "",
+                    "confidence": _confidence(row.get("confidence")),
+                    "reasoning": row.get("reasoning") or row.get("result_summary") or "",
+                    "evidence": _evidence_cell(row.get("evidence_refs")),
+                    "updated": _compact_time(row.get("updated_at")),
+                    "action": _receipt_rerun_controls(ctx, transaction_id),
+                }
+            )
+        columns = [
+            {"field": "status", "headerName": "Status", "minWidth": 120},
+            {"field": "date", "headerName": "Date", "minWidth": 110},
+            {"field": "merchant", "headerName": "Merchant", "minWidth": 180},
+            {"field": "amount", "headerName": "Amount", "minWidth": 100},
+            {"field": "match", "headerName": "Agent", "minWidth": 100},
+            {"field": "confidence", "headerName": "Conf", "minWidth": 90},
+            {"field": "reasoning", "headerName": "Reasoning", "minWidth": 360},
+            {
+                "field": "evidence",
+                "headerName": "Evidence",
+                "cellRenderer": "html",
+                "minWidth": 220,
+            },
+            {"field": "updated", "headerName": "Updated", "minWidth": 170},
+            {
+                "field": "action",
+                "headerName": "",
+                "cellRenderer": "html",
+                "sortable": False,
+                "filter": False,
+                "minWidth": 110,
+            },
+        ]
+        body = c.section(
+            "Receipt Enrichment",
+            c.metric_grid(_receipt_metrics(rows)),
+            aggrid.grid(
+                columns,
+                grid_rows,
+                class_name="finance-grid receipt-enrichment-grid",
                 page_size=25,
-                html_columns={7},
+                height_px=650,
             ),
-            subtitle="App categories are local overrides; source transactions are not mutated.",
-        ),
-        c.section(
-            "Parent Draws",
-            c.data_grid(
-                parent_rows,
-                [
-                    "Date",
-                    "Institution",
-                    "Account",
-                    "Merchant",
-                    "Amount",
-                    "Category",
-                    "Status",
-                    "Actions",
-                ],
-                class_name="finance-grid",
-                page_size=25,
-                html_columns={7},
-            ),
-            subtitle="Review parent-managed outflows without mutating source transactions.",
-        ),
-        c.section(
-            "Recurring Candidates",
-            c.data_grid(
-                recurring_rows,
-                [
-                    "Merchant",
-                    "Owner",
-                    "Count",
-                    "Average",
-                    "First Seen",
-                    "Last Seen",
-                    "Category",
-                    "Status",
-                    "Actions",
-                ],
-                class_name="finance-grid",
-                page_size=25,
-                html_columns={8},
-            ),
-            subtitle="Repeated merchants from the last 180 days.",
-        ),
-        nav=_nav(ctx, "review"),
+        )
+    return _finance_page(
+        ctx,
+        "receipts",
+        "Finance Receipts",
+        body,
+        subtitle="Latest v1 email receipt enrichment results and manual reruns.",
     )
 
 
@@ -1224,12 +1393,13 @@ def render_settings(ctx: AppContext) -> str:
     )
     if not actions:
         actions = "<li>no app actions declared yet</li>"
-    return c.page(
+    return _finance_page(
+        ctx,
+        "settings",
         "Finance Settings",
         c.section("Data Contract", f"<ul>{reads}</ul>"),
         c.section("Actions", f"<ul>{actions}</ul>"),
         c.notice(
             "Display preferences will live here; source account ownership stays in trackers and marts."
         ),
-        nav=_nav(ctx, "settings"),
     )

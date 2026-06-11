@@ -1,0 +1,35 @@
+{
+  "name": "personal_db",
+  "version": "1.0.0",
+  "description": "The missing open-source database + data-sync piece for self-hosted agentic second-brain systems.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "build:ui": "node scripts/build-ui.mjs",
+    "check:ui": "npm run build:ui -- --check"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/intelc/personal-db.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/intelc/personal-db/issues"
+  },
+  "homepage": "https://github.com/intelc/personal-db#readme",
+  "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0"
+  }
+}

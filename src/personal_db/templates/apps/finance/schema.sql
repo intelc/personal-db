@@ -9,45 +9,6 @@ CREATE TABLE IF NOT EXISTS app_finance_reviews (
 CREATE INDEX IF NOT EXISTS idx_app_finance_reviews_kind
   ON app_finance_reviews(kind);
 
-CREATE TABLE IF NOT EXISTS app_finance_transaction_categories (
-  finance_transaction_id TEXT PRIMARY KEY,
-  category               TEXT NOT NULL,
-  note                   TEXT,
-  updated_at             TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_app_finance_transaction_categories_category
-  ON app_finance_transaction_categories(category);
-
-CREATE TABLE IF NOT EXISTS app_finance_category_presets (
-  category   TEXT PRIMARY KEY,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-INSERT OR IGNORE INTO app_finance_category_presets(category)
-VALUES
-  ('Coffee'),
-  ('Education'),
-  ('Entertainment'),
-  ('Family'),
-  ('Fees'),
-  ('Fitness'),
-  ('Gifts'),
-  ('Groceries'),
-  ('Health'),
-  ('Home'),
-  ('Income'),
-  ('Insurance'),
-  ('Restaurants & Bars'),
-  ('Shopping'),
-  ('Subscriptions'),
-  ('Taxes'),
-  ('Transportation'),
-  ('Travel'),
-  ('Utilities'),
-  ('Work'),
-  ('Uncategorized');
-
 CREATE TABLE IF NOT EXISTS app_finance_burn_rules (
   rule_id             INTEGER PRIMARY KEY AUTOINCREMENT,
   rule_key            TEXT NOT NULL UNIQUE,
@@ -129,6 +90,10 @@ VALUES
   ('system:health:labcorp', 50, 'LabCorp health merchant', 'health', 'labcorp', NULL, 'contains', NULL, 'positive', NULL, 'health merchant', 'system'),
   ('system:health:my_penn_medicine', 50, 'My Penn Medicine health merchant', 'health', 'my penn medicine', NULL, 'contains', NULL, 'positive', NULL, 'health merchant', 'system'),
   ('system:health:penn_medicine', 50, 'Penn Medicine health merchant', 'health', 'penn medicine', NULL, 'contains', NULL, 'positive', NULL, 'health merchant', 'system'),
+  ('system:entertainment:amc_theatres', 45, 'AMC Theatres entertainment', 'entertainment', 'amc theatres', NULL, 'contains', NULL, 'positive', NULL, 'not a subscription', 'system'),
+  ('system:entertainment:amazon_prime_video', 45, 'Amazon Prime Video entertainment', 'entertainment', 'amazon prime video', NULL, 'contains', NULL, 'positive', NULL, 'not a subscription', 'system'),
+  ('system:entertainment:theatres', 45, 'Theater entertainment', 'entertainment', 'theatres', NULL, 'contains', NULL, 'positive', NULL, 'not a subscription', 'system'),
+  ('system:entertainment:theater', 45, 'Theater entertainment', 'entertainment', 'theater', NULL, 'contains', NULL, 'positive', NULL, 'not a subscription', 'system'),
   ('system:subscription:amazon_prime', 50, 'Amazon Prime subscription', 'subscriptions', 'amazon prime', NULL, 'contains', NULL, 'positive', NULL, 'subscription pattern', 'system'),
   ('system:subscription:apple', 50, 'Apple subscription', 'subscriptions', 'apple', NULL, 'contains', NULL, 'positive', NULL, 'subscription pattern', 'system'),
   ('system:subscription:apple_bill', 50, 'Apple bill subscription', 'subscriptions', 'apple.com/bill', NULL, 'contains', NULL, 'positive', NULL, 'subscription pattern', 'system'),
@@ -142,3 +107,17 @@ VALUES
   ('system:subscription:smugmug', 50, 'SmugMug subscription', 'subscriptions', 'smugmug', NULL, 'contains', NULL, 'positive', NULL, 'subscription pattern', 'system'),
   ('system:subscription:spotify', 50, 'Spotify subscription', 'subscriptions', 'spotify', NULL, 'contains', NULL, 'positive', NULL, 'subscription pattern', 'system'),
   ('system:subscription:youtube_premium', 50, 'YouTube Premium subscription', 'subscriptions', 'youtube premium', NULL, 'contains', NULL, 'positive', NULL, 'subscription pattern', 'system');
+
+INSERT OR IGNORE INTO app_finance_burn_buckets(
+  bucket, label, sort_order, source
+)
+VALUES
+  ('rent', 'Rent', 10, 'system'),
+  ('food', 'Food', 20, 'system'),
+  ('transportation', 'Transportation', 30, 'system'),
+  ('ai', 'AI spending', 40, 'system'),
+  ('health', 'Health', 50, 'system'),
+  ('entertainment', 'Entertainment', 55, 'system'),
+  ('subscriptions', 'Other subscriptions', 60, 'system'),
+  ('other', 'Other', 800, 'system'),
+  ('wasted', 'Wasted', 900, 'user');

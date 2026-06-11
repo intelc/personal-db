@@ -22,6 +22,7 @@ def page(
     title: str,
     *children: str,
     subtitle: str = "",
+    header_extra: str = "",
     nav: list[tuple[str, str, bool] | tuple[str, str, bool, dict[str, str]]] | None = None,
 ) -> str:
     """Render a complete app page.
@@ -46,6 +47,7 @@ def page(
     return (
         '<article class="app-page">'
         f'<header class="app-page-header"><div><h1>{escape(title)}</h1>{subtitle_html}</div></header>'
+        f"{header_extra}"
         f"{nav_html}"
         f'{join_html(list(children))}'
         "</article>"
@@ -92,16 +94,18 @@ def data_grid(
         return empty_state("No data")
     if rows and isinstance(rows[0], dict):
         normalized_columns: list[dict[str, Any]] = []
-        for col in columns:
+        html_columns = html_columns or set()
+        for idx, col in enumerate(columns):
             if isinstance(col, str):
-                normalized_columns.append(
-                    {
-                        "field": col,
-                        "headerName": col.replace("_", " ").title(),
-                    }
-                )
+                normalized_col = {
+                    "field": col,
+                    "headerName": col.replace("_", " ").title(),
+                }
             else:
-                normalized_columns.append(col)
+                normalized_col = dict(col)
+            if idx in html_columns:
+                normalized_col["cellRenderer"] = "html"
+            normalized_columns.append(normalized_col)
         return ag_grid(
             normalized_columns,
             rows,  # type: ignore[arg-type]

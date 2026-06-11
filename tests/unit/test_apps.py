@@ -16,8 +16,11 @@ from personal_db.apps import (
     update_app_template,
 )
 from personal_db.config import Config
+from personal_db.context_providers.base import EvidenceRef
 from personal_db.daemon.http import build_app
 from personal_db.db import apply_tracker_schema, connect, init_db
+from personal_db.enrichments.core import EnrichmentRunRecord, record_enrichment_run
+from personal_db.enrichments.finance import RECEIPT_V1_ENRICHMENT
 
 FINANCE_SCHEMA = (
     Path(__file__).resolve().parents[2]
@@ -253,6 +256,72 @@ def test_bundled_finance_route_renders_without_finance_tables(tmp_root):
     assert "No combined finance data yet" in r.text
 
 
+def test_finance_receipts_page_shows_latest_and_queues_rerun(tmp_root):
+    cfg = Config(root=tmp_root)
+    _seed_finance_app_db(cfg)
+    record_enrichment_run(
+        cfg,
+        EnrichmentRunRecord(
+            enrichment_name=RECEIPT_V1_ENRICHMENT,
+            input_table="finance_transactions",
+            input_id="transport-1",
+            status="no_match",
+            result={
+                "decision": "receipt_not_matched",
+                "receipt_candidate_count": 2,
+                "candidate_evidence_count": 2,
+                "agent_result": {
+                    "receipt_match": "no",
+                    "reasoning": "Older Lyft receipts did not explain the charge.",
+                },
+            },
+            evidence=[
+                EvidenceRef(
+                    source="spark_email",
+                    ref="spark_email:message:80888",
+                    kind="email_message",
+                    title="Spark email message 80888",
+                )
+            ],
+            result_summary="Receipt match: no (Lyft)",
+            confidence=0.6,
+        ),
+    )
+    client = TestClient(build_app(cfg))
+
+    page = client.get("/a/finance/receipts")
+    assert page.status_code == 200
+    assert "Finance Receipts" in page.text
+    assert "Receipt Enrichment" in page.text
+    assert "Older Lyft receipts did not explain the charge." in page.text
+    assert "spark_email:message:80888" in page.text
+    assert "rerun_receipt_enrichment" in page.text
+
+    rerun = client.post(
+        "/api/apps/finance/actions/rerun_receipt_enrichment",
+        data={"finance_transaction_id": "transport-1"},
+        headers={"referer": "/a/finance/receipts"},
+        follow_redirects=False,
+    )
+    assert rerun.status_code == 303
+    assert rerun.headers["location"] == "/a/finance/receipts"
+    con = connect(cfg.db_path, read_only=True)
+    try:
+        row = con.execute(
+            """
+            SELECT enrichment_name, status, priority, payload_json
+            FROM enrichment_jobs
+            WHERE input_id='transport-1'
+            """
+        ).fetchone()
+    finally:
+        con.close()
+    assert row[0] == RECEIPT_V1_ENRICHMENT
+    assert row[1] == "pending"
+    assert row[2] == 50
+    assert '"max_candidate_threads": 20' in row[3]
+
+
 def test_finance_review_actions_write_app_state(tmp_root):
     cfg = Config(root=tmp_root)
     init_db(cfg.db_path)
@@ -324,7 +393,7 @@ def test_app_action_rejects_cross_origin_browser_writes(tmp_root):
     assert accepted.status_code == 200
 
 
-def test_finance_category_actions_write_app_state(tmp_root):
+def test_finance_category_actions_write_canonical_finance_state(tmp_root):
     cfg = Config(root=tmp_root)
     init_db(cfg.db_path)
     client = TestClient(build_app(cfg))
@@ -344,15 +413,15 @@ def test_finance_category_actions_write_app_state(tmp_root):
     try:
         row = con.execute(
             """
-            SELECT category, note
-            FROM app_finance_transaction_categories
+            SELECT user_category, note
+            FROM finance_transaction_user_categories
             WHERE finance_transaction_id='txn-food-1'
             """
         ).fetchone()
         preset = con.execute(
             """
             SELECT category
-            FROM app_finance_category_presets
+            FROM finance_categories
             WHERE category='Dining'
             """
         ).fetchone()
@@ -368,7 +437,7 @@ def test_finance_category_actions_write_app_state(tmp_root):
     assert cleared.status_code == 200
     con = connect(cfg.db_path)
     try:
-        count = con.execute("SELECT COUNT(*) FROM app_finance_transaction_categories").fetchone()[0]
+        count = con.execute("SELECT COUNT(*) FROM finance_transaction_user_categories").fetchone()[0]
     finally:
         con.close()
     assert count == 0
@@ -941,7 +1010,8 @@ def test_bundled_finance_pages_render_with_synthetic_data(tmp_root):
 
     overview = client.get("/a/finance")
     assert overview.status_code == 200
-    assert 'class="finance-dashboard finance-self-only"' in overview.text
+    assert 'class="finance-app-controls" data-finance-page' in overview.text
+    assert 'class="finance-dashboard"' in overview.text
     assert "data-finance-dashboard" in overview.text
     assert "data-finance-self-only checked" in overview.text
     assert 'data-finance-parent="1"' in overview.text
@@ -1018,14 +1088,17 @@ def test_bundled_finance_pages_render_with_synthetic_data(tmp_root):
     assert "Parent Bank" in review.text
     assert "Pharmacy" in review.text
     assert "Recurring Candidates" in review.text
+    assert 'data-pdb-island="finance-categorize"' in review.text
+    assert 'data-categorize-state-url="/api/apps/finance/models/categorize"' in review.text
     assert "Needs review" in review.text
     assert "reviewed" in review.text
     assert "ignore" in review.text
     assert 'id="finance-category-presets"' in review.text
     assert 'list=\\"finance-category-presets\\"' in review.text
     datalist = review.text.split("</datalist>", 1)[0]
-    assert 'value="Entertainment"' in review.text
-    assert 'value="Restaurants &amp; Bars"' in datalist
+    assert 'value="Subscriptions"' in review.text
+    assert 'value="Entertainment"' not in review.text
+    assert 'value="Restaurants &amp; Bars"' not in datalist
     assert 'value="FOOD_AND_DRINK_RESTAURANT"' not in datalist
     assert "save" in review.text
 
@@ -1037,6 +1110,7 @@ def test_bundled_finance_pages_render_with_synthetic_data(tmp_root):
     rules = client.get("/a/finance/rules")
     assert rules.status_code == 200
     assert "Finance Rules" in rules.text
+    assert 'data-pdb-island="finance-rules"' in rules.text
     assert "Burn Rate Buckets" in rules.text
     assert "Emoji" in rules.text
     assert "Wasted" in rules.text
@@ -1076,6 +1150,44 @@ def test_finance_category_form_action_redirects_back(tmp_root):
     assert 'id="finance-category-presets"' in review.text
     assert 'value="Pet Projects"' in review.text
     assert "clear" in review.text
+
+
+def test_finance_categorize_model_reflects_inline_edits(tmp_root):
+    cfg = Config(root=tmp_root)
+    _seed_finance_app_db(cfg)
+    client = TestClient(build_app(cfg))
+
+    marked = client.post(
+        "/api/apps/finance/actions/set_transaction_category",
+        json={
+            "finance_transaction_id": "sub-1",
+            "category": "Pet Projects",
+        },
+    )
+    assert marked.status_code == 200
+
+    reviewed = client.post(
+        "/api/apps/finance/actions/mark_reviewed",
+        json={
+            "review_key": "parent-draw-1",
+            "kind": "parent_draw",
+            "status": "ignored",
+        },
+    )
+    assert reviewed.status_code == 200
+
+    state = client.get("/api/apps/finance/models/categorize")
+    assert state.status_code == 200
+    body = state.json()
+    assert body["actions"]["set_category"].endswith("/set_transaction_category")
+    assert "Pet Projects" in body["category_presets"]
+    transaction = next(
+        row for row in body["transactions"] if row["finance_transaction_id"] == "sub-1"
+    )
+    assert transaction["app_category"] == "Pet Projects"
+    parent_draw = next(row for row in body["parent_draws"] if row["review_key"] == "parent-draw-1")
+    assert parent_draw["status"] == "ignored"
+    assert parent_draw["status_label"] == "Ignored"
 
 
 def test_finance_burn_inline_classification_updates_overview(tmp_root):
@@ -1143,6 +1255,65 @@ def test_finance_burn_inline_classification_updates_overview(tmp_root):
     assert 'data-burn-bucket="pet_projects"' in overview.text
     assert "💡 Pet Projects" in overview.text
     assert 'style="--burn-bucket-color:blue"' in overview.text
+
+
+def test_finance_burn_merchant_rules_replace_legacy_bucket_rules(tmp_root):
+    cfg = Config(root=tmp_root)
+    _seed_finance_app_db(cfg)
+    client = TestClient(build_app(cfg))
+    assert client.get("/a/finance").status_code == 200
+    con = connect(cfg.db_path)
+    try:
+        con.executemany(
+            """
+            INSERT INTO app_finance_burn_rules(
+              rule_key, priority, label, bucket, merchant_pattern,
+              amount_direction, reason, source
+            )
+            VALUES (?, 30, ?, ?, 'amazon', 'positive', 'user merchant rule', 'user')
+            """,
+            [
+                ("user:merchant:amazon:education", "Amazon education", "education"),
+                ("user:merchant:amazon:other", "Amazon other", "other"),
+            ],
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    rule = client.post(
+        "/api/apps/finance/actions/set_burn_classification",
+        json={
+            "merchant": "Amazon",
+            "source_category": "GENERAL_MERCHANDISE_ONLINE_MARKETPLACES",
+            "bucket": "subscriptions",
+            "scope": "merchant",
+        },
+    )
+
+    assert rule.status_code == 200
+    assert rule.json()["bucket"] == "subscriptions"
+    amazon_rows = [
+        row
+        for row in rule.json()["burn_rate"]["rows"]
+        if row["finance_transaction_id"] == "other-1"
+    ]
+    assert amazon_rows[0]["bucket"] == "subscriptions"
+
+    con = connect(cfg.db_path)
+    try:
+        rows = con.execute(
+            """
+            SELECT rule_key, bucket
+            FROM app_finance_burn_rules
+            WHERE source='user'
+              AND merchant_pattern='amazon'
+            ORDER BY rule_key
+            """
+        ).fetchall()
+    finally:
+        con.close()
+    assert rows == [("user:merchant:amazon", "subscriptions")]
 
 
 def test_finance_burn_bucket_metadata_migrates_legacy_table(tmp_root):

@@ -1,13 +1,34 @@
 (() => {
-  function initDashboard(dashboard) {
-    const toggle = dashboard.querySelector('[data-finance-self-only]');
+  const SELF_ONLY_KEY = 'pdb.finance.selfOnly';
+
+  function savedSelfOnly() {
+    try {
+      const value = window.localStorage.getItem(SELF_ONLY_KEY);
+      return value == null ? true : value !== '0';
+    } catch (_error) {
+      return true;
+    }
+  }
+
+  function persistSelfOnly(value) {
+    try {
+      window.localStorage.setItem(SELF_ONLY_KEY, value ? '1' : '0');
+    } catch (_error) {
+      // The checkbox still works for this page if storage is unavailable.
+    }
+  }
+
+  function initFinancePage(page) {
+    const toggle = page.querySelector('[data-finance-self-only]');
     if (!toggle) return;
-    if (dashboard.dataset.financeReady === '1') return;
-    dashboard.dataset.financeReady = '1';
+    if (page.dataset.financeReady === '1') return;
+    page.dataset.financeReady = '1';
+    toggle.checked = savedSelfOnly();
 
     function sync() {
-      dashboard.classList.toggle('finance-self-only', toggle.checked);
+      page.classList.toggle('finance-self-only', toggle.checked);
       toggle.setAttribute('aria-pressed', toggle.checked ? 'true' : 'false');
+      persistSelfOnly(toggle.checked);
     }
 
     toggle.addEventListener('change', sync);
@@ -292,9 +313,14 @@
   }
 
   function initAll() {
-    document.querySelectorAll('[data-finance-dashboard]').forEach(initDashboard);
+    document.querySelectorAll('[data-finance-page]').forEach((controls) => {
+      const page = controls.closest('.app-page');
+      if (page) initFinancePage(page);
+    });
     if (window.pdbApp && typeof window.pdbApp.registerIsland === 'function') {
-      window.pdbApp.registerIsland('finance-burn-rate', initBurnRate);
+      if (!window.pdbApp.hasIsland || !window.pdbApp.hasIsland('finance-burn-rate')) {
+        window.pdbApp.registerIsland('finance-burn-rate', initBurnRate);
+      }
       window.pdbApp.mountIslands();
     } else {
       document.querySelectorAll('[data-burn-rate]').forEach(initBurnRate);

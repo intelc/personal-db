@@ -91,6 +91,18 @@ def test_dashboard_route_renders_each_configured_viz(tmp_path):
     assert "TRACKER HEALTH" in r.text
 
 
+def test_life_context_form_exposes_backdated_note_fields(tmp_path):
+    cfg = _setup(tmp_path, "life_context")
+    client = TestClient(build_app(cfg))
+    r = client.get("/t/life_context")
+
+    assert r.status_code == 200
+    assert 'action="/log_life_context"' in r.text
+    assert 'name="start_date"' in r.text
+    assert 'type="date"' in r.text
+    assert "flew to Japan" in r.text
+
+
 def test_single_viz_page(tmp_path):
     cfg = _setup(tmp_path, "daily_time_accounting")
     client = TestClient(build_app(cfg))
@@ -421,12 +433,14 @@ def test_aggrid_table_marks_safe_html_columns():
         pass
 
     html = table_grid(
-        [("plain", SafeHtml("<span>badge</span>"))],
+        [("AT&amp;T", SafeHtml("<span>badge</span>"))],
         ["Name", "Badge"],
         html_columns={1},
     )
 
     assert "data-pdb-grid" in html
+    assert "AT&T" in html
+    assert "AT&amp;amp;T" not in html
     assert '"cellRenderer": "html"' in html
     assert "<\\/span>" in html
 
@@ -443,6 +457,20 @@ def test_data_grid_normalizes_dict_rows_with_string_columns():
     assert '"field": "day"' in html
     assert '"headerName": "Place Name"' in html
     assert '"place_name": "Studio"' in html
+
+
+def test_data_grid_marks_dict_html_columns():
+    from personal_db.ui import components as c
+
+    html = c.data_grid(
+        [{"label": "AT&amp;T", "action": "<button>save</button>"}],
+        ["label", "action"],
+        html_columns={1},
+    )
+
+    assert '"field": "action"' in html
+    assert '"cellRenderer": "html"' in html
+    assert "<button>save<\\/button>" in html
 
 
 def test_agcharts_line_renders_structured_options():
@@ -526,8 +554,11 @@ def test_base_uses_vendored_ag_assets(tmp_path):
     assert r.status_code == 200
     assert "/static/vendor/ag-grid-community/35.3.0/ag-grid-community.min.js" in r.text
     assert "/static/vendor/ag-charts-community/13.3.0/ag-charts-community.min.js" in r.text
-    assert "/static/pdb-grid.js?v=5" in r.text
-    assert "/static/style.css?v=finance-app-4" in r.text
-    assert "/static/pdb-app-state.js?v=1" in r.text
-    assert "/static/pdb-finance.js?v=7" in r.text
+    assert "/static/pdb-grid.js?v=6" in r.text
+    assert "/static/style.css?v=finance-app-12" in r.text
+    assert "/static/pdb-app-state.js?v=2" in r.text
+    assert "/static/apps/finance-burn-rate.js?v=4" in r.text
+    assert "/static/apps/finance-categorize.js?v=1" in r.text
+    assert "/static/apps/finance-rules.js?v=1" in r.text
+    assert "/static/pdb-finance.js?v=9" in r.text
     assert "cdn.jsdelivr.net" not in r.text

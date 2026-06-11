@@ -82,6 +82,10 @@
     islands.set(name, mount);
   }
 
+  function hasIsland(name) {
+    return islands.has(name);
+  }
+
   function mountIslands(root = document) {
     root.querySelectorAll('[data-pdb-island]').forEach((el) => {
       if (el.dataset.pdbIslandReady === '1') return;
@@ -95,6 +99,7 @@
 
   window.pdbApp = {
     createStore,
+    hasIsland,
     mountIslands,
     registerIsland,
     requestJson,

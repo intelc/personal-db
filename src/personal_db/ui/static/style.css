@@ -305,6 +305,7 @@ table.health a:hover { background: #000; color: #fff; border-bottom-color: trans
   min-height: 72px;
   display: grid;
   align-content: space-between;
+  position: relative;
 }
 .metric-label,
 .metric-hint {
@@ -373,15 +374,28 @@ table.health a:hover { background: #000; color: #fff; border-bottom-color: trans
   background: #000;
   color: #fff;
 }
+.finance-categorize-feedback {
+  min-height: 20px;
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: #555;
+}
+.finance-rules-feedback {
+  min-height: 20px;
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: #555;
+}
 .finance-dashboard {
   display: flex;
   flex-direction: column;
 }
-.finance-dashboard-controls {
+.finance-app-controls {
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  margin-bottom: calc(var(--grid) * -1);
+  border-bottom: var(--rule);
+  padding: calc(var(--grid) * 2) 0;
 }
 .finance-toggle {
   display: inline-flex;
@@ -401,7 +415,7 @@ table.health a:hover { background: #000; color: #fff; border-bottom-color: trans
 .finance-self-only [data-finance-parent] {
   display: none !important;
 }
-.app-shell:has(.finance-self-only) [data-finance-parent-tab] {
+.app-page.finance-self-only [data-finance-parent-tab] {
   display: none !important;
 }
 .burn-rate-grid {
@@ -504,6 +518,25 @@ table.health a:hover { background: #000; color: #fff; border-bottom-color: trans
   cursor: pointer;
 }
 .burn-rate-add-form button:hover {
+  background: #000;
+  color: #fff;
+}
+.burn-rate-feedback {
+  min-height: 24px;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 11px;
+}
+.burn-rate-feedback button {
+  font-family: inherit;
+  font-size: 11px;
+  border: 1px solid #000;
+  background: #fff;
+  color: #000;
+  cursor: pointer;
+}
+.burn-rate-feedback button:hover {
   background: #000;
   color: #fff;
 }
@@ -1091,4 +1124,241 @@ table.health th {
 .action-output.error {
   color: #c00;
   border-color: #c00;
+}
+
+/* Agent CLI drawer ----------------------------------------------------- */
+.pdb-agent-toggle {
+  position: fixed;
+  right: calc(var(--grid) * 2);
+  bottom: calc(var(--grid) * 2);
+  z-index: 80;
+  border: 2px solid #000;
+  background: #fff;
+  color: #000;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: lowercase;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.pdb-agent-toggle:hover,
+.pdb-agent-open .pdb-agent-toggle {
+  background: #000;
+  color: #fff;
+}
+.pdb-agent-ask-toggle {
+  position: fixed;
+  right: calc(var(--grid) * 11);
+  bottom: calc(var(--grid) * 2);
+  z-index: 80;
+  border: 2px solid #000;
+  background: #fff;
+  color: #000;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: lowercase;
+  padding: 6px 10px;
+  cursor: crosshair;
+}
+.pdb-agent-ask-toggle:hover,
+.pdb-agent-ask-toggle.active {
+  background: #000;
+  color: #fff;
+}
+.pdb-note-toggle {
+  position: fixed;
+  right: calc(var(--grid) * 20);
+  bottom: calc(var(--grid) * 2);
+  z-index: 80;
+  border: 2px solid #000;
+  background: #fff;
+  color: #000;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: lowercase;
+  padding: 6px 10px;
+  cursor: cell;
+}
+.pdb-note-toggle:hover,
+.pdb-note-toggle.active,
+.pdb-note-toggle[aria-pressed="true"] {
+  background: #000;
+  color: #fff;
+}
+.pdb-agent-open .pdb-agent-ask-toggle {
+  right: calc(min(720px, 46vw) + var(--grid) * 2);
+}
+.pdb-agent-open .pdb-note-toggle {
+  right: calc(min(720px, 46vw) + var(--grid) * 11);
+}
+body.pdb-agent-ask-mode,
+body.pdb-agent-ask-mode * {
+  cursor: crosshair !important;
+}
+.pdb-agent-hover-outline {
+  position: fixed;
+  z-index: 94;
+  pointer-events: none;
+  border: 2px solid #000;
+  background: rgba(0, 0, 0, 0.04);
+  box-shadow: inset 0 0 0 1px #fff;
+}
+.pdb-agent-hover-outline[hidden] {
+  display: none;
+}
+.pdb-agent-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 90;
+  width: min(720px, 46vw);
+  min-width: 420px;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  color: #000;
+  border-left: 2px solid #000;
+  transform: translateX(100%);
+  transition: transform 120ms ease-out;
+}
+.pdb-agent-open .pdb-agent-drawer {
+  transform: translateX(0);
+}
+.pdb-agent-open main,
+.pdb-agent-open .masthead {
+  margin-right: min(720px, 46vw);
+}
+.pdb-agent-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--grid);
+  min-height: 44px;
+  padding: var(--grid) calc(var(--grid) * 1.5);
+  border-bottom: var(--rule);
+}
+.pdb-agent-head strong {
+  display: block;
+  line-height: 1.2;
+}
+.pdb-agent-head span {
+  display: block;
+  color: #666;
+  font-size: 11px;
+  line-height: 1.2;
+}
+.pdb-agent-close {
+  width: 28px;
+  height: 28px;
+  border: var(--rule);
+  background: #fff;
+  color: #000;
+  font: inherit;
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
+.pdb-agent-close:hover {
+  background: #000;
+  color: #fff;
+}
+.pdb-agent-toolbar {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: var(--grid) calc(var(--grid) * 1.5);
+  border-bottom: var(--rule);
+}
+.pdb-agent-toolbar span {
+  color: #666;
+  font-size: 11px;
+}
+.pdb-agent-toolbar strong {
+  color: #000;
+  font-weight: 700;
+}
+.pdb-agent-toolbar button {
+  border: var(--rule);
+  background: #fff;
+  color: #000;
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.pdb-agent-toolbar button:hover,
+.pdb-agent-toolbar button.active {
+  background: #000;
+  color: #fff;
+}
+.pdb-agent-provider-menu {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-left: 4px;
+}
+.pdb-agent-provider-menu[hidden] {
+  display: none;
+}
+.pdb-agent-terminal {
+  flex: 1;
+  min-height: 0;
+  background: #050505;
+  border-top: 0;
+}
+.pdb-agent-terminal .xterm {
+  height: 100%;
+  padding: 8px;
+}
+.pdb-agent-ask-chip {
+  position: fixed;
+  z-index: 95;
+  width: fit-content;
+  border: 1px solid #000;
+  background: #fff;
+  color: #000;
+  font: inherit;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 6px;
+  text-transform: lowercase;
+  cursor: pointer;
+  opacity: 0.72;
+}
+.pdb-agent-ask-chip[hidden] {
+  display: none;
+}
+.pdb-agent-ask-chip:hover,
+.pdb-agent-ask-chip:focus {
+  background: #000;
+  color: #fff;
+  opacity: 1;
+  outline: 2px solid #000;
+  outline-offset: 1px;
+}
+
+@media (max-width: 900px) {
+  .pdb-agent-drawer {
+    width: 100vw;
+    min-width: 0;
+  }
+  .pdb-agent-open main,
+  .pdb-agent-open .masthead {
+    margin-right: 0;
+  }
+  .pdb-agent-open .pdb-agent-ask-toggle {
+    right: calc(var(--grid) * 2);
+    z-index: 96;
+  }
+  .pdb-agent-open .pdb-note-toggle {
+    right: calc(var(--grid) * 11);
+    z-index: 96;
+  }
 }

@@ -6,22 +6,61 @@ from typing import Any
 
 from personal_db.apps import AppContext, apply_app_schema
 from personal_db.db import connect
+from personal_db.enrichments.core import apply_enrichment_schema, enqueue_enrichment_job
+from personal_db.enrichments.finance import (
+    DEFAULT_MAX_RECEIPT_CANDIDATE_THREADS,
+    RECEIPT_V1_ENRICHMENT,
+)
 
 _KINDS = {"parent_draw", "recurring_candidate"}
 _STATUSES = {"reviewed", "ignored"}
 _MAX_CATEGORY_LEN = 80
-_BASE_BURN_BUCKETS = {"rent", "food", "transportation", "ai", "health", "subscriptions", "other"}
+_BASE_BURN_BUCKETS = {
+    "rent",
+    "food",
+    "transportation",
+    "ai",
+    "health",
+    "entertainment",
+    "subscriptions",
+    "other",
+}
 _RESERVED_BURN_BUCKETS = {*_BASE_BURN_BUCKETS, "exclude"}
 _BURN_SCOPES = {"transaction", "merchant", "category"}
 _MAX_BURN_BUCKET_LABEL_LEN = 40
 _MAX_BURN_BUCKET_EMOJI_LEN = 12
 _BURN_BUCKET_COLORS = {"", "red", "orange", "yellow", "green", "blue", "purple", "pink"}
+_CATEGORY_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS finance_categories (
+  category   TEXT PRIMARY KEY,
+  label      TEXT NOT NULL,
+  parent     TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 1000,
+  source     TEXT NOT NULL DEFAULT 'user',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_finance_categories_parent
+  ON finance_categories(parent);
+
+CREATE TABLE IF NOT EXISTS finance_transaction_user_categories (
+  finance_transaction_id TEXT PRIMARY KEY,
+  user_category          TEXT NOT NULL,
+  note                   TEXT,
+  updated_at             TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_finance_tx_user_categories_category
+  ON finance_transaction_user_categories(user_category);
+"""
 _DEFAULT_BURN_BUCKETS = [
     ("rent", "Rent", "🏠", 10, "system", ""),
     ("food", "Food", "🍽️", 20, "system", ""),
     ("transportation", "Transportation", "🚕", 30, "system", ""),
     ("ai", "AI spending", "🤖", 40, "system", ""),
     ("health", "Health", "🩺", 50, "system", ""),
+    ("entertainment", "Entertainment", "🎬", 55, "system", ""),
     ("subscriptions", "Other subscriptions", "🔁", 60, "system", ""),
     ("other", "Other", "📦", 800, "system", ""),
     ("wasted", "Wasted", "🗑️", 900, "user", "red"),
@@ -101,23 +140,34 @@ def _category(payload: dict[str, Any]) -> str:
     return category
 
 
+def _ensure_category_schema(ctx: AppContext) -> None:
+    ctx.require_write_tables("finance_categories", "finance_transaction_user_categories")
+    con = connect(ctx.cfg.db_path)
+    try:
+        con.executescript(_CATEGORY_SCHEMA_SQL)
+        con.commit()
+    finally:
+        con.close()
+
+
 def set_transaction_category(ctx: AppContext, payload: dict[str, Any]) -> dict[str, Any]:
-    """Store an app-owned category override for a finance transaction."""
+    """Store a canonical user category for a finance transaction."""
     transaction_id = _text(payload, "finance_transaction_id", required=True)
     category = _category(payload)
     note = _text(payload, "note") or None
     updated_at = datetime.now(UTC).isoformat()
     apply_app_schema(ctx.cfg, ctx.app_dir)
+    _ensure_category_schema(ctx)
     con = connect(ctx.cfg.db_path)
     try:
         con.execute(
             """
-            INSERT INTO app_finance_transaction_categories(
-              finance_transaction_id, category, note, updated_at
+            INSERT INTO finance_transaction_user_categories(
+              finance_transaction_id, user_category, note, updated_at
             )
             VALUES (?, ?, ?, ?)
             ON CONFLICT(finance_transaction_id) DO UPDATE SET
-              category=excluded.category,
+              user_category=excluded.user_category,
               note=excluded.note,
               updated_at=excluded.updated_at
             """,
@@ -125,11 +175,11 @@ def set_transaction_category(ctx: AppContext, payload: dict[str, Any]) -> dict[s
         )
         con.execute(
             """
-            INSERT INTO app_finance_category_presets(category, created_at)
-            VALUES (?, ?)
+            INSERT INTO finance_categories(category, label, source, created_at, updated_at)
+            VALUES (?, ?, 'user', ?, ?)
             ON CONFLICT(category) DO NOTHING
             """,
-            (category, updated_at),
+            (category, category, updated_at, updated_at),
         )
         con.commit()
     finally:
@@ -140,16 +190,78 @@ def set_transaction_category(ctx: AppContext, payload: dict[str, Any]) -> dict[s
 def clear_transaction_category(ctx: AppContext, payload: dict[str, Any]) -> dict[str, Any]:
     transaction_id = _text(payload, "finance_transaction_id", required=True)
     apply_app_schema(ctx.cfg, ctx.app_dir)
+    _ensure_category_schema(ctx)
     con = connect(ctx.cfg.db_path)
     try:
         con.execute(
-            "DELETE FROM app_finance_transaction_categories WHERE finance_transaction_id=?",
+            "DELETE FROM finance_transaction_user_categories WHERE finance_transaction_id=?",
             (transaction_id,),
         )
         con.commit()
     finally:
         con.close()
     return {"ok": True, "finance_transaction_id": transaction_id, "cleared": True}
+
+
+def rerun_receipt_enrichment(ctx: AppContext, payload: dict[str, Any]) -> dict[str, Any]:
+    """Queue a forced v1 receipt enrichment rerun for one finance transaction."""
+    ctx.require_write_tables("enrichment_jobs")
+    transaction_id = _text(payload, "finance_transaction_id", required=True)
+    window_days = _positive_int(_text(payload, "window_days") or "7", default=7)
+    max_threads = _positive_int(_text(payload, "max_threads") or "3", default=3)
+    max_candidate_threads = _positive_int(
+        _text(payload, "max_candidate_threads")
+        or str(DEFAULT_MAX_RECEIPT_CANDIDATE_THREADS),
+        default=DEFAULT_MAX_RECEIPT_CANDIDATE_THREADS,
+    )
+    apply_enrichment_schema(ctx.cfg)
+    _ensure_finance_transaction_exists(ctx, transaction_id)
+    job = enqueue_enrichment_job(
+        ctx.cfg,
+        enrichment_name=RECEIPT_V1_ENRICHMENT,
+        input_table="finance_transactions",
+        input_id=transaction_id,
+        priority=50,
+        payload={
+            "window_days": window_days,
+            "scope": _text(payload, "scope") or None,
+            "max_threads": max_threads,
+            "max_candidate_threads": max_candidate_threads,
+            "snippet_window_chars": _positive_int(
+                _text(payload, "snippet_window_chars") or "300",
+                default=300,
+            ),
+            "requested_from": "finance_app_receipts",
+        },
+        force=True,
+    )
+    return {
+        "ok": True,
+        "finance_transaction_id": transaction_id,
+        "enrichment_name": RECEIPT_V1_ENRICHMENT,
+        **job,
+    }
+
+
+def _positive_int(value: str, *, default: int) -> int:
+    try:
+        parsed = int(value)
+    except ValueError:
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _ensure_finance_transaction_exists(ctx: AppContext, transaction_id: str) -> None:
+    con = connect(ctx.cfg.db_path, read_only=True)
+    try:
+        row = con.execute(
+            "SELECT 1 FROM finance_transactions WHERE finance_transaction_id=?",
+            (transaction_id,),
+        ).fetchone()
+    finally:
+        con.close()
+    if row is None:
+        raise ValueError(f"unknown finance transaction: {transaction_id}")
 
 
 def _burn_bucket(ctx: AppContext, payload: dict[str, Any]) -> str:
@@ -173,9 +285,9 @@ def _burn_scope(payload: dict[str, Any]) -> str:
     return scope
 
 
-def _rule_key(scope: str, pattern: str, bucket: str) -> str:
+def _rule_key(scope: str, pattern: str) -> str:
     normalized = " ".join(pattern.lower().split())
-    return f"user:{scope}:{normalized}:{bucket}"
+    return f"user:{scope}:{normalized}"
 
 
 def _burn_bucket_slug(label: str) -> str:
@@ -203,10 +315,23 @@ def _burn_bucket_emoji(payload: dict[str, Any]) -> str:
 
 
 def _ensure_burn_bucket_metadata(ctx: AppContext) -> None:
-    apply_app_schema(ctx.cfg, ctx.app_dir)
     updated_at = datetime.now(UTC).isoformat()
     con = connect(ctx.cfg.db_path)
     try:
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS app_finance_burn_buckets (
+              bucket     TEXT PRIMARY KEY,
+              label      TEXT NOT NULL,
+              emoji      TEXT,
+              sort_order INTEGER NOT NULL DEFAULT 1000,
+              source     TEXT NOT NULL DEFAULT 'user',
+              color      TEXT,
+              created_at TEXT NOT NULL DEFAULT (datetime('now')),
+              updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
         columns = {str(row[1]) for row in con.execute("PRAGMA table_info(app_finance_burn_buckets)")}
         if "color" not in columns:
             con.execute("ALTER TABLE app_finance_burn_buckets ADD COLUMN color TEXT")
@@ -300,6 +425,16 @@ def set_burn_classification(ctx: AppContext, payload: dict[str, Any]) -> dict[st
             if not merchant:
                 raise ValueError("merchant is required for merchant burn rules")
             pattern = merchant.lower()
+            rule_key = _rule_key(scope, pattern)
+            con.execute(
+                """
+                DELETE FROM app_finance_burn_rules
+                 WHERE source='user'
+                   AND LOWER(COALESCE(merchant_pattern, '')) = ?
+                   AND rule_key <> ?
+                """,
+                (pattern, rule_key),
+            )
             con.execute(
                 """
                 INSERT INTO app_finance_burn_rules(
@@ -317,7 +452,7 @@ def set_burn_classification(ctx: AppContext, payload: dict[str, Any]) -> dict[st
                   updated_at=excluded.updated_at
                 """,
                 (
-                    _rule_key(scope, pattern, bucket),
+                    rule_key,
                     f'Merchant contains "{merchant}"',
                     bucket,
                     pattern,
@@ -329,6 +464,16 @@ def set_burn_classification(ctx: AppContext, payload: dict[str, Any]) -> dict[st
             if not category:
                 raise ValueError("source_category is required for category burn rules")
             pattern = category.upper()
+            rule_key = _rule_key(scope, pattern)
+            con.execute(
+                """
+                DELETE FROM app_finance_burn_rules
+                 WHERE source='user'
+                   AND UPPER(COALESCE(category_pattern, '')) = ?
+                   AND rule_key <> ?
+                """,
+                (pattern, rule_key),
+            )
             con.execute(
                 """
                 INSERT INTO app_finance_burn_rules(
@@ -347,7 +492,7 @@ def set_burn_classification(ctx: AppContext, payload: dict[str, Any]) -> dict[st
                   updated_at=excluded.updated_at
                 """,
                 (
-                    _rule_key(scope, pattern, bucket),
+                    rule_key,
                     f'Source category is "{category}"',
                     bucket,
                     pattern,
