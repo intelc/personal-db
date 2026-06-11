@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import json
-import os
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +11,7 @@ import requests
 import yaml
 
 from personal_db.db import connect
+from personal_db.ingest_utils import execute, json_dumps, now_iso, read_rows, tracker_env
 from personal_db.tracker import Cursor, Tracker
 
 API_HOSTS = {
@@ -36,22 +36,7 @@ SELF_OWNERS = {"self", "me", "personal"}
 CREDIT_CARD_PAYMENT_DETAIL = "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"
 
 
-def _read_env_file(root: Path) -> dict[str, str]:
-    env_path = root / ".env"
-    if not env_path.exists():
-        return {}
-    out: dict[str, str] = {}
-    for line in env_path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        out[key.strip()] = value.strip().strip('"').strip("'")
-    return out
-
-
-def _env(t: Tracker, name: str, default: str | None = None) -> str | None:
-    return os.environ.get(name) or _read_env_file(t.cfg.root).get(name) or default
+_env = tracker_env
 
 
 def _api_host(t: Tracker) -> str:
@@ -119,30 +104,10 @@ def _load_items(t: Tracker) -> list[dict[str, Any]]:
     return [item for item in items if item.get("access_token")]
 
 
-def _json(value: Any) -> str | None:
-    if value is None:
-        return None
-    return json.dumps(value, separators=(",", ":"), sort_keys=True)
-
-
-def _read_rows(t: Tracker, sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
-    con = connect(t.cfg.db_path)
-    cur = con.execute(sql, params)
-    cols = [desc[0] for desc in cur.description]
-    rows = [dict(zip(cols, row, strict=False)) for row in cur.fetchall()]
-    con.close()
-    return rows
-
-
-def _execute(t: Tracker, sql: str, params: tuple[Any, ...] = ()) -> None:
-    con = connect(t.cfg.db_path)
-    con.execute(sql, params)
-    con.commit()
-    con.close()
-
-
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
+_json = json_dumps
+_read_rows = read_rows
+_execute = execute
+_now_iso = now_iso
 
 
 def _item_label(item: dict[str, Any]) -> str:

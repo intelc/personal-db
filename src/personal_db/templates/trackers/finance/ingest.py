@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import sqlite3
-from datetime import UTC, datetime
 from typing import Any
 
-from personal_db.db import connect
+from personal_db.ingest_utils import coerce_float, execute, now_iso, read_rows
 from personal_db.tracker import Tracker
 
 ACCOUNT_GROUPS = {"cash", "credit_card", "investments", "other"}
@@ -87,32 +85,10 @@ HOLDING_SNAPSHOT_EXPORT_COLUMNS = [
 ]
 
 
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-def _execute(t: Tracker, sql: str, params: tuple[Any, ...] = ()) -> None:
-    con = connect(t.cfg.db_path)
-    con.execute(sql, params)
-    con.commit()
-    con.close()
-
-
-def _read_rows(t: Tracker, sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
-    con = connect(t.cfg.db_path)
-    try:
-        cur = con.execute(sql, params)
-        cols = [desc[0] for desc in cur.description]
-        return [dict(zip(cols, row, strict=False)) for row in cur.fetchall()]
-    finally:
-        con.close()
-
-
-def _coerce_float(value: Any) -> float:
-    try:
-        return float(value or 0)
-    except (TypeError, ValueError):
-        return 0.0
+_now_iso = now_iso
+_execute = execute
+_read_rows = read_rows
+_coerce_float = coerce_float
 
 
 def _coerce_int(value: Any) -> int:
