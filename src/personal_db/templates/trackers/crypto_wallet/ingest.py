@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import re
-from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -14,6 +13,7 @@ import requests
 import yaml
 
 from personal_db.db import connect
+from personal_db.ingest_utils import coerce_float, json_dumps, now_iso, tracker_env
 from personal_db.tracker import Tracker
 
 ACCOUNT_GROUPS = {"cash", "credit_card", "investments", "other"}
@@ -26,32 +26,9 @@ EVM_WALLET_RE = re.compile(r"^0x[a-fA-F0-9]{40}$")
 XPUB_RE = re.compile(r"^(xpub|ypub|zpub|tpub|upub|vpub)[A-Za-z0-9]{50,120}$")
 
 
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-def _json(value: Any) -> str | None:
-    if value is None:
-        return None
-    return json.dumps(value, separators=(",", ":"), sort_keys=True)
-
-
-def _read_env_file(root: Path) -> dict[str, str]:
-    env_path = root / ".env"
-    if not env_path.exists():
-        return {}
-    out: dict[str, str] = {}
-    for line in env_path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        out[key.strip()] = value.strip().strip('"').strip("'")
-    return out
-
-
-def _env(t: Tracker, name: str, default: str | None = None) -> str | None:
-    return os.environ.get(name) or _read_env_file(t.cfg.root).get(name) or default
+_now_iso = now_iso
+_json = json_dumps
+_env = tracker_env
 
 
 def _api_key(t: Tracker) -> str:
@@ -151,12 +128,7 @@ def _wallet_entries(t: Tracker) -> dict[str, dict[str, Any]]:
 
 
 def _coerce_float(value: Any) -> float | None:
-    if value is None or value == "":
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
+    return coerce_float(value, default=None)
 
 
 def _quantity(row: dict[str, Any]) -> float | None:

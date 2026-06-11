@@ -8,15 +8,15 @@ tables so downstream finance reads the same source contract as Plaid.
 from __future__ import annotations
 
 import importlib.util as _ilu
-import json
 import os
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from personal_db.db import connect
+from personal_db.ingest_utils import json_dumps, now_iso, tracker_env
 from personal_db.tracker import Tracker
 
 ACCOUNT_GROUPS = {"cash", "credit_card", "investments", "other"}
@@ -37,32 +37,9 @@ _client_mod = _load_sibling("parsers")
 MonarchClient = _client_mod.MonarchClient
 
 
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-def _json(value: Any) -> str | None:
-    if value is None:
-        return None
-    return json.dumps(value, separators=(",", ":"), sort_keys=True)
-
-
-def _read_env_file(root: Path) -> dict[str, str]:
-    env_path = root / ".env"
-    if not env_path.exists():
-        return {}
-    out: dict[str, str] = {}
-    for line in env_path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        out[key.strip()] = value.strip().strip('"').strip("'")
-    return out
-
-
-def _env(t: Tracker, name: str, default: str | None = None) -> str | None:
-    return os.environ.get(name) or _read_env_file(t.cfg.root).get(name) or default
+_now_iso = now_iso
+_json = json_dumps
+_env = tracker_env
 
 
 def _session_path(t: Tracker) -> Path:
