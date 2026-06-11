@@ -7,13 +7,8 @@ from datetime import datetime, timedelta
 
 from personal_db.config import Config
 from personal_db.ui.charts import line_chart, multi_line_chart
-
-
-def _connect(cfg: Config) -> sqlite3.Connection | None:
-    try:
-        return sqlite3.connect(cfg.db_path)
-    except sqlite3.OperationalError:
-        return None
+from personal_db.viz_helpers import connect_db as _connect
+from personal_db.viz_helpers import meta
 
 
 # kg ↔ lb toggle. Charts emit raw kg in `data-kg` and unit text in
@@ -65,7 +60,7 @@ def render_weight_trend_180d(cfg: Config) -> str:
     If there are multiple weigh-ins in a day, the latest one wins."""
     con = _connect(cfg)
     if not con:
-        return '<p class="meta">no data</p>'
+        return meta("no data")
     today = datetime.now().date()
     cutoff = (today - timedelta(days=179)).isoformat()
     try:
@@ -79,7 +74,7 @@ def render_weight_trend_180d(cfg: Config) -> str:
             (cutoff,),
         ).fetchall())
     except sqlite3.OperationalError:
-        return '<p class="meta">withings_measurements not synced yet</p>'
+        return meta("withings_measurements not synced yet")
     finally:
         con.close()
 
@@ -109,7 +104,7 @@ def render_body_composition_30d(cfg: Config) -> str:
     so the visual answers 'is recent weight change fat or lean?'."""
     con = _connect(cfg)
     if not con:
-        return '<p class="meta">no data</p>'
+        return meta("no data")
     today = datetime.now().date()
     cutoff = (today - timedelta(days=29)).isoformat()
     try:
@@ -123,7 +118,7 @@ def render_body_composition_30d(cfg: Config) -> str:
             (cutoff,),
         ).fetchall()
     except sqlite3.OperationalError:
-        return '<p class="meta">withings_measurements not synced yet</p>'
+        return meta("withings_measurements not synced yet")
     finally:
         con.close()
     by_day = {row[0]: (row[1], row[2]) for row in rows}

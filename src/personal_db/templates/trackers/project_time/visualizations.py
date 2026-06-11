@@ -7,6 +7,8 @@ from datetime import date, datetime, timedelta
 
 from personal_db.config import Config
 from personal_db.ui.charts import horizontal_bars, stacked_vertical_bars
+from personal_db.viz_helpers import connect_db as _connect
+from personal_db.viz_helpers import meta
 
 # Stable per-project palette so the calendar's colors mean something. Cycled
 # in declaration order; non-saturated mid-tones to fit the rest of the page.
@@ -16,17 +18,10 @@ _PROJECT_PALETTE = [
 ]
 
 
-def _connect(cfg: Config) -> sqlite3.Connection | None:
-    try:
-        return sqlite3.connect(cfg.db_path)
-    except sqlite3.OperationalError:
-        return None
-
-
 def render_total_per_project(cfg: Config) -> str:
     con = _connect(cfg)
     if not con:
-        return '<p class="meta">no data</p>'
+        return meta("no data")
     cutoff = (datetime.now().date() - timedelta(days=30)).isoformat()
     try:
         rows = con.execute(
@@ -35,12 +30,12 @@ def render_total_per_project(cfg: Config) -> str:
             (cutoff,),
         ).fetchall()
     except sqlite3.OperationalError:
-        return '<p class="meta">project_time not synced yet</p>'
+        return meta("project_time not synced yet")
     finally:
         con.close()
     items = [(p, round(h, 1)) for p, h in rows if h and h > 0]
     if not items:
-        return '<p class="meta">no project hours in the last 30 days</p>'
+        return meta("no project hours in the last 30 days")
     return (
         '<p class="meta">last 30 days · total hours per project</p>'
         + horizontal_bars(items, value_fmt=lambda v: f"{v}h")
@@ -57,7 +52,7 @@ def render_daily_stack(cfg: Config) -> str:
     """
     con = _connect(cfg)
     if not con:
-        return '<p class="meta">no data</p>'
+        return meta("no data")
     today = date.today()
     cutoff = (today - timedelta(days=29)).isoformat()
     try:
@@ -66,11 +61,11 @@ def render_daily_stack(cfg: Config) -> str:
             (cutoff,),
         ).fetchall()
     except sqlite3.OperationalError:
-        return '<p class="meta">project_time not synced yet</p>'
+        return meta("project_time not synced yet")
     finally:
         con.close()
     if not rows:
-        return '<p class="meta">no project_time data in the last 30 days</p>'
+        return meta("no project_time data in the last 30 days")
 
     # Group by date → {project: hours}, dropping the underscore-prefixed
     # synthetic categories (_no_data, _unaccounted, etc.) that don't belong

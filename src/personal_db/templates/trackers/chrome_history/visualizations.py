@@ -7,19 +7,14 @@ from datetime import datetime, timedelta
 
 from personal_db.config import Config
 from personal_db.ui.charts import heatmap, horizontal_bars
-
-
-def _connect(cfg: Config) -> sqlite3.Connection | None:
-    try:
-        return sqlite3.connect(cfg.db_path)
-    except sqlite3.OperationalError:
-        return None
+from personal_db.viz_helpers import connect_db as _connect
+from personal_db.viz_helpers import meta
 
 
 def render_top_domains(cfg: Config) -> str:
     con = _connect(cfg)
     if not con:
-        return '<p class="meta">no data</p>'
+        return meta("no data")
     cutoff = (datetime.now() - timedelta(days=30)).date().isoformat()
     try:
         rows = con.execute(
@@ -30,7 +25,7 @@ def render_top_domains(cfg: Config) -> str:
             (cutoff,),
         ).fetchall()
     except sqlite3.OperationalError:
-        return '<p class="meta">chrome_visits not synced yet</p>'
+        return meta("chrome_visits not synced yet")
     finally:
         con.close()
     items = [(d, round(h, 1)) for d, h in rows if h]
@@ -43,7 +38,7 @@ def render_top_domains(cfg: Config) -> str:
 def render_hourly_heatmap(cfg: Config) -> str:
     con = _connect(cfg)
     if not con:
-        return '<p class="meta">no data</p>'
+        return meta("no data")
     cutoff = (datetime.now() - timedelta(days=7)).isoformat()
     try:
         rows = con.execute(
@@ -54,11 +49,11 @@ def render_hourly_heatmap(cfg: Config) -> str:
             (cutoff,),
         ).fetchall()
     except sqlite3.OperationalError:
-        return '<p class="meta">chrome_visits not synced yet</p>'
+        return meta("chrome_visits not synced yet")
     finally:
         con.close()
     if not rows:
-        return '<p class="meta">no visits in the last 7 days</p>'
+        return meta("no visits in the last 7 days")
     today = datetime.now().date()
     days = [(today - timedelta(days=i)) for i in range(6, -1, -1)]
     by_day_hour: dict[tuple[str, int], int] = {(d, h): n for d, h, n in rows}

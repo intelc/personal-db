@@ -7,13 +7,9 @@ from datetime import datetime, timedelta
 
 from personal_db.config import Config
 from personal_db.ui.charts import vertical_bars
-
-
-def _connect(cfg: Config) -> sqlite3.Connection | None:
-    try:
-        return sqlite3.connect(cfg.db_path)
-    except sqlite3.OperationalError:
-        return None
+from personal_db.viz_helpers import connect_db as _connect
+from personal_db.viz_helpers import daily_series as _daily_series
+from personal_db.viz_helpers import meta
 
 
 def _zone_color(value: int | float) -> str:
@@ -26,37 +22,10 @@ def _zone_color(value: int | float) -> str:
     return "#3a8a4a"
 
 
-def _daily_series(
-    cfg: Config, table: str, column: str, days: int
-) -> list[tuple[str, float | int]] | None:
-    con = _connect(cfg)
-    if not con:
-        return None
-    today = datetime.now().date()
-    cutoff = (today - timedelta(days=days - 1)).isoformat()
-    try:
-        rows = dict(
-            con.execute(
-                f"SELECT day, {column} FROM {table} "
-                f"WHERE day >= ? AND {column} IS NOT NULL",
-                (cutoff,),
-            ).fetchall()
-        )
-    except sqlite3.OperationalError:
-        return None
-    finally:
-        con.close()
-    items: list[tuple[str, float | int]] = []
-    for i in range(days - 1, -1, -1):
-        d = (today - timedelta(days=i)).isoformat()
-        items.append((d[5:], rows.get(d, 0)))
-    return items
-
-
 def render_readiness_60d(cfg: Config) -> str:
     items = _daily_series(cfg, "oura_daily_readiness", "score", 60)
     if items is None:
-        return '<p class="meta">oura_daily_readiness not synced yet</p>'
+        return meta("oura_daily_readiness not synced yet")
     return (
         '<p class="meta">oura readiness · last 60 days · '
         '<span style="color:#cc4040">red</span> &lt;60, '
@@ -69,7 +38,7 @@ def render_readiness_60d(cfg: Config) -> str:
 def render_sleep_score_30d(cfg: Config) -> str:
     items = _daily_series(cfg, "oura_daily_sleep", "score", 30)
     if items is None:
-        return '<p class="meta">oura_daily_sleep not synced yet</p>'
+        return meta("oura_daily_sleep not synced yet")
     return (
         '<p class="meta">oura sleep score · last 30 days</p>'
         + vertical_bars(items, color_fn=_zone_color, show_every_nth_label=5)
@@ -79,7 +48,7 @@ def render_sleep_score_30d(cfg: Config) -> str:
 def render_steps_30d(cfg: Config) -> str:
     items = _daily_series(cfg, "oura_daily_activity", "steps", 30)
     if items is None:
-        return '<p class="meta">oura_daily_activity not synced yet</p>'
+        return meta("oura_daily_activity not synced yet")
     return (
         '<p class="meta">oura steps · last 30 days</p>'
         + vertical_bars(items, color="#1a3a5e", show_every_nth_label=5)
@@ -90,7 +59,7 @@ def render_hrv_30d(cfg: Config) -> str:
     """Average sleep HRV per night, last 30 days. Higher = better recovery."""
     con = _connect(cfg)
     if not con:
-        return '<p class="meta">no data</p>'
+        return meta("no data")
     today = datetime.now().date()
     cutoff = (today - timedelta(days=29)).isoformat()
     try:
@@ -104,7 +73,7 @@ def render_hrv_30d(cfg: Config) -> str:
             ).fetchall()
         )
     except sqlite3.OperationalError:
-        return '<p class="meta">oura_sleep not synced yet</p>'
+        return meta("oura_sleep not synced yet")
     finally:
         con.close()
     items: list[tuple[str, float]] = []
