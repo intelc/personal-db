@@ -45,6 +45,14 @@ def test_calls_tracker_action(client: TestClient) -> None:
     assert body["message"] == "hi"
 
 
+def test_tracker_action_rejects_cross_origin_write(client: TestClient) -> None:
+    r = client.post(
+        "/api/trackers/stub/actions/hello",
+        headers={"origin": "http://attacker.example"},
+    )
+    assert r.status_code == 403
+
+
 def test_calls_tracker_action_with_json_payload(client: TestClient) -> None:
     r = client.post("/api/trackers/stub/actions/echo", json={"x": 1})
     assert r.status_code == 200

@@ -48,6 +48,14 @@ def test_health_returns_ok(tmp_root):
     assert r.json()["status"] == "ok"
 
 
+def test_rejects_untrusted_host_header(tmp_root):
+    cfg = _make_runnable(tmp_root)
+    client = TestClient(build_app(cfg))
+    r = client.get("/api/health", headers={"host": "attacker.example:8765"})
+    assert r.status_code == 400
+    assert "host" in r.json()["detail"].lower()
+
+
 def test_sync_one_route(tmp_root):
     cfg = _make_runnable(tmp_root)
     client = TestClient(build_app(cfg))
@@ -56,6 +64,13 @@ def test_sync_one_route(tmp_root):
     body = r.json()
     assert body["ok"] is True
     assert body["tracker"] == "runnable"
+
+
+def test_sync_one_rejects_cross_origin_write(tmp_root):
+    cfg = _make_runnable(tmp_root)
+    client = TestClient(build_app(cfg))
+    r = client.post("/api/sync/runnable", headers={"origin": "http://attacker.example"})
+    assert r.status_code == 403
 
 
 def test_sync_one_unknown_tracker_404(tmp_root):

@@ -250,7 +250,7 @@ def run(cfg: Config, port: int = 8765, interval_seconds: float = 600) -> None:
             batch_size=_env_int(ENRICHMENT_BATCH_SIZE_ENV, 5),
             lease_seconds=_env_int(ENRICHMENT_LEASE_SECONDS_ENV, 300),
         )
-    app = build_app(cfg)
+    app = build_app(cfg, port=port)
     config = uvicorn.Config(app, host="127.0.0.1", port=port,
                             log_level="info", access_log=False)
     uvicorn.Server(config).run()

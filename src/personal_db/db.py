@@ -1,3 +1,4 @@
+import contextlib
 import sqlite3
 from pathlib import Path
 
@@ -31,9 +32,15 @@ CREATE TABLE IF NOT EXISTS notes (
 """
 
 
+def _set_private_db_mode(db_path: Path) -> None:
+    with contextlib.suppress(FileNotFoundError, PermissionError):
+        db_path.chmod(0o600)
+
+
 def init_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(db_path)
+    _set_private_db_mode(db_path)
     con.executescript(_SCHEMA_SQL)
     con.commit()
     con.close()
@@ -45,13 +52,14 @@ def connect(db_path: Path, read_only: bool = False) -> sqlite3.Connection:
         con = sqlite3.connect(uri, uri=True)
     else:
         con = sqlite3.connect(db_path)
+        _set_private_db_mode(db_path)
     con.execute("PRAGMA foreign_keys = ON")
     return con
 
 
 def apply_tracker_schema(db_path: Path, schema_sql: str) -> None:
     """Run a tracker's schema.sql against the main db."""
-    con = sqlite3.connect(db_path)
+    con = connect(db_path)
     con.executescript(schema_sql)
     con.commit()
     con.close()

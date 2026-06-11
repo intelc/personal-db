@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Form, HTTPException, Request, WebSocket
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -62,6 +62,8 @@ _NAV_VISIBLE_LIMIT = 6
 
 _TRACKER_NAME_RE = re.compile(r"^[a-z0-9_]+$")
 _DAEMON_START_TS: float = _time.time()
+_WRITE_METHODS = {"POST", "DELETE"}
+_ALLOWED_DAEMON_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
 def _validate_name(name: str) -> None:
@@ -95,6 +97,48 @@ def _verify_same_origin_write(request: Request) -> None:
     referer = request.headers.get("referer")
     if referer and not _matches_request_origin(referer, request):
         raise HTTPException(status_code=403, detail="cross-origin app action rejected")
+
+
+def _parse_host_header(value: str) -> tuple[str, int | None]:
+    value = value.strip()
+    if not value:
+        raise ValueError("empty host")
+    if value.startswith("["):
+        end = value.find("]")
+        if end == -1:
+            raise ValueError("invalid host")
+        host = value[1:end].lower()
+        rest = value[end + 1 :]
+        if not rest:
+            return host, None
+        if not rest.startswith(":") or not rest[1:].isdigit():
+            raise ValueError("invalid host port")
+        return host, int(rest[1:])
+    if value.count(":") == 1:
+        host, port_s = value.rsplit(":", 1)
+        if not port_s.isdigit():
+            raise ValueError("invalid host port")
+        return host.lower(), int(port_s)
+    return value.lower(), None
+
+
+def _is_test_client_request(request: Request) -> bool:
+    client = request.scope.get("client")
+    return bool(client and client[0] == "testclient")
+
+
+def _verify_daemon_host(request: Request, *, port: int) -> None:
+    host_header = request.headers.get("host")
+    if not host_header:
+        raise HTTPException(status_code=400, detail="missing host header")
+    try:
+        host, host_port = _parse_host_header(host_header)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid host header") from exc
+    if _is_test_client_request(request) and host == "testserver":
+        return
+    if host not in _ALLOWED_DAEMON_HOSTS or host_port not in (None, port):
+        raise HTTPException(status_code=400, detail="invalid host header")
 
 
 def _install_daemon_safe(cfg: Config) -> str:
@@ -144,11 +188,21 @@ def _split_nav(
     return visible, overflow
 
 
-def build_app(cfg: Config) -> FastAPI:
+def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
     app = FastAPI(title="personal_db", openapi_url=None, docs_url=None, redoc_url=None)
     templates = Jinja2Templates(directory=str(_HERE / "templates"))
     agent_terminals = AgentTerminalManager(cfg)
     app.mount("/static", StaticFiles(directory=str(_HERE / "static")), name="static")
+
+    @app.middleware("http")
+    async def _daemon_request_guard(request: Request, call_next):
+        try:
+            _verify_daemon_host(request, port=port)
+            if request.method.upper() in _WRITE_METHODS:
+                _verify_same_origin_write(request)
+        except HTTPException as exc:
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+        return await call_next(request)
 
     def _registry():
         # Re-discover on every request so edits to a tracker's visualizations.py

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import date
+from pathlib import Path
 
 from personal_db.config import Config
 from personal_db.db import connect
@@ -58,5 +59,20 @@ def list_notes(cfg: Config, query: str | None = None) -> list[dict]:
     return [{"path": r[0], "title": r[1], "created_at": r[2], "excerpt": r[3]} for r in rows]
 
 
+def _resolve_note_path(cfg: Config, rel_path: str) -> Path:
+    if not rel_path or rel_path in (".", "/"):
+        raise ValueError("path is required and must point to a note")
+    p = Path(rel_path)
+    if p.is_absolute():
+        raise ValueError(f"path must be relative to notes dir, got: {rel_path}")
+    base = cfg.notes_dir.resolve()
+    target = (base / p).resolve()
+    try:
+        target.relative_to(base)
+    except ValueError as e:
+        raise ValueError(f"path escapes notes dir: {rel_path}") from e
+    return target
+
+
 def read_note(cfg: Config, rel_path: str) -> str:
-    return (cfg.notes_dir / rel_path).read_text()
+    return _resolve_note_path(cfg, rel_path).read_text()
