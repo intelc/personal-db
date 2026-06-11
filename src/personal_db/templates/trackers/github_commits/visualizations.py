@@ -7,19 +7,14 @@ from datetime import date, datetime, timedelta
 
 from personal_db.config import Config
 from personal_db.ui.charts import calendar_grid, horizontal_bars
-
-
-def _connect(cfg: Config) -> sqlite3.Connection | None:
-    try:
-        return sqlite3.connect(cfg.db_path)
-    except sqlite3.OperationalError:
-        return None
+from personal_db.viz_helpers import connect_db as _connect
+from personal_db.viz_helpers import meta
 
 
 def render_contribution_calendar(cfg: Config) -> str:
     con = _connect(cfg)
     if not con:
-        return '<p class="meta">no data</p>'
+        return meta("no data")
     today = date.today()
     weeks = 13
     start = today - timedelta(days=weeks * 7 - 1)
@@ -30,7 +25,7 @@ def render_contribution_calendar(cfg: Config) -> str:
             (start.isoformat(),),
         ).fetchall()
     except sqlite3.OperationalError:
-        return '<p class="meta">github_commits not synced yet</p>'
+        return meta("github_commits not synced yet")
     finally:
         con.close()
 
@@ -41,7 +36,7 @@ def render_contribution_calendar(cfg: Config) -> str:
         except (TypeError, ValueError):
             continue
     if not by_day:
-        return '<p class="meta">no commits in the last 13 weeks</p>'
+        return meta("no commits in the last 13 weeks")
 
     # Green-ramp coloring (the iconic GitHub palette but desaturated to fit).
     def _color(v: float) -> str:
@@ -66,7 +61,7 @@ def render_contribution_calendar(cfg: Config) -> str:
 def render_top_repos(cfg: Config) -> str:
     con = _connect(cfg)
     if not con:
-        return '<p class="meta">no data</p>'
+        return meta("no data")
     cutoff = (datetime.now() - timedelta(days=30)).isoformat()
     try:
         rows = con.execute(
@@ -75,7 +70,7 @@ def render_top_repos(cfg: Config) -> str:
             (cutoff,),
         ).fetchall()
     except sqlite3.OperationalError:
-        return '<p class="meta">github_commits not synced yet</p>'
+        return meta("github_commits not synced yet")
     finally:
         con.close()
     items = [(repo, n) for repo, n in rows if n]

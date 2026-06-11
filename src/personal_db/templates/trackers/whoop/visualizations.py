@@ -7,13 +7,8 @@ from datetime import datetime, timedelta
 
 from personal_db.config import Config
 from personal_db.ui.charts import vertical_bars
-
-
-def _connect(cfg: Config) -> sqlite3.Connection | None:
-    try:
-        return sqlite3.connect(cfg.db_path)
-    except sqlite3.OperationalError:
-        return None
+from personal_db.viz_helpers import connect_db as _connect
+from personal_db.viz_helpers import meta
 
 
 def render_recovery_timeline(cfg: Config) -> str:
@@ -21,7 +16,7 @@ def render_recovery_timeline(cfg: Config) -> str:
     The sick stretch should be obviously red."""
     con = _connect(cfg)
     if not con:
-        return '<p class="meta">no data</p>'
+        return meta("no data")
     today = datetime.now().date()
     cutoff = (today - timedelta(days=59)).isoformat()
     try:
@@ -31,7 +26,7 @@ def render_recovery_timeline(cfg: Config) -> str:
             (cutoff,),
         ).fetchall())
     except sqlite3.OperationalError:
-        return '<p class="meta">whoop_recovery not synced yet</p>'
+        return meta("whoop_recovery not synced yet")
     finally:
         con.close()
     items = []
@@ -61,7 +56,7 @@ def render_sleep_efficiency(cfg: Config) -> str:
     """Last 30 days of sleep_efficiency_pct. Higher = better."""
     con = _connect(cfg)
     if not con:
-        return '<p class="meta">no data</p>'
+        return meta("no data")
     today = datetime.now().date()
     cutoff = (today - timedelta(days=29)).isoformat()
     try:
@@ -72,7 +67,7 @@ def render_sleep_efficiency(cfg: Config) -> str:
             (cutoff,),
         ).fetchall())
     except sqlite3.OperationalError:
-        return '<p class="meta">whoop_sleep not synced yet</p>'
+        return meta("whoop_sleep not synced yet")
     finally:
         con.close()
     items = []

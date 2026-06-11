@@ -12,20 +12,15 @@ from html import escape
 
 from personal_db.config import Config
 from personal_db.ui.charts import horizontal_bars
-
-
-def _connect(cfg: Config) -> sqlite3.Connection | None:
-    try:
-        return sqlite3.connect(cfg.db_path)
-    except sqlite3.OperationalError:
-        return None
+from personal_db.viz_helpers import connect_db as _connect
+from personal_db.viz_helpers import meta
 
 
 def render_summary(cfg: Config) -> str:
     """Top-line counts: contacts / phones / emails / per-source breakdown."""
     con = _connect(cfg)
     if not con:
-        return '<p class="meta">no data</p>'
+        return meta("no data")
     try:
         n_contacts = con.execute("SELECT count(*) FROM contacts").fetchone()[0]
         n_phones = con.execute(
@@ -38,7 +33,7 @@ def render_summary(cfg: Config) -> str:
             "SELECT source, count(*) FROM contacts GROUP BY source ORDER BY 2 DESC"
         ).fetchall()
     except sqlite3.OperationalError:
-        return '<p class="meta">contacts not synced yet</p>'
+        return meta("contacts not synced yet")
     finally:
         con.close()
     if n_contacts == 0:
@@ -63,7 +58,7 @@ def render_top_handles(cfg: Config) -> str:
     long-term contacts whose info accreted multiple ways."""
     con = _connect(cfg)
     if not con:
-        return '<p class="meta">no data</p>'
+        return meta("no data")
     try:
         rows = con.execute(
             "SELECT c.display_name, count(*) AS n "
@@ -74,11 +69,11 @@ def render_top_handles(cfg: Config) -> str:
             "ORDER BY n DESC, c.display_name LIMIT 20"
         ).fetchall()
     except sqlite3.OperationalError:
-        return '<p class="meta">contacts not synced yet</p>'
+        return meta("contacts not synced yet")
     finally:
         con.close()
     if not rows:
-        return '<p class="meta">no contacts with multiple handles</p>'
+        return meta("no contacts with multiple handles")
     items = [(name, n) for name, n in rows]
     return (
         '<p class="meta">contacts with the most handles (phones + emails)</p>'
