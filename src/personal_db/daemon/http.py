@@ -18,9 +18,7 @@ Routes:
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import os
-import re
 import sys
 import time as _time
 import urllib.parse
@@ -43,14 +41,14 @@ from personal_db.apps import (
     load_named_queries,
 )
 from personal_db.config import Config
-from personal_db.daemon._locks import backfill_locked, sync_due_locked, sync_one_locked
 from personal_db.daemon.agent_terminal import AgentTerminalManager, attach_terminal_websocket
+from personal_db.daemon.routes.common import validate_name as _validate_name
+from personal_db.daemon.routes.sync import register_sync_routes
 from personal_db.db import apply_tracker_schema, init_db
 from personal_db.installer import install_template
 from personal_db.manifest import OAuthStep, load_manifest
 from personal_db.mcp_server.tools import log_life_context
 from personal_db.oauth import ensure_adapter_from_manifest, start_web_oauth
-from personal_db.sync import sync_one
 from personal_db.ui.setup_runner import list_overview, list_step_views, process_form
 from personal_db.ui.viz import discover, list_trackers_with_viz, load_dashboard_slugs
 from personal_db.wizard.env_file import read_env
@@ -60,15 +58,9 @@ _HERE = Path(__file__).parent.parent / "ui"
 
 _NAV_VISIBLE_LIMIT = 6
 
-_TRACKER_NAME_RE = re.compile(r"^[a-z0-9_]+$")
 _DAEMON_START_TS: float = _time.time()
 _WRITE_METHODS = {"POST", "DELETE"}
 _ALLOWED_DAEMON_HOSTS = {"127.0.0.1", "localhost", "::1"}
-
-
-def _validate_name(name: str) -> None:
-    if not _TRACKER_NAME_RE.match(name):
-        raise HTTPException(status_code=400, detail=f"invalid tracker name: {name!r}")
 
 
 def _matches_request_origin(value: str, request: Request) -> bool:
@@ -257,6 +249,8 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
             "html": html,
         }, html
 
+    register_sync_routes(app, cfg, started_at=_DAEMON_START_TS)
+
     @app.get("/", response_class=HTMLResponse)
     async def dashboard(request: Request):
         reg = _registry()
@@ -363,20 +357,6 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
             name="app_page.html",
             context={**context, **_nav_context(reg, active=None)},
         )
-
-    @app.post("/sync/{tracker}")
-    async def post_sync(request: Request, tracker: str):
-        """Refresh a single tracker, then redirect back to wherever the form
-        was submitted from. Errors are swallowed (logged elsewhere) so the
-        redirect always happens — the user can check Health for failures.
-
-        Blocking by design: most incremental syncs are sub-second; the user
-        gets immediate visual feedback (spinner) during the request, then
-        sees the freshly-synced data on redirect."""
-        with contextlib.suppress(Exception):
-            sync_one(cfg, tracker)
-        referer = request.headers.get("referer") or f"/t/{tracker}"
-        return RedirectResponse(url=referer, status_code=303)
 
     @app.get("/setup", response_class=HTMLResponse)
     async def setup_overview(request: Request):
@@ -588,53 +568,6 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
         )
         referer = request.headers.get("referer") or "/t/life_context"
         return RedirectResponse(url=referer, status_code=303)
-
-    @app.get("/api/health")
-    async def api_health() -> dict[str, Any]:
-        from personal_db.installer import list_bundled
-
-        installed = []
-        if cfg.trackers_dir.exists():
-            installed = sorted(
-                d.name
-                for d in cfg.trackers_dir.iterdir()
-                if d.is_dir() and (d / "manifest.yaml").exists()
-            )
-        return {
-            "status": "ok",
-            "uptime_seconds": int(_time.time() - _DAEMON_START_TS),
-            "trackers": installed,
-            "bundled_available": list_bundled(),
-        }
-
-    @app.post("/api/sync/{tracker}")
-    async def api_sync_one(tracker: str) -> dict[str, Any]:
-        _validate_name(tracker)
-        if not (cfg.trackers_dir / tracker).is_dir():
-            raise HTTPException(status_code=404, detail=f"no such tracker: {tracker}")
-        try:
-            await asyncio.to_thread(sync_one_locked, cfg, tracker)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"sync failed: {e}") from e
-        return {"ok": True, "tracker": tracker}
-
-    @app.post("/api/sync_due")
-    async def api_sync_due() -> dict[str, Any]:
-        results = await asyncio.to_thread(sync_due_locked, cfg)
-        return {"results": results}
-
-    @app.post("/api/backfill/{tracker}")
-    async def api_backfill(tracker: str, request: Request) -> dict[str, Any]:
-        _validate_name(tracker)
-        if not (cfg.trackers_dir / tracker).is_dir():
-            raise HTTPException(status_code=404, detail=f"no such tracker: {tracker}")
-        start = request.query_params.get("from")
-        end = request.query_params.get("to")
-        try:
-            await asyncio.to_thread(backfill_locked, cfg, tracker, start, end)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"backfill failed: {e}") from e
-        return {"ok": True, "tracker": tracker, "from": start, "to": end}
 
     @app.get("/api/agent/context")
     async def api_agent_context(path: str = "/") -> dict[str, Any]:
