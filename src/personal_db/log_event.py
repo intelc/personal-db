@@ -1,5 +1,5 @@
 from personal_db.config import Config
-from personal_db.db import apply_tracker_schema, connect, init_db
+from personal_db.db import apply_tracker_schema, init_db, transaction
 from personal_db.manifest import load_manifest
 
 
@@ -21,12 +21,10 @@ def log_event(cfg: Config, tracker: str, fields: dict) -> int:
         raise ValueError(f"unknown field(s) for {tracker}.{table_name}: {sorted(extra)}")
     cols = list(fields.keys())
     placeholders = ",".join("?" * len(cols))
-    con = connect(cfg.db_path)
-    cur = con.execute(
-        f"INSERT INTO {table_name} ({','.join(cols)}) VALUES ({placeholders})",
-        tuple(fields[c] for c in cols),
-    )
-    con.commit()
-    rowid = cur.lastrowid
-    con.close()
+    with transaction(cfg.db_path) as con:
+        cur = con.execute(
+            f"INSERT INTO {table_name} ({','.join(cols)}) VALUES ({placeholders})",
+            tuple(fields[c] for c in cols),
+        )
+        rowid = cur.lastrowid
     return rowid

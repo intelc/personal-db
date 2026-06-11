@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import logging
-import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from personal_db.config import Config
-from personal_db.db import connect
+from personal_db.db import connection, transaction
 
 
 class Cursor:
@@ -20,26 +19,21 @@ class Cursor:
         self._init()
 
     def _init(self) -> None:
-        con = sqlite3.connect(self._db)
-        con.execute("CREATE TABLE IF NOT EXISTS cursors (name TEXT PRIMARY KEY, value TEXT)")
-        con.commit()
-        con.close()
+        with transaction(self._db) as con:
+            con.execute("CREATE TABLE IF NOT EXISTS cursors (name TEXT PRIMARY KEY, value TEXT)")
 
     def get(self, default: str | None = None) -> str | None:
-        con = sqlite3.connect(self._db)
-        row = con.execute("SELECT value FROM cursors WHERE name=?", (self._name,)).fetchone()
-        con.close()
+        with connection(self._db, read_only=True) as con:
+            row = con.execute("SELECT value FROM cursors WHERE name=?", (self._name,)).fetchone()
         return row[0] if row else default
 
     def set(self, value: str) -> None:
-        con = sqlite3.connect(self._db)
-        con.execute(
-            "INSERT INTO cursors(name,value) VALUES(?,?) "
-            "ON CONFLICT(name) DO UPDATE SET value=excluded.value",
-            (self._name, value),
-        )
-        con.commit()
-        con.close()
+        with transaction(self._db) as con:
+            con.execute(
+                "INSERT INTO cursors(name,value) VALUES(?,?) "
+                "ON CONFLICT(name) DO UPDATE SET value=excluded.value",
+                (self._name, value),
+            )
 
 
 @dataclass
@@ -68,11 +62,9 @@ class Tracker:
             )
         else:
             sql = f"INSERT OR IGNORE INTO {table} ({','.join(cols)}) VALUES ({placeholders})"
-        con = connect(self.cfg.db_path)
-        con.executemany(sql, [tuple(r[c] for c in cols) for r in rows])
-        con.commit()
-        n = con.total_changes
-        con.close()
+        with transaction(self.cfg.db_path) as con:
+            con.executemany(sql, [tuple(r[c] for c in cols) for r in rows])
+            n = con.total_changes
         return n
 
     def resolve_person(self, alias: str, *, auto_create: bool = True) -> int | None:

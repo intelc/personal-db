@@ -16,7 +16,7 @@ from typing import Any
 import yaml
 
 from personal_db.config import Config
-from personal_db.db import connect
+from personal_db.db import connect, connection, transaction
 
 _APP_NAME_RE = re.compile(r"^[a-z0-9_]+$")
 _QUERY_MARKER_RE = re.compile(r"^\s*--\s*name:\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*$")
@@ -237,12 +237,8 @@ def apply_app_schema(cfg: Config, app_dir: Path) -> None:
     schema_path = app_dir / "schema.sql"
     if not schema_path.is_file():
         return
-    con = sqlite3.connect(cfg.db_path)
-    try:
+    with transaction(cfg.db_path) as con:
         con.executescript(schema_path.read_text())
-        con.commit()
-    finally:
-        con.close()
 
 
 def discover_apps(cfg: Config) -> dict[str, AppDefinition]:
@@ -309,13 +305,9 @@ def load_named_queries(path: Path) -> dict[str, str]:
 def run_named_query(
     cfg: Config, sql: str, params: dict[str, Any] | None = None
 ) -> list[dict[str, Any]]:
-    con = connect(cfg.db_path, read_only=True)
-    con.row_factory = sqlite3.Row
-    try:
+    with connection(cfg.db_path, read_only=True, row_factory=sqlite3.Row) as con:
         rows = con.execute(sql, params or {}).fetchall()
         return [dict(row) for row in rows]
-    finally:
-        con.close()
 
 
 def load_app_module(app_dir: Path, app_name: str, stem: str) -> Any:
