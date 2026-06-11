@@ -117,6 +117,16 @@ def test_agent_context_dashboard_route(tmp_root):
     assert body["dashboard_api"]["app_query_pattern"] == "/api/apps/{app}/queries/{query}"
 
 
+def test_agent_context_tracker_route(tmp_root):
+    cfg = _make_runnable(tmp_root)
+    client = TestClient(build_app(cfg))
+    r = client.get("/api/agent/context", params={"path": "/t/runnable"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["kind"] == "tracker"
+    assert body["tracker"]["name"] == "runnable"
+
+
 def test_agent_session_lifecycle_uses_configured_cli(tmp_root, monkeypatch):
     monkeypatch.setenv("PERSONAL_DB_CLAUDE_COMMAND", "true")
     cfg = _make_runnable(tmp_root)
