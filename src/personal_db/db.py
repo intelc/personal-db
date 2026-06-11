@@ -39,11 +39,8 @@ def _set_private_db_mode(db_path: Path) -> None:
 
 def init_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(db_path)
-    _set_private_db_mode(db_path)
-    con.executescript(_SCHEMA_SQL)
-    con.commit()
-    con.close()
+    with transaction(db_path) as con:
+        con.executescript(_SCHEMA_SQL)
 
 
 def connect(db_path: Path, read_only: bool = False) -> sqlite3.Connection:
@@ -57,9 +54,38 @@ def connect(db_path: Path, read_only: bool = False) -> sqlite3.Connection:
     return con
 
 
+@contextlib.contextmanager
+def connection(
+    db_path: Path,
+    *,
+    read_only: bool = False,
+    row_factory=None,
+):
+    con = connect(db_path, read_only=read_only)
+    if row_factory is not None:
+        con.row_factory = row_factory
+    try:
+        yield con
+    finally:
+        con.close()
+
+
+@contextlib.contextmanager
+def transaction(db_path: Path, *, row_factory=None):
+    con = connect(db_path, read_only=False)
+    if row_factory is not None:
+        con.row_factory = row_factory
+    try:
+        yield con
+        con.commit()
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        con.close()
+
+
 def apply_tracker_schema(db_path: Path, schema_sql: str) -> None:
     """Run a tracker's schema.sql against the main db."""
-    con = connect(db_path)
-    con.executescript(schema_sql)
-    con.commit()
-    con.close()
+    with transaction(db_path) as con:
+        con.executescript(schema_sql)

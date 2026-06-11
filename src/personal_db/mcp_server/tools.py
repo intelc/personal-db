@@ -11,7 +11,7 @@ import yaml
 
 from personal_db.config import Config
 from personal_db.context_providers.email import SparkEmailContextProvider
-from personal_db.db import connect
+from personal_db.db import connection, transaction
 from personal_db.enrichments.core import (
     cancel_enrichment_job,
     get_enrichment_job_detail,
@@ -84,11 +84,10 @@ def describe_tracker(cfg: Config, name: str) -> dict[str, Any]:
 
 def query(cfg: Config, sql: str, params: list | None = None) -> list[dict[str, Any]]:
     _validate_select(sql)
-    con = connect(cfg.db_path, read_only=True)
-    cur = con.execute(sql, params or [])
-    cols = [c[0] for c in cur.description] if cur.description else []
-    rows = [dict(zip(cols, r, strict=False)) for r in cur.fetchall()]
-    con.close()
+    with connection(cfg.db_path, read_only=True) as con:
+        cur = con.execute(sql, params or [])
+        cols = [c[0] for c in cur.description] if cur.description else []
+        rows = [dict(zip(cols, r, strict=False)) for r in cur.fetchall()]
     return rows
 
 
@@ -127,25 +126,24 @@ def list_entities(cfg: Config, kind: str, query_str: str | None = None) -> list[
     if kind not in ("people", "topics"):
         raise ValueError("kind must be 'people' or 'topics'")
     id_col = "person_id" if kind == "people" else "topic_id"
-    con = connect(cfg.db_path, read_only=True)
-    if query_str:
-        sql = (
-            f"SELECT e.{id_col} as id, e.display_name, "
-            f"GROUP_CONCAT(a.alias) as aliases "
-            f"FROM {kind} e LEFT JOIN {kind}_aliases a USING({id_col}) "
-            f"WHERE e.display_name LIKE ? OR a.alias LIKE ? "
-            f"GROUP BY e.{id_col}"
-        )
-        rows = con.execute(sql, (f"%{query_str}%", f"%{query_str}%")).fetchall()
-    else:
-        sql = (
-            f"SELECT e.{id_col} as id, e.display_name, "
-            f"GROUP_CONCAT(a.alias) as aliases "
-            f"FROM {kind} e LEFT JOIN {kind}_aliases a USING({id_col}) "
-            f"GROUP BY e.{id_col}"
-        )
-        rows = con.execute(sql).fetchall()
-    con.close()
+    with connection(cfg.db_path, read_only=True) as con:
+        if query_str:
+            sql = (
+                f"SELECT e.{id_col} as id, e.display_name, "
+                f"GROUP_CONCAT(a.alias) as aliases "
+                f"FROM {kind} e LEFT JOIN {kind}_aliases a USING({id_col}) "
+                f"WHERE e.display_name LIKE ? OR a.alias LIKE ? "
+                f"GROUP BY e.{id_col}"
+            )
+            rows = con.execute(sql, (f"%{query_str}%", f"%{query_str}%")).fetchall()
+        else:
+            sql = (
+                f"SELECT e.{id_col} as id, e.display_name, "
+                f"GROUP_CONCAT(a.alias) as aliases "
+                f"FROM {kind} e LEFT JOIN {kind}_aliases a USING({id_col}) "
+                f"GROUP BY e.{id_col}"
+            )
+            rows = con.execute(sql).fetchall()
     return [
         {"id": r[0], "display_name": r[1], "aliases": (r[2].split(",") if r[2] else [])}
         for r in rows
@@ -572,8 +570,7 @@ def log_life_context(
         end = start
 
     logged_at = datetime.now().astimezone().isoformat()
-    con = connect(cfg.db_path, read_only=False)
-    try:
+    with transaction(cfg.db_path) as con:
         cur = con.cursor()
         dates: list[str] = []
         d = start
@@ -586,9 +583,6 @@ def log_life_context(
             )
             dates.append(d.isoformat())
             d += timedelta(days=1)
-        con.commit()
-    finally:
-        con.close()
     return {"inserted": len(dates), "dates": dates}
 
 
