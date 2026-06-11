@@ -2,8 +2,10 @@ import yaml
 from fastapi.testclient import TestClient
 
 from personal_db.config import Config
+from personal_db.daemon.agent_terminal import build_cli_command
 from personal_db.daemon.http import build_app
-from personal_db.db import init_db
+from personal_db.db import apply_tracker_schema, init_db
+from personal_db.installer import install_template
 
 
 def _make_runnable(tmp_root, name="runnable"):
@@ -88,6 +90,50 @@ def test_backfill_route(tmp_root):
     assert r.json()["ok"] is True
 
 
+def test_agent_context_dashboard_route(tmp_root):
+    cfg = _make_runnable(tmp_root)
+    client = TestClient(build_app(cfg))
+    r = client.get("/api/agent/context", params={"path": "/"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["kind"] == "dashboard"
+    assert body["path"] == "/"
+    assert "runnable" in body["trackers"]
+    assert body["dashboard_api"]["app_query_pattern"] == "/api/apps/{app}/queries/{query}"
+
+
+def test_agent_session_lifecycle_uses_configured_cli(tmp_root, monkeypatch):
+    monkeypatch.setenv("PERSONAL_DB_CLAUDE_COMMAND", "true")
+    cfg = _make_runnable(tmp_root)
+    client = TestClient(build_app(cfg))
+
+    created = client.post(
+        "/api/agent/sessions",
+        json={"cli_type": "claude", "context": {"page": {"path": "/"}}, "cols": 80, "rows": 24},
+    )
+    assert created.status_code == 200
+    session = created.json()["session"]
+    assert session["cli_type"] == "claude"
+
+    listed = client.get("/api/agent/sessions")
+    assert listed.status_code == 200
+    assert any(item["id"] == session["id"] for item in listed.json()["sessions"])
+
+    deleted = client.delete(f"/api/agent/sessions/{session['id']}")
+    assert deleted.status_code == 200
+
+
+def test_agent_cli_commands_use_default_permission_modes(monkeypatch):
+    monkeypatch.delenv("PERSONAL_DB_CLAUDE_COMMAND", raising=False)
+    monkeypatch.delenv("PERSONAL_DB_CODEX_COMMAND", raising=False)
+
+    claude = build_cli_command("claude", "hello")
+    codex = build_cli_command("codex", "hello")
+
+    assert claude == "claude --permission-mode auto hello"
+    assert codex == "codex --no-alt-screen --dangerously-bypass-approvals-and-sandbox hello"
+
+
 def test_sync_one_plaintext_invalid_name_400(tmp_root):
     """Direct exercise of _validate_name's 400 path with a name that won't be intercepted by URL routing."""
     cfg = _make_runnable(tmp_root)
@@ -95,3 +141,34 @@ def test_sync_one_plaintext_invalid_name_400(tmp_root):
     r = client.post("/api/sync/has-dash")
     assert r.status_code == 400
     assert "invalid tracker name" in r.json()["detail"].lower()
+
+
+def test_log_life_context_route_accepts_past_date(tmp_root):
+    cfg = Config(root=tmp_root)
+    init_db(cfg.db_path)
+    dest = install_template(cfg, "life_context")
+    apply_tracker_schema(cfg.db_path, (dest / "schema.sql").read_text())
+    client = TestClient(build_app(cfg))
+
+    r = client.post(
+        "/log_life_context",
+        data={
+            "start_date": "2026-06-04",
+            "state": "traveling",
+            "note": "flew to Japan",
+        },
+        headers={"referer": "/t/life_context"},
+        follow_redirects=False,
+    )
+
+    assert r.status_code == 303
+    assert r.headers["location"] == "/t/life_context"
+
+    import sqlite3
+
+    con = sqlite3.connect(cfg.db_path)
+    row = con.execute(
+        "SELECT date, state, note FROM life_context"
+    ).fetchone()
+    con.close()
+    assert row == ("2026-06-04", "traveling", "flew to Japan")

@@ -63,13 +63,13 @@ def render_recent_with_log(cfg: Config) -> str:
     )
     form_html = (
         '<form action="/log_life_context" method="post" class="lc-form">'
-        f'<label>from <input type="date" name="start_date" value="{today_iso}" required></label>'
-        '<label>to <input type="date" name="end_date" placeholder="(optional)"></label>'
+        f'<label>date <input type="date" name="start_date" value="{today_iso}" required></label>'
+        '<label>to <input type="date" name="end_date" title="optional range end"></label>'
         '<label>state <select name="state">'
         f'<option value=""></option>{state_options}'
         "</select></label>"
         '<label class="grow">note '
-        '<input type="text" name="note" placeholder="free text"></label>'
+        '<input type="text" name="note" placeholder="flew to Japan"></label>'
         '<button type="submit">log</button>'
         "</form>"
     )

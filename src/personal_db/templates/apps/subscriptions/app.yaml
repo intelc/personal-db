@@ -1,0 +1,42 @@
+name: subscriptions
+title: Subscriptions
+description: Subscription spend, billing periods, and observed app/browser utilization.
+
+reads:
+  tables:
+    - subscription_entities
+    - subscription_charges
+    - subscription_usage_evidence
+    - subscription_utilization_periods
+    - subscription_match_rules
+    - finance_categorized_transactions
+
+writes:
+  tables:
+    - subscription_entities
+    - subscription_charges
+    - subscription_usage_evidence
+    - subscription_utilization_periods
+    - finance_categories
+    - finance_transaction_user_categories
+    - app_finance_burn_rules
+    - app_finance_burn_buckets
+    - ui_notes
+    - ui_note_refs
+  actions:
+    - mark_not_subscription
+    - create_note
+
+pages:
+  - slug: overview
+    title: Overview
+    view: render_overview
+  - slug: subscriptions
+    title: Subscriptions
+    view: render_subscriptions
+  - slug: evidence
+    title: Evidence
+    view: render_evidence
+  - slug: rules
+    title: Rules
+    view: render_rules

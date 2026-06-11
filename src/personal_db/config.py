@@ -19,6 +19,14 @@ class Config:
         return self.root / "trackers"
 
     @property
+    def apps_dir(self) -> Path:
+        return self.root / "apps"
+
+    @property
+    def sources_dir(self) -> Path:
+        return self.root / "sources"
+
+    @property
     def entities_dir(self) -> Path:
         return self.root / "entities"
 

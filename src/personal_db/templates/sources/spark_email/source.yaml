@@ -1,0 +1,30 @@
+name: spark_email
+description: Live email, calendar, contacts, and meeting access through Spark Desktop CLI
+provider: spark
+enabled: true
+command: spark
+capabilities:
+  - accounts
+  - folders
+  - emails
+  - search
+  - thread
+  - contacts
+  - calendar
+  - meetings
+setup_steps:
+  - type: instructions
+    text: |
+      Requires Spark Desktop to be running with AI Agent access enabled for
+      each account you want personal_db to query.
+
+      This source does not materialize email into db.sqlite. It exposes live
+      list/search/read operations for apps, context providers, and future
+      enrichment jobs.
+
+      Useful checks:
+        personal-db source spark check
+        personal-db source spark accounts
+        personal-db source spark folders
+config:
+  timeout_seconds: 60

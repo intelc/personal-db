@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}apps · personal_db{% endblock %}
+{% block content %}
+  <h1>Apps</h1>
+  {% if apps %}
+    <div class="app-list">
+      {% for app in apps %}
+        <a class="app-list-item" href="/a/{{ app.name }}">
+          <strong>{{ app.manifest.title }}</strong>
+          <span>{{ app.manifest.description }}</span>
+          <small>{{ app.source }} · {{ app.manifest.pages|length }} pages</small>
+        </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="meta">no apps installed</p>
+  {% endif %}
+{% endblock %}

@@ -8,7 +8,7 @@ the actual AG Grid setup and maps a tiny allow-list of renderer names.
 from __future__ import annotations
 
 import json
-from html import escape
+from html import escape, unescape
 from itertools import count
 from typing import Any
 
@@ -17,6 +17,16 @@ _IDS = count(1)
 
 def _field_name(i: int) -> str:
     return f"c{i}"
+
+
+def _text_cell(value: Any) -> str:
+    """Normalize a plain-text grid cell before AG Grid renders it.
+
+    App views occasionally pre-escape values while composing rows. Plain grid
+    cells are text, not HTML, so decode entities here to avoid displaying
+    strings like ``AT&amp;T``. Columns marked with the HTML renderer bypass this.
+    """
+    return unescape(str(value or ""))
 
 
 def table_grid(
@@ -64,7 +74,11 @@ def table_grid(
         for row in rows:
             data.append(
                 {
-                    _field_name(i): str(row[source_i] or "")
+                    _field_name(i): (
+                        str(row[source_i] or "")
+                        if source_i in html_columns
+                        else _text_cell(row[source_i])
+                    )
                     for i, source_i in enumerate(visible_indexes)
                 }
             )
@@ -73,7 +87,7 @@ def table_grid(
         pending_group: dict[str, Any] | None = None
         group_count = 0
         for row in rows:
-            group = str(row[group_index] or "Unknown")
+            group = _text_cell(row[group_index]) or "Unknown"
             if group != current_group:
                 if pending_group is not None:
                     label = (
@@ -96,7 +110,11 @@ def table_grid(
             group_count += 1
             data.append(
                 {
-                    _field_name(i): str(row[source_i] or "")
+                    _field_name(i): (
+                        str(row[source_i] or "")
+                        if source_i in html_columns
+                        else _text_cell(row[source_i])
+                    )
                     for i, source_i in enumerate(visible_indexes)
                 }
             )

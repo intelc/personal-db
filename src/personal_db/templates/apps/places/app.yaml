@@ -1,0 +1,36 @@
+name: places
+title: Places
+description: Local-first location timeline, OpenStreetMap views, and life rhythm analysis from mobile exports.
+
+reads:
+  tables:
+    - location_points
+    - raw_locations
+    - geocoded_locations
+    - daily_locations
+
+writes:
+  tables:
+    - app_places_settings
+    - app_places_aliases
+  actions:
+    - set_privacy
+    - set_place_alias
+    - clear_place_alias
+
+pages:
+  - slug: overview
+    title: Overview
+    view: render_overview
+  - slug: map
+    title: Map
+    view: render_map
+  - slug: timeline
+    title: Timeline
+    view: render_timeline
+  - slug: rhythm
+    title: Rhythm
+    view: render_rhythm
+  - slug: privacy
+    title: Settings
+    view: render_privacy

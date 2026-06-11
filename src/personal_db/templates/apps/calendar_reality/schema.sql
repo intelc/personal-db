@@ -1,0 +1,1 @@
+-- Reserved for future app-owned calendar review/settings tables.

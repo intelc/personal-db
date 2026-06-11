@@ -1,0 +1,1 @@
+-- Reserved for future app-owned review/settings tables.

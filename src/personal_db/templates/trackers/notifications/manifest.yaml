@@ -1,0 +1,75 @@
+name: notifications
+description: macOS notification deliveries and inferred attention impact
+permission_type: full_disk_access
+setup_steps:
+  - type: fda_check
+    probe_path: "~/Library/Group Containers/group.com.apple.usernoted/db2/db"
+  - type: instructions
+    text: |
+      Reads the local macOS usernoted notification database in read-only mode.
+
+      Default source:
+        ~/Library/Group Containers/group.com.apple.usernoted/db2/db
+
+      Override with:
+        PERSONAL_DB_NOTIFICATIONS_DB=/path/to/usernoted/db
+
+      Notification title/subtitle/body text is redacted by default. The tracker
+      stores content hashes for deduplication and analysis, plus app, bundle,
+      timing, thread, and category metadata when available.
+
+      To store notification text explicitly, set:
+        PERSONAL_DB_NOTIFICATIONS_STORE_CONTENT=1
+
+      If the mosspath_lite tracker is installed and synced, this tracker also
+      materializes notification_impacts by comparing notification delivery times
+      with nearby foreground app/activity events.
+schedule:
+  every: 15m
+time_column: delivered_at
+granularity: event
+schema:
+  tables:
+    notifications_events:
+      columns:
+        source_record_id: {type: TEXT, semantic: "stable source row identifier from the macOS usernoted record table"}
+        delivered_at:     {type: TEXT, semantic: "ISO-8601 UTC notification delivery time"}
+        bundle_id:        {type: TEXT, semantic: "sender app bundle identifier"}
+        app_name:         {type: TEXT, semantic: "sender app display name when resolvable"}
+        title:            {type: TEXT, semantic: "notification title, only populated when content storage is explicitly enabled"}
+        subtitle:         {type: TEXT, semantic: "notification subtitle, only populated when content storage is explicitly enabled"}
+        body:             {type: TEXT, semantic: "notification body, only populated when content storage is explicitly enabled"}
+        title_hash:       {type: TEXT, semantic: "sha256 hash of notification title"}
+        subtitle_hash:    {type: TEXT, semantic: "sha256 hash of notification subtitle"}
+        body_hash:        {type: TEXT, semantic: "sha256 hash of notification body"}
+        content_hash:     {type: TEXT, semantic: "sha256 hash across bundle, title, subtitle, and body"}
+        thread_id:        {type: TEXT, semantic: "notification thread identifier when present"}
+        category_id:      {type: TEXT, semantic: "notification category identifier when present"}
+        request_id:       {type: TEXT, semantic: "notification request identifier when present"}
+        source:           {type: TEXT, semantic: "source adapter, currently usernoted"}
+        imported_at:      {type: TEXT, semantic: "ISO-8601 UTC import time"}
+    notification_impacts:
+      columns:
+        notification_id:   {type: TEXT, semantic: "source_record_id from notifications_events"}
+        delivered_at:      {type: TEXT, semantic: "ISO-8601 UTC notification delivery time"}
+        bundle_id:         {type: TEXT, semantic: "sender app bundle identifier"}
+        app_name:          {type: TEXT, semantic: "sender app display name"}
+        impact:            {type: TEXT, semantic: "ignored, glanced, acted_on, derailed, or batched"}
+        confidence:        {type: REAL, semantic: "heuristic confidence, 0-1"}
+        evidence:          {type: TEXT, semantic: "short explanation of nearby activity evidence"}
+        batch_count:       {type: INTEGER, semantic: "same-source notifications in the surrounding burst window"}
+        prior_event_id:    {type: TEXT, semantic: "nearest Mosspath Lite event before delivery"}
+        prior_at:          {type: TEXT, semantic: "prior event timestamp"}
+        prior_app_name:    {type: TEXT, semantic: "prior foreground app name"}
+        prior_bundle_id:   {type: TEXT, semantic: "prior foreground app bundle id"}
+        next_event_id:     {type: TEXT, semantic: "nearest Mosspath Lite event after delivery"}
+        next_at:           {type: TEXT, semantic: "next event timestamp"}
+        next_app_name:     {type: TEXT, semantic: "next foreground app name"}
+        next_bundle_id:    {type: TEXT, semantic: "next foreground app bundle id"}
+        acted_at:          {type: TEXT, semantic: "first nearby foreground event matching the notification source"}
+        seconds_to_action: {type: INTEGER, semantic: "seconds between delivery and inferred action"}
+        returned_at:       {type: TEXT, semantic: "first return to prior context after action"}
+        away_seconds:      {type: INTEGER, semantic: "seconds away from prior context before return or analysis window end"}
+        computed_at:       {type: TEXT, semantic: "ISO-8601 UTC computation time"}
+related_entities: []
+local_only: true

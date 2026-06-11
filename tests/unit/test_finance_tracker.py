@@ -28,6 +28,54 @@ def test_finance_manifest_loads():
     assert "finance_daily_cashflow" in manifest.schema.tables
 
 
+def test_finance_schema_keeps_only_subscriptions_as_system_category(tmp_root):
+    cfg = Config(root=tmp_root)
+    init_db(cfg.db_path)
+    schema = (FINANCE_DIR / "schema.sql").read_text()
+    apply_tracker_schema(cfg.db_path, schema)
+
+    con = connect(cfg.db_path)
+    con.execute(
+        """
+        INSERT OR REPLACE INTO finance_categories(category, label, source)
+        VALUES ('Coffee', 'Coffee', 'system')
+        """
+    )
+    con.execute(
+        """
+        INSERT OR REPLACE INTO finance_categories(category, label, source)
+        VALUES ('Codex Temp', 'Codex Temp', 'user')
+        """
+    )
+    con.commit()
+    con.close()
+
+    apply_tracker_schema(cfg.db_path, schema)
+
+    con = connect(cfg.db_path)
+    try:
+        system_categories = con.execute(
+            """
+            SELECT category
+            FROM finance_categories
+            WHERE source='system'
+            ORDER BY category
+            """
+        ).fetchall()
+        user_category = con.execute(
+            """
+            SELECT source
+            FROM finance_categories
+            WHERE category='Codex Temp'
+            """
+        ).fetchone()
+    finally:
+        con.close()
+
+    assert system_categories == [("Subscriptions",)]
+    assert user_category == ("user",)
+
+
 def test_finance_sync_combines_sources_and_normalizes_cashflow(tmp_root):
     ingest = _load_module("ingest.py", "finance_ingest_sync_test")
     cfg = Config(root=tmp_root)
@@ -166,6 +214,32 @@ def test_finance_sync_combines_sources_and_normalizes_cashflow(tmp_root):
             "2026-05-30T00:00:00+00:00",
         ),
     )
+    con.executescript(
+        """
+        CREATE TABLE app_finance_category_presets (
+          category TEXT PRIMARY KEY,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE app_finance_transaction_categories (
+          finance_transaction_id TEXT PRIMARY KEY,
+          category TEXT NOT NULL,
+          note TEXT,
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        """
+    )
+    con.execute(
+        "INSERT INTO app_finance_category_presets(category, created_at) VALUES (?, ?)",
+        ("Dining", "2026-05-31T00:00:00+00:00"),
+    )
+    con.execute(
+        """
+        INSERT INTO app_finance_transaction_categories(
+          finance_transaction_id, category, note, updated_at
+        ) VALUES (?, ?, ?, ?)
+        """,
+        ("monarch:mon-food", "Dining", "legacy app category", "2026-05-31T00:00:00+00:00"),
+    )
     con.commit()
     con.close()
 
@@ -188,7 +262,13 @@ def test_finance_sync_combines_sources_and_normalizes_cashflow(tmp_root):
     ).fetchone()
     assert row == (100.0, 50.0, 50.0, 65.0, 50.0, 25.0)
     net = con.execute(
-        "SELECT cash, investments, credit_card_debt, net_worth FROM finance_daily_net_worth WHERE owner='all' AND date='2026-05-31'"
+        """
+        SELECT cash, investments, credit_card_debt, net_worth
+        FROM finance_daily_net_worth
+        WHERE owner='all'
+        ORDER BY date DESC
+        LIMIT 1
+        """
     ).fetchone()
     assert net == (1300.0, 1200.0, 200.0, 2300.0)
     assert con.execute(
@@ -198,16 +278,23 @@ def test_finance_sync_combines_sources_and_normalizes_cashflow(tmp_root):
         "SELECT include_in_net_worth, parent_draw_source FROM finance_accounts WHERE source_account_id='mon-parent'"
     ).fetchone()
     assert parent == (0, 1)
+    assert con.execute("SELECT label FROM finance_categories WHERE category='Dining'").fetchone() == (
+        "Dining",
+    )
+    category = con.execute(
+        """
+        SELECT source_category, user_category, effective_category, category_source
+        FROM finance_categorized_transactions
+        WHERE finance_transaction_id='monarch:mon-food'
+        """
+    ).fetchone()
+    assert category == ("Restaurants", "Dining", "Dining", "user")
     con.close()
 
     viz = _load_module("visualizations.py", "finance_viz_dashboard_test")
-    html = viz._render_dashboard(cfg)
-    assert 'data-finance-dashboard' in html
-    assert 'data-finance-self-only checked' in html
-    assert '<section class="finance-overview-card" data-finance-parent="1"><h3>Parents</h3>' in html
-    assert '<h2 class="finance-dashboard-band" data-finance-parent="1">Parents</h2>' in html
-    assert '<section class="finance-section" data-finance-parent="1"><h3>Parent Cashflow</h3>' in html
-    assert '<section class="finance-section"><h3>Parent Account Draws</h3>' in html
+    entries = viz.list_visualizations()
+    assert entries[0]["name"] == "Finance app"
+    assert "/a/finance" in entries[0]["render"](cfg)
 
 
 def test_finance_sync_discovers_export_views_without_source_names(tmp_root):

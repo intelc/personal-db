@@ -5,6 +5,25 @@
     return `${sign}$${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   }
 
+  function formatTooltipValue(value, format) {
+    if (format === 'usd') return money(value);
+    if (format === 'integer') return Number(value || 0).toLocaleString();
+    return String(value ?? '');
+  }
+
+  function tooltipRenderer(options, fallback) {
+    const fields = options.pdbTooltip && Array.isArray(options.pdbTooltip.fields)
+      ? options.pdbTooltip.fields
+      : [];
+    if (!fields.length) return fallback;
+    return ({ datum, xKey }) => ({
+      title: datum[xKey],
+      data: fields
+        .filter((field) => field && field.key && datum[field.key] != null)
+        .map((field) => `${field.label || field.key}: ${formatTooltipValue(datum[field.key], field.format)}`),
+    });
+  }
+
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   function monthName(value) {
@@ -103,26 +122,28 @@
   }
 
   function applyFormatters(options) {
-    if (options.valueFormat !== 'usd') return options;
+    if (options.valueFormat !== 'usd' && !options.pdbTooltip) return options;
     const out = { ...options };
-    out.axes = Object.fromEntries(
-      Object.entries(out.axes || {}).map(([position, axis]) => [
-        position,
-        axis.type === 'number'
-          ? { ...axis, label: { ...(axis.label || {}), formatter: ({ value }) => money(value) } }
-          : axis,
-      ])
-    );
+    if (options.valueFormat === 'usd') {
+      out.axes = Object.fromEntries(
+        Object.entries(out.axes || {}).map(([position, axis]) => [
+          position,
+          axis.type === 'number'
+            ? { ...axis, label: { ...(axis.label || {}), formatter: ({ value }) => money(value) } }
+            : axis,
+        ])
+      );
+    }
     out.series = (out.series || []).map((series) => ({
       ...series,
       tooltip: series.type === 'pie'
         ? series.tooltip
         : {
             ...(series.tooltip || {}),
-            renderer: ({ datum, xKey, yKey, yName }) => ({
+            renderer: tooltipRenderer(options, ({ datum, xKey, yKey, yName }) => ({
               title: yName || yKey,
-              content: `${datum[xKey]}: ${money(datum[yKey])}`,
-            }),
+              data: [`${datum[xKey]}: ${money(datum[yKey])}`],
+            })),
           },
       sectorLabel: series.type === 'pie'
         ? { ...(series.sectorLabel || {}), formatter: ({ value }) => money(value) }
@@ -224,9 +245,15 @@
     };
   }
 
+  function stripAxes(options) {
+    if (!options.axes) return options;
+    const { axes, ...out } = options;
+    return out;
+  }
+
   function chartOptions(rawOptions, data, scaleMode, groupMode) {
     const formatted = applyFormatters({ ...rawOptions, data });
-    let { pdbZoom, pdbScale, pdbTimeMarkers, pdbAggregation, valueFormat, ...options } = formatted;
+    let { pdbZoom, pdbScale, pdbTimeMarkers, pdbAggregation, pdbTooltip, valueFormat, ...options } = formatted;
     if (scaleMode === 'focus') {
       const domain = focusedDomain(rawOptions, data);
       if (domain && options.axes && options.axes.left) {
@@ -239,7 +266,7 @@
     if (groupMode !== 'month') {
       options = applyTimeMarkers(rawOptions, data, options);
     }
-    return options;
+    return stripAxes(options);
   }
 
   function zoomWindows(rawOptions) {

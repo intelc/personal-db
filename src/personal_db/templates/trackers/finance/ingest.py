@@ -150,6 +150,56 @@ def _export_views(t: Tracker, suffix: str) -> list[str]:
     return [row["name"] for row in rows if str(row["name"]).endswith(suffix)]
 
 
+def _table_exists(t: Tracker, name: str) -> bool:
+    rows = _read_rows(
+        t,
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+        (name,),
+    )
+    return bool(rows)
+
+
+def _migrate_legacy_category_state(t: Tracker) -> None:
+    """Move old app-owned category state into canonical finance tables."""
+    if _table_exists(t, "app_finance_category_presets"):
+        _execute(
+            t,
+            """
+            INSERT OR IGNORE INTO finance_categories(category, label, source, created_at, updated_at)
+            SELECT category, category, 'app_migration',
+                   COALESCE(created_at, datetime('now')),
+                   COALESCE(created_at, datetime('now'))
+            FROM app_finance_category_presets
+            WHERE category IS NOT NULL AND TRIM(category) != ''
+            """,
+        )
+    if _table_exists(t, "app_finance_transaction_categories"):
+        _execute(
+            t,
+            """
+            INSERT OR IGNORE INTO finance_categories(category, label, source, updated_at)
+            SELECT DISTINCT category, category, 'app_migration',
+                   COALESCE(updated_at, datetime('now'))
+            FROM app_finance_transaction_categories
+            WHERE category IS NOT NULL AND TRIM(category) != ''
+            """,
+        )
+        _execute(
+            t,
+            """
+            INSERT INTO finance_transaction_user_categories(
+              finance_transaction_id, user_category, note, updated_at
+            )
+            SELECT finance_transaction_id, category, note, COALESCE(updated_at, datetime('now'))
+            FROM app_finance_transaction_categories
+            WHERE finance_transaction_id IS NOT NULL
+              AND category IS NOT NULL
+              AND TRIM(category) != ''
+            ON CONFLICT(finance_transaction_id) DO NOTHING
+            """,
+        )
+
+
 def _read_export_view(
     t: Tracker,
     view: str,
@@ -593,6 +643,7 @@ def _clear_materialized(t: Tracker) -> None:
 
 def sync(t: Tracker) -> None:
     now = _now_iso()
+    _migrate_legacy_category_state(t)
     account_views = _export_views(t, "_finance_accounts_export")
     if not account_views:
         _clear_materialized(t)

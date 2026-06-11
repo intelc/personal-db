@@ -62,6 +62,48 @@ schema:
         is_internal_transfer:   {type: INTEGER, semantic: "1 if excluded as an internal transfer"}
         parent_draw:            {type: REAL, semantic: "Outflow from parent-managed account"}
         raw_json:               {type: TEXT, semantic: "Compact source-row JSON"}
+    finance_categories:
+      columns:
+        category:   {type: TEXT, semantic: "Canonical user-facing finance category key"}
+        label:      {type: TEXT, semantic: "Display label for the category"}
+        parent:     {type: TEXT, semantic: "Optional parent category key"}
+        sort_order: {type: INTEGER, semantic: "Display ordering"}
+        source:     {type: TEXT, semantic: "system or user"}
+        created_at: {type: TEXT, semantic: "Creation timestamp"}
+        updated_at: {type: TEXT, semantic: "Last update timestamp"}
+    finance_transaction_user_categories:
+      columns:
+        finance_transaction_id: {type: TEXT, semantic: "finance_transactions.finance_transaction_id"}
+        user_category:          {type: TEXT, semantic: "Canonical human/app-authored category judgment"}
+        note:                   {type: TEXT, semantic: "Optional note explaining the category choice"}
+        updated_at:             {type: TEXT, semantic: "Last update timestamp"}
+    finance_categorized_transactions:
+      columns:
+        finance_transaction_id:  {type: TEXT, semantic: "finance_transactions.finance_transaction_id"}
+        source:                  {type: TEXT, semantic: "Source tracker, such as plaid or monarch"}
+        source_transaction_id:   {type: TEXT, semantic: "Transaction id in the source tracker"}
+        finance_account_id:      {type: TEXT, semantic: "Synthetic source-prefixed account id"}
+        source_account_id:       {type: TEXT, semantic: "Account id in the source tracker"}
+        date:                    {type: TEXT, semantic: "Posted date YYYY-MM-DD"}
+        name:                    {type: TEXT, semantic: "Transaction name"}
+        merchant_name:           {type: TEXT, semantic: "Merchant display name"}
+        amount:                  {type: REAL, semantic: "Normalized amount; positive is outflow, negative is inflow"}
+        source_amount:           {type: REAL, semantic: "Original source amount"}
+        pending:                 {type: INTEGER, semantic: "1 if pending"}
+        source_category:         {type: TEXT, semantic: "Provider/source category label"}
+        user_category:           {type: TEXT, semantic: "Explicit human/app-authored category, if any"}
+        rule_category:           {type: TEXT, semantic: "Rule-produced category, reserved for future categorization rules"}
+        effective_category:      {type: TEXT, semantic: "Final category used by downstream consumers"}
+        category_source:         {type: TEXT, semantic: "user, source, or default"}
+        category_confidence:     {type: REAL, semantic: "Confidence in the effective category"}
+        user_category_note:      {type: TEXT, semantic: "Optional user category note"}
+        user_category_updated_at: {type: TEXT, semantic: "User category update timestamp"}
+        owner:                   {type: TEXT, semantic: "Owner label from account settings"}
+        account_group:           {type: TEXT, semantic: "Account group from account settings"}
+        is_credit_card_payment:  {type: INTEGER, semantic: "1 if excluded as a credit-card payment"}
+        is_internal_transfer:    {type: INTEGER, semantic: "1 if excluded as an internal transfer"}
+        parent_draw:             {type: REAL, semantic: "Outflow from parent-managed account"}
+        raw_json:                {type: TEXT, semantic: "Compact source-row JSON"}
     finance_holdings:
       columns:
         finance_holding_id: {type: TEXT, semantic: "Synthetic source-prefixed holding id"}

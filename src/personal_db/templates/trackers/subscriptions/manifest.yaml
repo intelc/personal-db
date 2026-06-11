@@ -1,0 +1,99 @@
+name: subscriptions
+description: Subscription charges and utilization evidence from categorized finance transactions plus app/browser activity
+permission_type: none
+setup_steps:
+  - type: instructions
+    text: |
+      Subscriptions is a downstream tracker. It reads canonical finance
+      category judgments from finance_categorized_transactions and treats
+      effective_category='Subscriptions' as the source of truth for which
+      charges are subscriptions.
+
+      Sync finance first, then sync subscriptions. Usage evidence is best when
+      screen_time, mosspath_lite, and chrome_history are also synced.
+schedule:
+  every: 4h
+time_column: last_charge_date
+granularity: event
+schema:
+  tables:
+    subscription_match_rules:
+      columns:
+        rule_id:          {type: INTEGER, semantic: "Rule id"}
+        subscription_id:  {type: TEXT, semantic: "Optional pinned subscription id"}
+        merchant_pattern: {type: TEXT, semantic: "Merchant substring that selects charges"}
+        label:            {type: TEXT, semantic: "Display label override"}
+        domain_pattern:   {type: TEXT, semantic: "Browser domain substring used as usage evidence"}
+        app_pattern:      {type: TEXT, semantic: "App name substring used as usage evidence"}
+        bundle_id:        {type: TEXT, semantic: "macOS bundle id used as usage evidence"}
+        enabled:          {type: INTEGER, semantic: "1 when rule is active"}
+        source:           {type: TEXT, semantic: "system or user"}
+        updated_at:       {type: TEXT, semantic: "Last update timestamp"}
+    subscription_entities:
+      columns:
+        subscription_id:    {type: TEXT, semantic: "Stable synthetic subscription id"}
+        label:              {type: TEXT, semantic: "Display label"}
+        merchant_key:       {type: TEXT, semantic: "Normalized merchant grouping key"}
+        series_key:         {type: TEXT, semantic: "Series discriminator within a merchant, such as amount:9.99"}
+        typical_amount:     {type: REAL, semantic: "Typical charge amount for this recurring series"}
+        amount_min:         {type: REAL, semantic: "Minimum observed charge amount for this series"}
+        amount_max:         {type: REAL, semantic: "Maximum observed charge amount for this series"}
+        expected_day:       {type: INTEGER, semantic: "Typical day of month for this series"}
+        first_charge_date:  {type: TEXT, semantic: "First observed subscription charge date"}
+        last_charge_date:   {type: TEXT, semantic: "Latest observed subscription charge date"}
+        charge_count:       {type: INTEGER, semantic: "Number of linked charges"}
+        avg_amount:         {type: REAL, semantic: "Average charge amount"}
+        monthly_avg_amount: {type: REAL, semantic: "Average monthly total over observed billing months"}
+        latest_amount:      {type: REAL, semantic: "Latest charge amount"}
+        cadence:            {type: TEXT, semantic: "Heuristic cadence: monthly, annual, irregular, or single"}
+        next_expected_date: {type: TEXT, semantic: "Estimated next charge date"}
+        status:             {type: TEXT, semantic: "active or stale"}
+        confidence:         {type: REAL, semantic: "0-1 confidence this grouping is useful"}
+        source_flags_json:  {type: TEXT, semantic: "JSON signals used to create the entity"}
+        updated_at:         {type: TEXT, semantic: "Last materialized timestamp"}
+    subscription_charges:
+      columns:
+        finance_transaction_id: {type: TEXT, semantic: "finance_transactions.finance_transaction_id"}
+        subscription_id:        {type: TEXT, semantic: "subscription_entities.subscription_id"}
+        date:                   {type: TEXT, semantic: "Charge date YYYY-MM-DD"}
+        merchant:               {type: TEXT, semantic: "Charge merchant/name"}
+        amount:                 {type: REAL, semantic: "Charge amount"}
+        series_key:             {type: TEXT, semantic: "Series discriminator used by subscription_entities"}
+        effective_category:     {type: TEXT, semantic: "Finance effective category"}
+        category_source:        {type: TEXT, semantic: "Finance category source"}
+        match_reason:           {type: TEXT, semantic: "Why this charge was linked"}
+    subscription_usage_evidence:
+      columns:
+        evidence_id:     {type: TEXT, semantic: "Stable evidence id"}
+        subscription_id: {type: TEXT, semantic: "subscription_entities.subscription_id"}
+        source:          {type: TEXT, semantic: "screen_time, mosspath_lite, or chrome_history"}
+        source_id:       {type: TEXT, semantic: "Source row id"}
+        started_at:      {type: TEXT, semantic: "Evidence start timestamp"}
+        ended_at:        {type: TEXT, semantic: "Evidence end timestamp, when available"}
+        minutes:         {type: REAL, semantic: "Usage minutes represented by this evidence"}
+        event_count:     {type: INTEGER, semantic: "Event count represented by this evidence"}
+        app_name:        {type: TEXT, semantic: "Observed app name"}
+        bundle_id:       {type: TEXT, semantic: "Observed app bundle id"}
+        domain:          {type: TEXT, semantic: "Observed browser domain"}
+        title:           {type: TEXT, semantic: "Observed window/page title"}
+        confidence:      {type: REAL, semantic: "0-1 match confidence"}
+        reason:          {type: TEXT, semantic: "Rule or field that matched"}
+    subscription_utilization_periods:
+      columns:
+        period_id:           {type: TEXT, semantic: "Stable subscription period id"}
+        subscription_id:     {type: TEXT, semantic: "subscription_entities.subscription_id"}
+        period_start:        {type: TEXT, semantic: "Billing period start date"}
+        period_end:          {type: TEXT, semantic: "Billing period end date"}
+        cost:                {type: REAL, semantic: "Subscription charges in the period"}
+        charge_count:        {type: INTEGER, semantic: "Charges in the period"}
+        usage_minutes:       {type: REAL, semantic: "Matched usage minutes in the period"}
+        active_days:         {type: INTEGER, semantic: "Distinct local days with matched usage"}
+        event_count:         {type: INTEGER, semantic: "Matched usage event count"}
+        cost_per_hour:       {type: REAL, semantic: "Cost divided by matched usage hours"}
+        cost_per_active_day: {type: REAL, semantic: "Cost divided by active days"}
+        coverage_ratio:      {type: REAL, semantic: "Fraction of period elapsed when period is current"}
+        utilization_label:   {type: TEXT, semantic: "high, medium, low, no_observed_usage, or unknown"}
+        evidence_json:       {type: TEXT, semantic: "JSON summary of top evidence"}
+        computed_at:         {type: TEXT, semantic: "Materialization timestamp"}
+related_entities: []
+local_only: false

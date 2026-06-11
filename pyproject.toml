@@ -17,6 +17,8 @@ dependencies = [
   "fastapi>=0.100",
   "uvicorn>=0.20",
   "jinja2>=3.0",
+  "websockets>=12.0",
+  "openai-agents>=0.17.4",
 ]
 
 [project.optional-dependencies]

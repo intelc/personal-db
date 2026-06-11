@@ -173,6 +173,55 @@ def test_flatten_account_and_transaction():
     assert txn["category_name"] == "Restaurants"
 
 
+def test_flatten_balances_accepts_monarch_numeric_series():
+    ingest = _load_module("ingest.py", "monarch_ingest_balance_series_test")
+
+    rows = ingest._flatten_balances(
+        {"id": "acct-1", "recentBalances": [100.0, 101.5, None, 99]},
+        "2026-05-31T00:00:00+00:00",
+        start_date="2026-05-29",
+        end_date="2026-06-01",
+    )
+
+    assert rows == [
+        {
+            "balance_id": "acct-1:2026-05-29",
+            "account_id": "acct-1",
+            "date": "2026-05-29",
+            "balance": 100.0,
+            "updated_at": "2026-05-31T00:00:00+00:00",
+        },
+        {
+            "balance_id": "acct-1:2026-05-30",
+            "account_id": "acct-1",
+            "date": "2026-05-30",
+            "balance": 101.5,
+            "updated_at": "2026-05-31T00:00:00+00:00",
+        },
+        {
+            "balance_id": "acct-1:2026-06-01",
+            "account_id": "acct-1",
+            "date": "2026-06-01",
+            "balance": 99,
+            "updated_at": "2026-05-31T00:00:00+00:00",
+        },
+    ]
+
+
+def test_flatten_balances_skips_downsampled_undated_series():
+    ingest = _load_module("ingest.py", "monarch_ingest_balance_downsample_test")
+
+    assert (
+        ingest._flatten_balances(
+            {"id": "acct-1", "recentBalances": [100.0, 101.5]},
+            "2026-05-31T00:00:00+00:00",
+            start_date="2026-05-01",
+            end_date="2026-05-31",
+        )
+        == []
+    )
+
+
 def test_account_export_actions_round_trip(tmp_root):
     actions = _load_module("actions.py", "monarch_actions_exports_test")
     cfg = Config(root=tmp_root)

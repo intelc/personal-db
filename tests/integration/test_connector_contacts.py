@@ -3,6 +3,7 @@
 import sqlite3
 import subprocess
 import sys
+from datetime import date
 from pathlib import Path
 
 from personal_db.config import Config
@@ -191,7 +192,7 @@ def test_imessage_top_contacts_resolves_via_contacts(tmp_path, monkeypatch):
 
     # Seed iMessage messages — note Alice's handle uses the +1 form with
     # parens; Bob's is bare digits with country code; one unknown handle too.
-    today = "2026-04-26"
+    today = date.today().isoformat()
     con = sqlite3.connect(cfg.db_path)
     con.executemany(
         "INSERT INTO imessage_messages(person_id, handle, text, is_from_me, sent_at) "
@@ -223,7 +224,7 @@ def test_imessage_top_contacts_resolves_via_contacts(tmp_path, monkeypatch):
 def test_imessage_top_contacts_falls_back_when_contacts_not_installed(tmp_path):
     """Without contacts tracker, viz should still work — just shows raw handles."""
     cfg = _install(tmp_path, "imessage")
-    today = "2026-04-26"
+    today = date.today().isoformat()
     con = sqlite3.connect(cfg.db_path)
     con.execute(
         "INSERT INTO imessage_messages(person_id, handle, text, is_from_me, sent_at) "

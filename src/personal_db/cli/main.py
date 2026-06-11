@@ -4,17 +4,22 @@ import typer
 from dotenv import load_dotenv
 
 from personal_db.cli import (
+    app_cmd,
     code_agent_hook_cmd,
+    context_cmd,
     daemon_cmd,
+    enrich_cmd,
     init_cmd,
     log_cmd,
     mcp_cmd,
     permission_cmd,
     query_cmd,
     setup_cmd,
+    source_cmd,
     sync_cmd,
     tracker_cmd,
     ui_cmd,
+    worker_cmd,
 )
 from personal_db.cli.state import _state, get_root
 
@@ -43,6 +48,9 @@ app.command("backfill")(sync_cmd.backfill)
 app.command("log")(log_cmd.log)
 app.command("query")(query_cmd.query)
 app.command("ui")(ui_cmd.ui)
+app.add_typer(context_cmd.app, name="context")
+app.add_typer(enrich_cmd.app, name="enrich")
+app.add_typer(source_cmd.app, name="source")
 
 tracker_app = typer.Typer(no_args_is_help=True, help="Tracker management")
 tracker_app.command("new")(tracker_cmd.new)
@@ -51,6 +59,13 @@ tracker_app.command("install")(tracker_cmd.install)
 tracker_app.command("reinstall")(tracker_cmd.reinstall)
 tracker_app.command("setup")(tracker_cmd.setup)
 app.add_typer(tracker_app, name="tracker")
+
+app_app = typer.Typer(no_args_is_help=True, help="App management")
+app_app.command("list")(app_cmd.list_cmd)
+app_app.command("available")(app_cmd.available)
+app_app.command("install")(app_cmd.install)
+app_app.command("reinstall")(app_cmd.reinstall)
+app.add_typer(app_app, name="app")
 
 permission_app = typer.Typer(no_args_is_help=True, help="OS permission helpers")
 permission_app.command("check")(permission_cmd.check)
@@ -63,6 +78,16 @@ daemon_app.command("status")(daemon_cmd.status)
 daemon_app.command("restart")(daemon_cmd.restart)
 daemon_app.command("run")(daemon_cmd.run)
 app.add_typer(daemon_app, name="daemon")
+
+worker_app = typer.Typer(no_args_is_help=True, help="Long-running enrichment workers")
+worker_app.command("enrich")(worker_cmd.enrich)
+worker_app.command("install")(worker_cmd.install)
+worker_app.command("uninstall")(worker_cmd.uninstall)
+worker_app.command("status")(worker_cmd.status)
+worker_app.command("info")(worker_cmd.info)
+worker_app.command("log")(worker_cmd.log)
+worker_app.command("restart")(worker_cmd.restart)
+app.add_typer(worker_app, name="worker")
 
 app.add_typer(code_agent_hook_cmd.app, name="code-agent-hook-write")
 
