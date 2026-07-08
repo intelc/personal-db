@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS calendar_events (
   url             TEXT,
   status          TEXT,
   availability    TEXT,
+  deleted_at      TEXT,
   imported_at     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_calendar_events_start_at

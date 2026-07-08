@@ -179,6 +179,13 @@ def _event_id(path: Path, source_pk: str | None, uid: str | None, start_at: str)
     return hashlib.sha256(stable.encode("utf-8")).hexdigest()
 
 
+def _durable_event_id(path: Path, uid: str) -> str:
+    # Keyed on the store's per-row UID alone so renames/reschedules update the
+    # same event instead of forking a ghost copy. Rows without a durable UID
+    # keep the legacy composite identity above.
+    return hashlib.sha256(f"uid|{path}|{uid}".encode("utf-8")).hexdigest()
+
+
 def _import_coredata_events(path: Path, con: sqlite3.Connection) -> list[dict[str, Any]]:
     cols = _cols(con, "ZCALENDARITEM")
     start_col = _pick(cols, "ZSTARTDATE")
@@ -186,6 +193,9 @@ def _import_coredata_events(path: Path, con: sqlite3.Connection) -> list[dict[st
     title_col = _pick(cols, "ZTITLE", "ZSUMMARY")
     pk_col = _pick(cols, "Z_PK")
     uid_col = _pick(cols, "ZUUID", "ZUNIQUEID", "ZEXTERNALID")
+    # Durable identity only from the per-row ZUUID; ZUNIQUEID/ZEXTERNALID can
+    # be shared across recurrence rows (see _import_generic_events).
+    durable_col = _pick(cols, "ZUUID")
     cal_fk_col = _pick(cols, "ZCALENDAR")
     location_col = _pick(cols, "ZLOCATION")
     notes_col = _pick(cols, "ZNOTES", "ZDESCRIPTION")
@@ -209,6 +219,7 @@ def _import_coredata_events(path: Path, con: sqlite3.Connection) -> list[dict[st
     select_cols = [c for c in {
         pk_col,
         uid_col,
+        durable_col,
         cal_fk_col,
         title_col,
         location_col,
@@ -232,10 +243,13 @@ def _import_coredata_events(path: Path, con: sqlite3.Connection) -> list[dict[st
             continue
         source_pk = _text(row, pk_col)
         uid = _text(row, uid_col)
+        durable = _text(row, durable_col)
         calendar_id = _text(row, cal_fk_col)
         out.append(
             {
-                "event_id": _event_id(path, source_pk, uid, start_at),
+                "event_id": _durable_event_id(path, durable)
+                if durable
+                else _event_id(path, source_pk, uid, start_at),
                 "source": SOURCE,
                 "source_db": str(path),
                 "source_pk": source_pk,
@@ -251,6 +265,7 @@ def _import_coredata_events(path: Path, con: sqlite3.Connection) -> list[dict[st
                 "url": _text(row, url_col),
                 "status": _text(row, status_col),
                 "availability": _text(row, availability_col),
+                "deleted_at": None,
                 "imported_at": imported_at,
             }
         )
@@ -280,6 +295,10 @@ def _import_generic_events(path: Path, con: sqlite3.Connection) -> list[dict[str
     tables = _tables(con)
     cal_titles = _generic_calendar_titles(con, tables)
     for table in sorted(tables):
+        # Change-log/history siblings (e.g. CalendarItemChanges) carry copies
+        # of edited events, not events — importing them forks phantom rows.
+        if table.lower().endswith(("changes", "history")):
+            continue
         cols = _cols(con, table)
         start_col = _pick(cols, "start_at", "start", "start_date", "dtstart")
         end_col = _pick(cols, "end_at", "end", "end_date", "dtend")
@@ -287,6 +306,10 @@ def _import_generic_events(path: Path, con: sqlite3.Connection) -> list[dict[str
         if not start_col or not end_col or not title_col:
             continue
         pk_col = _pick(cols, "id", "uid", "uuid", "event_id")
+        # Durable per-row UID only: uuid/uid. NOT unique_identifier — that is
+        # the iCal UID, shared between a recurring master and its detached
+        # occurrences, so keying on it would collapse them.
+        uid_col = _pick(cols, "uuid") or _pick(cols, "uid")
         cal_col = _pick(cols, "calendar", "calendar_name", "calendar_title")
         cal_fk_col = _pick(cols, "calendar_id")
         location_col = _pick(cols, "location")
@@ -298,13 +321,16 @@ def _import_generic_events(path: Path, con: sqlite3.Connection) -> list[dict[str
             if not start_at or not end_at:
                 continue
             source_pk = _text(row, pk_col)
+            uid = _text(row, uid_col)
             calendar_id = _text(row, cal_fk_col)
             calendar_title = _text(row, cal_col) or (
                 cal_titles.get(calendar_id) if calendar_id else None
             )
             out.append(
                 {
-                    "event_id": _event_id(path, source_pk, _text(row, title_col), start_at),
+                    "event_id": _durable_event_id(path, uid)
+                    if uid
+                    else _event_id(path, source_pk, _text(row, title_col), start_at),
                     "source": SOURCE,
                     "source_db": str(path),
                     "source_pk": source_pk,
@@ -320,6 +346,7 @@ def _import_generic_events(path: Path, con: sqlite3.Connection) -> list[dict[str
                     "url": None,
                     "status": None,
                     "availability": None,
+                    "deleted_at": None,
                     "imported_at": imported_at,
                 }
             )
@@ -334,6 +361,47 @@ def _read_calendar_db(path: Path) -> list[dict[str, Any]]:
         if "ZCALENDARITEM" in _tables(con):
             return _import_coredata_events(path, con)
         return _import_generic_events(path, con)
+    finally:
+        con.close()
+
+
+def _ensure_deleted_at_column(t: Tracker) -> None:
+    con = connect(t.cfg.db_path)
+    try:
+        cols = {row[1] for row in con.execute("PRAGMA table_info(calendar_events)")}
+        if cols and "deleted_at" not in cols:
+            con.execute("ALTER TABLE calendar_events ADD COLUMN deleted_at TEXT")
+            con.commit()
+    finally:
+        con.close()
+
+
+def _tombstone_missing(t: Tracker, read_paths: list[str], seen_ids: set[str]) -> None:
+    """Full-snapshot diff: a live row whose store was read this run but no
+    longer contains it was deleted (or re-keyed) upstream. Soft-delete it and
+    bump imported_at so watermark consumers re-stage the tombstone. Stores
+    that failed to read are left untouched, and reappearing events resurrect
+    via the upsert writing deleted_at=NULL."""
+    if not read_paths:
+        return
+    now = datetime.now(UTC).isoformat()
+    con = connect(t.cfg.db_path)
+    try:
+        placeholders = ",".join("?" * len(read_paths))
+        live = con.execute(
+            f"SELECT event_id FROM calendar_events "
+            f"WHERE deleted_at IS NULL AND source_db IN ({placeholders})",
+            read_paths,
+        ).fetchall()
+        gone = [row[0] for row in live if row[0] not in seen_ids]
+        if gone:
+            con.executemany(
+                "UPDATE calendar_events SET deleted_at=?, imported_at=? WHERE event_id=?",
+                [(now, now, event_id) for event_id in gone],
+            )
+            con.commit()
+        if gone:
+            t.log.info("calendar: tombstoned %d events removed upstream", len(gone))
     finally:
         con.close()
 
@@ -400,13 +468,21 @@ def _materialize_reality(t: Tracker) -> None:
     con = connect(t.cfg.db_path)
     con.row_factory = sqlite3.Row
     try:
+        if _table_exists(con, "calendar_reality_blocks"):
+            con.execute(
+                """
+                DELETE FROM calendar_reality_blocks WHERE event_id IN
+                  (SELECT event_id FROM calendar_events WHERE deleted_at IS NOT NULL)
+                """
+            )
+            con.commit()
         events = list(
             con.execute(
                 """
                 SELECT event_id, title, calendar_title, start_at, end_at, all_day
                 FROM calendar_events
                 WHERE start_at >= ? AND start_at <= ?
-                  AND end_at > start_at
+                  AND end_at > start_at AND deleted_at IS NULL
                 ORDER BY start_at
                 """,
                 (
@@ -553,9 +629,11 @@ def sync(t: Tracker) -> None:
     rows: list[dict[str, Any]] = []
     candidates = _source_candidates()
     errors: list[str] = []
+    read_paths: list[str] = []
     for path in candidates:
         try:
             rows.extend(_read_calendar_db(path))
+            read_paths.append(str(path))
         except (sqlite3.Error, OSError, PermissionError) as exc:
             errors.append(f"{path}: {exc}")
             continue
@@ -565,10 +643,18 @@ def sync(t: Tracker) -> None:
         )
     if not rows and errors:
         raise RuntimeError("could not read Calendar stores: " + "; ".join(errors[:3]))
+    unique: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        unique.setdefault(row["event_id"], row)
+    if len(unique) < len(rows):
+        t.log.warning("calendar: dropped %d rows with duplicate event_id", len(rows) - len(unique))
+    rows = list(unique.values())
+    _ensure_deleted_at_column(t)
     if rows:
         t.upsert("calendar_events", rows, key=["event_id"])
         latest = max(row["start_at"] for row in rows)
         t.cursor.set(latest)
+    _tombstone_missing(t, read_paths, {row["event_id"] for row in rows})
     _materialize_reality(t)
     t.log.info("calendar: ingested %d events from %d candidate stores", len(rows), len(candidates))
 
