@@ -257,10 +257,29 @@ def _import_coredata_events(path: Path, con: sqlite3.Connection) -> list[dict[st
     return out
 
 
+def _generic_calendar_titles(con: sqlite3.Connection, tables: set[str]) -> dict[str, str]:
+    # Calendar.sqlitedb keeps the calendar name in a separate Calendar table
+    # keyed by ROWID; events only carry the integer calendar_id FK.
+    for cal_table in ("Calendar", "Calendars", "calendars"):
+        if cal_table not in tables:
+            continue
+        cal_cols = _cols(con, cal_table)
+        title_col = _pick(cal_cols, "title", "name")
+        if not title_col:
+            return {}
+        return {
+            str(row[0]): str(row[1] or "")
+            for row in con.execute(f'SELECT ROWID, "{title_col}" FROM "{cal_table}"')
+        }
+    return {}
+
+
 def _import_generic_events(path: Path, con: sqlite3.Connection) -> list[dict[str, Any]]:
     imported_at = datetime.now(UTC).isoformat()
     out: list[dict[str, Any]] = []
-    for table in sorted(_tables(con)):
+    tables = _tables(con)
+    cal_titles = _generic_calendar_titles(con, tables)
+    for table in sorted(tables):
         cols = _cols(con, table)
         start_col = _pick(cols, "start_at", "start", "start_date", "dtstart")
         end_col = _pick(cols, "end_at", "end", "end_date", "dtend")
@@ -269,6 +288,7 @@ def _import_generic_events(path: Path, con: sqlite3.Connection) -> list[dict[str
             continue
         pk_col = _pick(cols, "id", "uid", "uuid", "event_id")
         cal_col = _pick(cols, "calendar", "calendar_name", "calendar_title")
+        cal_fk_col = _pick(cols, "calendar_id")
         location_col = _pick(cols, "location")
         all_day_col = _pick(cols, "all_day", "allday")
         rows = con.execute(f'SELECT * FROM "{table}"').fetchall()
@@ -278,14 +298,18 @@ def _import_generic_events(path: Path, con: sqlite3.Connection) -> list[dict[str
             if not start_at or not end_at:
                 continue
             source_pk = _text(row, pk_col)
+            calendar_id = _text(row, cal_fk_col)
+            calendar_title = _text(row, cal_col) or (
+                cal_titles.get(calendar_id) if calendar_id else None
+            )
             out.append(
                 {
                     "event_id": _event_id(path, source_pk, _text(row, title_col), start_at),
                     "source": SOURCE,
                     "source_db": str(path),
                     "source_pk": source_pk,
-                    "calendar_id": None,
-                    "calendar_title": _text(row, cal_col),
+                    "calendar_id": calendar_id,
+                    "calendar_title": calendar_title,
                     "title": _text(row, title_col) or "(untitled)",
                     "location": _text(row, location_col),
                     "notes_hash": None,
