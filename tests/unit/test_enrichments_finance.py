@@ -607,6 +607,27 @@ def test_extract_receipt_evidence_windows_ignores_generic_corp_descriptor():
     tx = FinanceTransaction(
         finance_transaction_id="txn-echeck",
         date="2026-06-01",
+        name="Corp E Corp E-CHECK 053126 0230386785",
+        merchant_name=None,
+        amount=890.00,
+        category="LOAN_PAYMENTS_OTHER_PAYMENT",
+    )
+    text = "Corporate update. Transfer amount $890.00 posted on June 1, 2026."
+
+    evidence = extract_receipt_evidence_windows(tx, "echeck-1", text, window_chars=80)
+
+    assert evidence["signals"]["amount"] is True
+    assert evidence["signals"]["date"] is True
+    assert evidence["signals"]["merchant"] is False
+
+
+def test_extract_receipt_evidence_windows_excludes_configured_user_name_tokens():
+    """config.yaml `user.name_tokens` (Config.user_name_tokens) supplements the
+    static generic-token set — e.g. the account holder's own name showing up
+    in a transaction descriptor shouldn't count as a real merchant match."""
+    tx = FinanceTransaction(
+        finance_transaction_id="txn-echeck",
+        date="2026-06-01",
         name="Corp E Corp E-CHECK 053126 0230386785 Yiheng Chen",
         merchant_name=None,
         amount=890.00,
@@ -617,11 +638,17 @@ def test_extract_receipt_evidence_windows_ignores_generic_corp_descriptor():
         "Transfer amount $890.00 posted on June 1, 2026."
     )
 
-    evidence = extract_receipt_evidence_windows(tx, "echeck-1", text, window_chars=80)
+    without_exclusion = extract_receipt_evidence_windows(tx, "echeck-1", text, window_chars=80)
+    assert without_exclusion["signals"]["merchant"] is True
 
-    assert evidence["signals"]["amount"] is True
-    assert evidence["signals"]["date"] is True
-    assert evidence["signals"]["merchant"] is False
+    with_exclusion = extract_receipt_evidence_windows(
+        tx,
+        "echeck-1",
+        text,
+        window_chars=80,
+        extra_merchant_tokens=frozenset({"yiheng", "chen"}),
+    )
+    assert with_exclusion["signals"]["merchant"] is False
 
 
 def test_finance_receipt_debug_reads_candidates_without_persisting(tmp_root):

@@ -156,12 +156,22 @@ def extract_receipt_evidence_windows(
     text: str,
     *,
     window_chars: int = DEFAULT_RECEIPT_SNIPPET_WINDOW_CHARS,
+    extra_merchant_tokens: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
-    """Extract deterministic receipt evidence snippets from one email thread."""
+    """Extract deterministic receipt evidence snippets from one email thread.
+
+    `extra_merchant_tokens` supplements the static `_GENERIC_MERCHANT_TOKENS`
+    exclusion set with user-specific tokens (config.yaml `user.name_tokens`,
+    see Config.user_name_tokens) — e.g. the account holder's own name, which
+    would otherwise show up as a spurious "merchant" term match in every
+    email that happens to mention them.
+    """
     signal_terms = {
         "amount": _amount_terms(tx.amount),
         "date": _date_terms(tx.date),
-        "merchant": _merchant_terms(tx.merchant_hint, tx.name),
+        "merchant": _merchant_terms(
+            tx.merchant_hint, tx.name, extra_excluded_tokens=extra_merchant_tokens
+        ),
         "receipt_language": ["receipt", "total", "charged", "payment", "order", "invoice"],
     }
     snippets = []
@@ -248,7 +258,13 @@ def _date_terms(date_value: str | None) -> list[str]:
     return _unique_nonempty(terms)
 
 
-def _merchant_terms(merchant: str | None, transaction_name: str | None) -> list[str]:
+def _merchant_terms(
+    merchant: str | None,
+    transaction_name: str | None,
+    *,
+    extra_excluded_tokens: frozenset[str] = frozenset(),
+) -> list[str]:
+    excluded_tokens = _GENERIC_MERCHANT_TOKENS | extra_excluded_tokens
     values = [merchant] if merchant else [transaction_name]
     terms: list[str] = []
     for value in values:
@@ -259,7 +275,7 @@ def _merchant_terms(merchant: str | None, transaction_name: str | None) -> list[
             terms.append(compact)
         for token in re.findall(r"[A-Za-z0-9]{3,}", value):
             lowered = token.lower()
-            if lowered not in _GENERIC_MERCHANT_TOKENS:
+            if lowered not in excluded_tokens:
                 terms.append(token)
     return _unique_nonempty(terms)
 

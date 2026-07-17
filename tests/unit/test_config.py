@@ -2,7 +2,7 @@ from pathlib import Path
 
 import yaml
 
-from personal_db.core.config import DEFAULT_ROOT, load_config
+from personal_db.core.config import DEFAULT_ROOT, Config, load_config
 
 
 def test_default_root_path():
@@ -24,3 +24,24 @@ def test_load_config_with_explicit_root(tmp_root):
 def test_load_config_missing_file_returns_defaults(tmp_path):
     cfg = load_config(tmp_path / "nope.yaml")
     assert cfg.root == Path("~/personal_db").expanduser()
+
+
+def test_user_name_tokens_defaults_empty_without_config_yaml(tmp_path):
+    cfg = Config(root=tmp_path)
+    assert cfg.user_name_tokens == ()
+
+
+def test_user_name_tokens_reads_config_yaml(tmp_path):
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "config.yaml").write_text(
+        yaml.safe_dump({"user": {"name_tokens": ["Yiheng", " Chen ", ""]}})
+    )
+    cfg = Config(root=tmp_path)
+    assert cfg.user_name_tokens == ("yiheng", "chen")
+
+
+def test_user_name_tokens_ignores_malformed_config_yaml(tmp_path):
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "config.yaml").write_text("not: [valid, yaml")
+    cfg = Config(root=tmp_path)
+    assert cfg.user_name_tokens == ()

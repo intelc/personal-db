@@ -88,6 +88,7 @@ def debug_transaction_receipt_v1(
             message_id,
             thread.raw_text,
             window_chars=snippet_window_chars,
+            extra_merchant_tokens=frozenset(cfg.user_name_tokens),
         )
         for message_id, thread in candidate_contexts
     ]

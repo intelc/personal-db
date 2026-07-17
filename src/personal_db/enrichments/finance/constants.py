@@ -21,6 +21,4 @@ _GENERIC_MERCHANT_TOKENS = {
     "service",
     "fee",
     "transaction",
-    "yiheng",
-    "chen",
 }

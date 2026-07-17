@@ -104,7 +104,14 @@ class OpenAIAgentsReceiptHarness:
                 "OPENAI_API_KEY is not set. Set it in the environment, "
                 "~/personal_db/.env, or PERSONAL_DB_OPENAI_ENV_PATH."
             )
-        from agents import Agent, RunConfig, Runner
+        try:
+            from agents import Agent, RunConfig, Runner
+        except ImportError as exc:
+            raise ImportError(
+                "the openai-agents package is required for the OpenAI-backed "
+                "receipt enrichment harness. Install it with: "
+                "pip install 'personal_db[finance]'"
+            ) from exc
 
         agent = Agent(
             name="Finance receipt enrichment",

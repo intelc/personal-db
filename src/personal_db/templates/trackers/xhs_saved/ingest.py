@@ -22,7 +22,15 @@ from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import requests
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+try:
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+except ImportError as exc:
+    raise ImportError(
+        "the cryptography package is required by the xhs_saved tracker (it "
+        "decrypts Chrome's cookie encryption key). Install it with: "
+        "pip install 'personal_db[xhs]'"
+    ) from exc
 
 from personal_db.tracker import Tracker
 

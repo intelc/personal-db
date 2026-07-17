@@ -10,19 +10,24 @@ dependencies = [
   "python-dotenv>=1.0",
   "questionary>=2.0",
   "requests>=2.31",
-  "keyring>=24.0",
-  "cryptography>=47.0",
   "mcp>=1.0",
   "rumps>=0.4.0; sys_platform == 'darwin'",
   "fastapi>=0.100",
   "uvicorn>=0.20",
   "jinja2>=3.0",
   "websockets>=12.0",
-  "openai-agents>=0.17.4",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.4", "pyright>=1.1", "import-linter>=2.0"]
+# Finance app's LLM agent harness (enrichments/agent.py). Core does not
+# depend on this; enrichments/agent.py raises a clear pip-install hint if
+# it's missing.
+finance = ["openai-agents>=0.17.4"]
+# xhs/xhs_saved trackers decrypt Chrome's local-state key to read cookies.
+# Core does not depend on this; the trackers' ingest.py raise a clear
+# pip-install hint at sync time if it's missing.
+xhs = ["cryptography>=47.0"]
 
 [project.scripts]
 personal-db = "personal_db.cli.main:app"

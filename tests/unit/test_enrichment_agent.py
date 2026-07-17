@@ -2,6 +2,8 @@ import os
 import sys
 import types
 
+import pytest
+
 from personal_db.enrichments.agent import (
     EnrichmentAgentRequest,
     OpenAIAgentsReceiptHarness,
@@ -110,3 +112,24 @@ def test_openai_agents_receipt_harness_uses_pydantic_output(monkeypatch):
     assert result.result["merchant"] == "Lyft"
     assert result.result["_usage"]["total_tokens"] == 15
     assert result.model == "gpt-test"
+
+
+def test_openai_agents_receipt_harness_raises_clear_error_when_extra_missing(monkeypatch):
+    """Simulates the `openai-agents` extra not being installed: `import agents`
+    should raise ImportError, and the harness should re-raise with a clear
+    `pip install 'personal_db[finance]'` hint rather than a bare ModuleNotFoundError."""
+    # sys.modules[name] = None is the documented sentinel that forces the
+    # import system to raise ImportError for that module name.
+    monkeypatch.setitem(sys.modules, "agents", None)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    request = EnrichmentAgentRequest(
+        enrichment_name="finance.transaction_receipt_v1",
+        prompt_version="finance-receipt-v1",
+        input={"transaction": {"finance_transaction_id": "txn-1"}, "task": "match receipt"},
+        context=[],
+    )
+    harness = OpenAIAgentsReceiptHarness(model="gpt-test", max_turns=1)
+
+    with pytest.raises(ImportError, match=r"pip install 'personal_db\[finance\]'"):
+        harness.run(request)
