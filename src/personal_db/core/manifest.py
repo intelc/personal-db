@@ -1,6 +1,6 @@
 import warnings
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -25,6 +25,36 @@ class SchemaSpec(BaseModel):
 class ScheduleSpec(BaseModel):
     every: str | None = None
     cron: str | None = None
+
+
+class BackgroundJobSpec(BaseModel):
+    """A periodic job a tracker or app declares for the daemon to schedule.
+
+    ``entrypoint`` is ``"<module_file>:<function>"``, resolved relative to the
+    installed extension directory (``<root>/trackers/<name>/`` or
+    ``<root>/apps/<name>/``) via ``core.entrypoints.load_entrypoint``. The
+    function receives a single ``cfg: Config`` argument and may return any
+    JSON-serializable value (or ``None``); its return value is logged by the
+    daemon but otherwise unused.
+    """
+
+    name: str
+    every: str
+    entrypoint: str
+
+
+class McpToolSpec(BaseModel):
+    """An MCP tool a tracker/app/source declares for the MCP server to expose.
+
+    ``entrypoint`` is ``"<module_file>:<function>"``, resolved the same way as
+    ``BackgroundJobSpec.entrypoint``. The function receives ``(cfg: Config,
+    arguments: dict)`` and must return a JSON-serializable value.
+    """
+
+    name: str
+    description: str
+    entrypoint: str
+    input_schema: dict[str, Any] = Field(default_factory=dict)
 
 
 PermissionType = Literal["none", "api_key", "oauth", "full_disk_access", "manual"]
@@ -146,6 +176,11 @@ class Manifest(BaseModel):
     # earliest available date after each sync so derived trackers can flag days
     # before that horizon as "no_data" rather than misleadingly attributing them.
     local_only: bool = False
+    # Declared background jobs the daemon discovers and schedules at `every`
+    # cadence, and declared MCP tools the MCP server discovers and dispatches.
+    # See BackgroundJobSpec/McpToolSpec docstrings for the entrypoint contract.
+    background_jobs: list[BackgroundJobSpec] = Field(default_factory=list)
+    mcp_tools: list[McpToolSpec] = Field(default_factory=list)
 
 
 def load_manifest(path: Path) -> Manifest:

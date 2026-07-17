@@ -8,16 +8,63 @@ from mcp.server.stdio import stdio_server
 from mcp.types import GetPromptResult, Prompt, PromptMessage, TextContent, Tool
 
 from personal_db.core.config import Config
+from personal_db.core.entrypoints import load_entrypoint
+from personal_db.core.mcp_registry import DeclaredMcpTool, discover_mcp_tools
 from personal_db.services.mcp_server import prompts as P
 from personal_db.services.mcp_server import tools as T
+
+_CORE_TOOL_NAMES = frozenset(
+    {
+        "list_trackers",
+        "describe_tracker",
+        "query",
+        "get_series",
+        "list_entities",
+        "log_event",
+        "list_notes",
+        "read_note",
+        "list_remote_sources",
+        "email_search_receipts",
+        "email_read_thread",
+        "enrichment_jobs_list",
+        "enrichment_job_show",
+        "enrichment_job_retry",
+        "enrichment_job_cancel",
+        "enrichment_queue_summary",
+        "read_tracker_file",
+        "write_tracker_file",
+        "sync",
+        "sync_due",
+        "backfill",
+        "validate_tracker",
+    }
+)
+
+
+def _declared_tool(spec_map: dict[str, DeclaredMcpTool], name: str) -> DeclaredMcpTool | None:
+    return spec_map.get(name)
+
+
+async def _dispatch_declared_tool(cfg: Config, entry: DeclaredMcpTool, arguments: dict) -> object:
+    func = load_entrypoint(
+        entry.base_dir,
+        entry.spec.entrypoint,
+        modname_prefix=f"pdb_mcp_{entry.extension_kind}_{entry.extension_name}",
+    )
+    return await asyncio.to_thread(func, cfg, arguments or {})
 
 
 def build_server(cfg: Config) -> Server:
     server = Server("personal_db")
 
+    def _declared_tools() -> dict[str, DeclaredMcpTool]:
+        # Re-discovered per call so newly-declared tools (a freshly installed
+        # tracker/app/source) show up without restarting the MCP server.
+        return {entry.spec.name: entry for entry in discover_mcp_tools(cfg)}
+
     @server.list_tools()
     async def _list() -> list[Tool]:
-        return [
+        static_tools = [
             Tool(
                 name="list_trackers",
                 description="List installed trackers + descriptions",
@@ -121,81 +168,13 @@ def build_server(cfg: Config) -> Server:
                 inputSchema={"type": "object", "properties": {}},
             ),
             Tool(
-                name="spark_email_accounts",
-                description="List Spark email accounts visible to Spark Desktop.",
-                inputSchema={"type": "object", "properties": {}},
-            ),
-            Tool(
-                name="spark_email_folders",
-                description="List Spark email folders and message counts.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "scope": {
-                            "type": "string",
-                            "description": "Optional account/team/folder scope",
-                        }
-                    },
-                },
-            ),
-            Tool(
-                name="spark_email_list",
-                description=(
-                    "List Spark emails with optional folders and Gmail-style filters. "
-                    "Returns parsed page metadata plus raw Spark output."
-                ),
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "folders": {"type": "array", "items": {"type": "string"}},
-                        "filter": {"type": "string"},
-                        "page": {"type": "integer"},
-                        "page_size": {"type": "integer"},
-                        "order": {"type": "string"},
-                        "new_senders": {"type": "boolean"},
-                    },
-                },
-            ),
-            Tool(
-                name="spark_email_search",
-                description=(
-                    "Search Spark emails by topic. Returns Spark's raw result text plus "
-                    "any parseable message IDs/page metadata."
-                ),
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "about": {"type": "string"},
-                        "filter": {"type": "string"},
-                        "in": {
-                            "type": "string",
-                            "description": "Optional account/team/folder scope",
-                        },
-                    },
-                    "required": ["about"],
-                },
-            ),
-            Tool(
-                name="spark_email_thread",
-                description=(
-                    "Read a full Spark email thread by Spark message ID. Returns raw "
-                    "thread text for context-provider/enrichment use."
-                ),
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "message_id": {"type": "string"},
-                        "download_attachments": {"type": "boolean"},
-                    },
-                    "required": ["message_id"],
-                },
-            ),
-            Tool(
                 name="email_search_receipts",
                 description=(
                     "Context-provider operation: find receipt-like email candidates "
-                    "for a transaction using installed email sources. Returns evidence "
-                    "refs such as spark_email:message:<id> plus raw source output."
+                    "for a transaction using the configured email context provider. "
+                    "Returns evidence refs such as spark_email:message:<id> plus raw "
+                    "source output. Fails with a clear error if no email context "
+                    "provider is configured."
                 ),
                 inputSchema={
                     "type": "object",
@@ -221,7 +200,8 @@ def build_server(cfg: Config) -> Server:
                 name="email_read_thread",
                 description=(
                     "Context-provider operation: read an email thread by evidence "
-                    "message ID, returning raw thread text and evidence refs."
+                    "message ID, returning raw thread text and evidence refs. Fails "
+                    "with a clear error if no email context provider is configured."
                 ),
                 inputSchema={
                     "type": "object",
@@ -230,114 +210,6 @@ def build_server(cfg: Config) -> Server:
                         "download_attachments": {"type": "boolean"},
                     },
                     "required": ["message_id"],
-                },
-            ),
-            Tool(
-                name="finance_enrich_receipt_stub",
-                description=(
-                    "Run the stub finance receipt enrichment for one transaction. "
-                    "It gathers receipt email context and records enrichment run/latest/"
-                    "evidence rows, but does not call an LLM yet."
-                ),
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "finance_transaction_id": {"type": "string"},
-                        "window_days": {
-                            "type": "integer",
-                            "description": "Days before/after transaction date to search",
-                        },
-                        "scope": {
-                            "type": "string",
-                            "description": "Optional email source/account/folder scope",
-                        },
-                    },
-                    "required": ["finance_transaction_id"],
-                },
-            ),
-            Tool(
-                name="finance_enrich_receipt_v1",
-                description=(
-                    "Run the agent-shaped finance receipt enrichment for one transaction. "
-                    "This reads bounded receipt email threads and records structured "
-                    "agent output/evidence. It uses the configured harness; by default "
-                    "that harness is a deterministic stub."
-                ),
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "finance_transaction_id": {"type": "string"},
-                        "window_days": {"type": "integer"},
-                        "scope": {"type": "string"},
-                        "max_threads": {"type": "integer"},
-                        "max_candidate_threads": {"type": "integer"},
-                    },
-                    "required": ["finance_transaction_id"],
-                },
-            ),
-            Tool(
-                name="finance_enqueue_receipt_jobs",
-                description=(
-                    "Queue receipt enrichment jobs for finance transactions missing "
-                    "latest receipt-enrichment results."
-                ),
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "limit": {"type": "integer"},
-                        "window_days": {"type": "integer"},
-                        "scope": {"type": "string"},
-                        "force": {"type": "boolean"},
-                    },
-                },
-            ),
-            Tool(
-                name="finance_enqueue_receipt_v1_jobs",
-                description=(
-                    "Queue v1 agent-shaped receipt enrichment jobs for finance "
-                    "transactions missing latest v1 results."
-                ),
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "limit": {"type": "integer"},
-                        "start_date": {"type": "string"},
-                        "end_date": {"type": "string"},
-                        "window_days": {"type": "integer"},
-                        "scope": {"type": "string"},
-                        "max_threads": {"type": "integer"},
-                        "max_candidate_threads": {"type": "integer"},
-                        "snippet_window_chars": {"type": "integer"},
-                        "only_ready": {"type": "boolean"},
-                        "force": {"type": "boolean"},
-                    },
-                },
-            ),
-            Tool(
-                name="finance_run_due_receipt_jobs",
-                description=(
-                    "Run due queued finance receipt enrichment jobs synchronously. "
-                    "This gathers context and records runs/evidence, but still does "
-                    "not call an LLM."
-                ),
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "limit": {"type": "integer"},
-                    },
-                },
-            ),
-            Tool(
-                name="finance_run_due_receipt_v1_jobs",
-                description=(
-                    "Run due queued v1 finance receipt enrichment jobs synchronously. "
-                    "By default this uses the deterministic stub harness, not a real LLM."
-                ),
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "limit": {"type": "integer"},
-                    },
                 },
             ),
             Tool(
@@ -391,18 +263,6 @@ def build_server(cfg: Config) -> Server:
                 },
             ),
             Tool(
-                name="finance_receipt_latest",
-                description="Get the latest receipt enrichment result for one finance transaction.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "finance_transaction_id": {"type": "string"},
-                        "v1": {"type": "boolean"},
-                    },
-                    "required": ["finance_transaction_id"],
-                },
-            ),
-            Tool(
                 name="enrichment_queue_summary",
                 description=(
                     "Summarize enrichment queue health: counts by enrichment/status, "
@@ -438,33 +298,6 @@ def build_server(cfg: Config) -> Server:
                         "content": {"type": "string"},
                     },
                     "required": ["path", "content"],
-                },
-            ),
-            Tool(
-                name="log_life_context",
-                description=(
-                    "Log a life_context diary entry — a structured 'state' tag "
-                    "(sick, traveling, well, etc.) and/or free-text note for one "
-                    "day or a range. Range entries fan out to one row per day. "
-                    "At least one of state or note is required. Use this to "
-                    "annotate days that need explanation when other trackers "
-                    "look weird (sick stretch, vacation, system reinstall)."
-                ),
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "start_date": {"type": "string", "description": "YYYY-MM-DD"},
-                        "end_date": {
-                            "type": "string",
-                            "description": "YYYY-MM-DD; omit for single-day entry",
-                        },
-                        "state": {
-                            "type": "string",
-                            "description": "categorical tag (sick/traveling/well/etc.)",
-                        },
-                        "note": {"type": "string", "description": "free-text annotation"},
-                    },
-                    "required": ["start_date"],
                 },
             ),
             Tool(
@@ -524,9 +357,20 @@ def build_server(cfg: Config) -> Server:
                 },
             ),
         ]
+        declared_tools = [
+            Tool(
+                name=entry.spec.name,
+                description=entry.spec.description,
+                inputSchema=entry.spec.input_schema or {"type": "object", "properties": {}},
+            )
+            for entry in discover_mcp_tools(cfg)
+            if entry.spec.name not in _CORE_TOOL_NAMES
+        ]
+        return static_tools + declared_tools
 
     @server.call_tool()
     async def _call(name: str, arguments: dict) -> list[TextContent]:
+        arguments = arguments or {}
         if name == "list_trackers":
             result = T.list_trackers(cfg)
         elif name == "describe_tracker":
@@ -552,36 +396,6 @@ def build_server(cfg: Config) -> Server:
             result = T.read_note_tool(cfg, arguments["path"])
         elif name == "list_remote_sources":
             result = T.list_remote_sources(cfg)
-        elif name == "spark_email_accounts":
-            result = await asyncio.to_thread(T.spark_email_accounts, cfg)
-        elif name == "spark_email_folders":
-            result = await asyncio.to_thread(T.spark_email_folders, cfg, arguments.get("scope"))
-        elif name == "spark_email_list":
-            result = await asyncio.to_thread(
-                T.spark_email_list,
-                cfg,
-                arguments.get("folders"),
-                arguments.get("filter"),
-                arguments.get("page", 1),
-                arguments.get("page_size", 50),
-                arguments.get("order"),
-                arguments.get("new_senders", False),
-            )
-        elif name == "spark_email_search":
-            result = await asyncio.to_thread(
-                T.spark_email_search,
-                cfg,
-                arguments["about"],
-                arguments.get("filter"),
-                arguments.get("in"),
-            )
-        elif name == "spark_email_thread":
-            result = await asyncio.to_thread(
-                T.spark_email_thread,
-                cfg,
-                arguments["message_id"],
-                arguments.get("download_attachments", False),
-            )
         elif name == "email_search_receipts":
             result = await asyncio.to_thread(
                 T.email_search_receipts,
@@ -598,60 +412,6 @@ def build_server(cfg: Config) -> Server:
                 cfg,
                 arguments["message_id"],
                 arguments.get("download_attachments", False),
-            )
-        elif name == "finance_enrich_receipt_stub":
-            result = await asyncio.to_thread(
-                T.finance_enrich_receipt_stub,
-                cfg,
-                arguments["finance_transaction_id"],
-                arguments.get("window_days", 7),
-                arguments.get("scope"),
-            )
-        elif name == "finance_enrich_receipt_v1":
-            result = await asyncio.to_thread(
-                T.finance_enrich_receipt_v1,
-                cfg,
-                arguments["finance_transaction_id"],
-                arguments.get("window_days", 7),
-                arguments.get("scope"),
-                arguments.get("max_threads", 3),
-                arguments.get("max_candidate_threads", 20),
-            )
-        elif name == "finance_enqueue_receipt_jobs":
-            result = await asyncio.to_thread(
-                T.finance_enqueue_receipt_jobs,
-                cfg,
-                arguments.get("limit", 50),
-                arguments.get("window_days", 7),
-                arguments.get("scope"),
-                arguments.get("force", False),
-            )
-        elif name == "finance_enqueue_receipt_v1_jobs":
-            result = await asyncio.to_thread(
-                T.finance_enqueue_receipt_v1_jobs,
-                cfg,
-                arguments.get("limit", 50),
-                arguments.get("window_days", 7),
-                arguments.get("scope"),
-                arguments.get("max_threads", 3),
-                arguments.get("max_candidate_threads", 20),
-                arguments.get("force", False),
-                arguments.get("start_date"),
-                arguments.get("end_date"),
-                arguments.get("snippet_window_chars", 300),
-                arguments.get("only_ready", False),
-            )
-        elif name == "finance_run_due_receipt_jobs":
-            result = await asyncio.to_thread(
-                T.finance_run_due_receipt_jobs,
-                cfg,
-                arguments.get("limit", 5),
-            )
-        elif name == "finance_run_due_receipt_v1_jobs":
-            result = await asyncio.to_thread(
-                T.finance_run_due_receipt_v1_jobs,
-                cfg,
-                arguments.get("limit", 5),
             )
         elif name == "enrichment_jobs_list":
             result = await asyncio.to_thread(
@@ -683,13 +443,6 @@ def build_server(cfg: Config) -> Server:
                 arguments["job_id"],
                 arguments.get("reason"),
             )
-        elif name == "finance_receipt_latest":
-            result = await asyncio.to_thread(
-                T.finance_receipt_latest,
-                cfg,
-                arguments["finance_transaction_id"],
-                arguments.get("v1", False),
-            )
         elif name == "enrichment_queue_summary":
             result = await asyncio.to_thread(T.enrichment_queue_summary, cfg)
         elif name == "read_tracker_file":
@@ -710,16 +463,11 @@ def build_server(cfg: Config) -> Server:
                 arguments.get("from"),
                 arguments.get("to"),
             )
-        elif name == "log_life_context":
-            result = T.log_life_context(
-                cfg,
-                start_date=arguments["start_date"],
-                end_date=arguments.get("end_date"),
-                state=arguments.get("state"),
-                note=arguments.get("note"),
-            )
         else:
-            raise ValueError(f"unknown tool {name}")
+            entry = _declared_tool(_declared_tools(), name)
+            if entry is None:
+                raise ValueError(f"unknown tool {name}")
+            result = await _dispatch_declared_tool(cfg, entry, arguments)
         return [TextContent(type="text", text=json.dumps(result, default=str))]
 
     @server.list_prompts()

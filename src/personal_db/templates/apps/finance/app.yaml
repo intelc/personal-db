@@ -63,3 +63,128 @@ pages:
   - slug: settings
     title: Settings
     view: render_settings
+
+background_jobs:
+  - name: enqueue_receipt_v1_jobs
+    every: 1h
+    entrypoint: "jobs:enqueue_receipt_v1_jobs"
+  - name: run_due_receipt_v1_jobs
+    every: 10m
+    entrypoint: "jobs:run_due_receipt_v1_jobs"
+
+mcp_tools:
+  - name: finance_enrich_receipt_stub
+    description: >-
+      Run the stub finance receipt enrichment for one transaction. It
+      gathers receipt email context and records enrichment run/latest/
+      evidence rows, but does not call an LLM yet.
+    entrypoint: "tools:finance_enrich_receipt_stub"
+    input_schema:
+      type: object
+      properties:
+        finance_transaction_id:
+          type: string
+        window_days:
+          type: integer
+          description: Days before/after transaction date to search
+        scope:
+          type: string
+          description: Optional email source/account/folder scope
+      required: [finance_transaction_id]
+  - name: finance_enrich_receipt_v1
+    description: >-
+      Run the agent-shaped finance receipt enrichment for one transaction.
+      This reads bounded receipt email threads and records structured agent
+      output/evidence. It uses the configured harness; by default that
+      harness is a deterministic stub.
+    entrypoint: "tools:finance_enrich_receipt_v1"
+    input_schema:
+      type: object
+      properties:
+        finance_transaction_id:
+          type: string
+        window_days:
+          type: integer
+        scope:
+          type: string
+        max_threads:
+          type: integer
+        max_candidate_threads:
+          type: integer
+      required: [finance_transaction_id]
+  - name: finance_enqueue_receipt_jobs
+    description: >-
+      Queue receipt enrichment jobs for finance transactions missing latest
+      receipt-enrichment results.
+    entrypoint: "tools:finance_enqueue_receipt_jobs"
+    input_schema:
+      type: object
+      properties:
+        limit:
+          type: integer
+        window_days:
+          type: integer
+        scope:
+          type: string
+        force:
+          type: boolean
+  - name: finance_enqueue_receipt_v1_jobs
+    description: >-
+      Queue v1 agent-shaped receipt enrichment jobs for finance transactions
+      missing latest v1 results.
+    entrypoint: "tools:finance_enqueue_receipt_v1_jobs"
+    input_schema:
+      type: object
+      properties:
+        limit:
+          type: integer
+        start_date:
+          type: string
+        end_date:
+          type: string
+        window_days:
+          type: integer
+        scope:
+          type: string
+        max_threads:
+          type: integer
+        max_candidate_threads:
+          type: integer
+        snippet_window_chars:
+          type: integer
+        only_ready:
+          type: boolean
+        force:
+          type: boolean
+  - name: finance_run_due_receipt_jobs
+    description: >-
+      Run due queued finance receipt enrichment jobs synchronously. This
+      gathers context and records runs/evidence, but still does not call an
+      LLM.
+    entrypoint: "tools:finance_run_due_receipt_jobs"
+    input_schema:
+      type: object
+      properties:
+        limit:
+          type: integer
+  - name: finance_run_due_receipt_v1_jobs
+    description: >-
+      Run due queued v1 finance receipt enrichment jobs synchronously. By
+      default this uses the deterministic stub harness, not a real LLM.
+    entrypoint: "tools:finance_run_due_receipt_v1_jobs"
+    input_schema:
+      type: object
+      properties:
+        limit:
+          type: integer
+  - name: finance_receipt_latest
+    description: Get the latest receipt enrichment result for one finance transaction.
+    entrypoint: "tools:finance_receipt_latest"
+    input_schema:
+      type: object
+      properties:
+        finance_transaction_id:
+          type: string
+        v1:
+          type: boolean
+      required: [finance_transaction_id]

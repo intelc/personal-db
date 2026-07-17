@@ -8,11 +8,13 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from pydantic import ValidationError
 
 from personal_db.core.config import Config
+from personal_db.core.manifest import McpToolSpec
 
 _SOURCE_NAME_RE = re.compile(r"^[a-z0-9_]+$")
-_SOURCE_TEMPLATE_FILES = ("source.yaml", "instructions.md")
+_SOURCE_TEMPLATE_FILES = ("source.yaml", "instructions.md", "tools.py")
 
 
 class SourceManifestError(ValueError):
@@ -29,6 +31,7 @@ class SourceManifest:
     capabilities: tuple[str, ...] = ()
     config: dict[str, Any] = field(default_factory=dict)
     setup_steps: tuple[dict[str, Any], ...] = ()
+    mcp_tools: tuple[McpToolSpec, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -81,6 +84,17 @@ def load_source_manifest(path: Path) -> SourceManifest:
     if command is not None and not isinstance(command, str):
         raise SourceManifestError("command must be a string")
 
+    mcp_tools_raw = raw.get("mcp_tools")
+    if mcp_tools_raw is None:
+        mcp_tools: tuple[McpToolSpec, ...] = ()
+    else:
+        if not isinstance(mcp_tools_raw, list):
+            raise SourceManifestError("mcp_tools must be a list")
+        try:
+            mcp_tools = tuple(McpToolSpec.model_validate(item) for item in mcp_tools_raw)
+        except ValidationError as exc:
+            raise SourceManifestError(f"invalid mcp_tools: {exc}") from exc
+
     return SourceManifest(
         name=name,
         description=str(raw.get("description") or ""),
@@ -90,6 +104,7 @@ def load_source_manifest(path: Path) -> SourceManifest:
         capabilities=_strings(raw.get("capabilities"), field_name="capabilities"),
         config=config,
         setup_steps=tuple(setup_steps),
+        mcp_tools=mcp_tools,
     )
 
 

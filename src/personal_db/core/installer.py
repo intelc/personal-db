@@ -17,6 +17,7 @@ _TRACKER_FILES = (
     "actions.py",     # optional — user-initiated handlers (daemon endpoint added in upcoming work)
     "parsers.py",     # optional — tracker-specific helper module
     "intervals.py",   # optional — tracker-specific helper module
+    "tools.py",       # optional — declared mcp_tools entrypoints
 )
 
 

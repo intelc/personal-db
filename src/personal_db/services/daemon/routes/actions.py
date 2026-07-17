@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import inspect
-import sys
 from collections.abc import Callable
 from typing import Any
 
@@ -21,6 +19,7 @@ from personal_db.core.apps import (
     load_app_module,
 )
 from personal_db.core.config import Config
+from personal_db.core.entrypoints import load_module_from_file
 
 
 def register_action_routes(
@@ -45,17 +44,9 @@ def register_action_routes(
         if not actions_path.exists():
             raise HTTPException(status_code=404, detail=f"tracker '{name}' has no actions.py")
 
-        spec_name = f"_pdb_actions_{name}"
-        sys.modules.pop(spec_name, None)
-        spec = importlib.util.spec_from_file_location(spec_name, actions_path)
-        if spec is None or spec.loader is None:
-            raise HTTPException(status_code=500, detail="failed to load actions module")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[spec_name] = module  # register before exec so relative imports resolve
         try:
-            spec.loader.exec_module(module)  # type: ignore[union-attr]
+            module = load_module_from_file(actions_path, f"_pdb_actions_{name}")
         except Exception as exc:
-            sys.modules.pop(spec_name, None)
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
         handler = getattr(module, action, None)
@@ -168,17 +159,9 @@ def register_action_routes(
         if not actions_path.exists():
             raise HTTPException(status_code=404, detail=f"app '{name}' has no actions.py")
 
-        spec_name = f"_pdb_app_actions_{name}"
-        sys.modules.pop(spec_name, None)
-        spec = importlib.util.spec_from_file_location(spec_name, actions_path)
-        if spec is None or spec.loader is None:
-            raise HTTPException(status_code=500, detail="failed to load actions module")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[spec_name] = module
         try:
-            spec.loader.exec_module(module)  # type: ignore[union-attr]
+            module = load_module_from_file(actions_path, f"_pdb_app_actions_{name}")
         except Exception as exc:
-            sys.modules.pop(spec_name, None)
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
         handler = getattr(module, action, None)

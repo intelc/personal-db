@@ -5,6 +5,78 @@ import sys
 import yaml
 
 
+def test_mcp_server_exposes_and_dispatches_declared_tracker_tool(tmp_path):
+    """Registry smoke test: a tracker's declared `mcp_tools` entry (life_context's
+    log_life_context) shows up in tools/list and dispatches correctly through
+    tools/call — proving the MCP server's extension-tool registry works
+    end to end, not just the always-present core tools."""
+    root = tmp_path / "personal_db"
+    subprocess.run(
+        [sys.executable, "-m", "personal_db.cli.main", "--root", str(root), "init"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [
+            sys.executable, "-m", "personal_db.cli.main", "--root", str(root),
+            "tracker", "install", "life_context",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "personal_db.cli.main", "--root", str(root), "mcp"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        init_req = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "test", "version": "0"},
+            },
+        }
+        proc.stdin.write((json.dumps(init_req) + "\n").encode())
+        proc.stdin.flush()
+        proc.stdout.readline()  # init response
+        proc.stdin.write(
+            (json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n").encode()
+        )
+        proc.stdin.flush()
+
+        proc.stdin.write(
+            (json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}) + "\n").encode()
+        )
+        proc.stdin.flush()
+        resp = json.loads(proc.stdout.readline())
+        tool_names = [t["name"] for t in resp["result"]["tools"]]
+        assert "log_life_context" in tool_names
+
+        call_req = {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "log_life_context",
+                "arguments": {"start_date": "2026-04-13", "state": "sick", "note": "flu"},
+            },
+        }
+        proc.stdin.write((json.dumps(call_req) + "\n").encode())
+        proc.stdin.flush()
+        resp = json.loads(proc.stdout.readline())
+        text = resp["result"]["content"][0]["text"]
+        data = json.loads(text)
+        assert data == {"inserted": 1, "dates": ["2026-04-13"]}
+    finally:
+        proc.terminate()
+        proc.wait(timeout=3)
+
+
 def test_mcp_server_handles_list_trackers(tmp_path):
     root = tmp_path / "personal_db"
     subprocess.run(

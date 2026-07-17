@@ -11,35 +11,20 @@ import yaml
 
 from personal_db.core.config import Config
 from personal_db.context_providers.email import SparkEmailContextProvider
-from personal_db.core.db import connection, transaction
+from personal_db.core.db import connection
 from personal_db.core.enrichment_queue import (
     cancel_enrichment_job,
     get_enrichment_job_detail,
-    get_latest_enrichment,
     list_enrichment_jobs,
     retry_enrichment_job,
 )
 from personal_db.core.enrichment_queue import (
     enrichment_queue_summary as get_enrichment_queue_summary,
 )
-from personal_db.enrichments.finance import (
-    RECEIPT_ENRICHMENT,
-    RECEIPT_V1_ENRICHMENT,
-    enqueue_missing_receipt_enrichments,
-    enqueue_missing_receipt_v1_enrichments,
-    enrich_transaction_receipt_stub,
-    enrich_transaction_receipt_v1,
-    run_due_finance_receipt_jobs,
-    run_due_finance_receipt_v1_jobs,
-)
 from personal_db.core.log_event import log_event
 from personal_db.core.manifest import load_manifest
 from personal_db.core.notes import list_notes, read_note
-from personal_db.remote_sources.spark import (
-    SparkCommandError,
-    SparkEmailSource,
-    SparkSourceConfigError,
-)
+from personal_db.remote_sources.spark import SparkCommandError, SparkSourceConfigError
 from personal_db.core.sources import discover_sources
 
 # Cap file writes to keep the tool from being a foot-gun. Real tracker files
@@ -176,79 +161,6 @@ def list_remote_sources(cfg: Config) -> list[dict[str, Any]]:
     ]
 
 
-def _spark_call(fn) -> dict[str, Any]:
-    try:
-        return {"ok": True, **fn().as_dict()}
-    except SparkCommandError as e:
-        return {
-            "ok": False,
-            "source": "spark_email",
-            "error": str(e),
-            "returncode": e.returncode,
-        }
-    except SparkSourceConfigError as e:
-        return {"ok": False, "source": "spark_email", "error": str(e)}
-    except Exception as e:
-        return {"ok": False, "source": "spark_email", "error": str(e)}
-
-
-def spark_email_accounts(cfg: Config) -> dict[str, Any]:
-    return _spark_call(lambda: SparkEmailSource.from_config(cfg, require_installed=True).accounts())
-
-
-def spark_email_folders(cfg: Config, scope: str | None = None) -> dict[str, Any]:
-    return _spark_call(lambda: SparkEmailSource.from_config(cfg, require_installed=True).folders(scope))
-
-
-def spark_email_list(
-    cfg: Config,
-    folders: list[str] | None = None,
-    filter_: str | None = None,
-    page: int = 1,
-    page_size: int = 50,
-    order: str | None = None,
-    new_senders: bool = False,
-) -> dict[str, Any]:
-    return _spark_call(
-        lambda: SparkEmailSource.from_config(cfg, require_installed=True).emails(
-            folders=folders,
-            filter_=filter_,
-            page=page,
-            page_size=page_size,
-            order=order,
-            new_senders=new_senders,
-        )
-    )
-
-
-def spark_email_search(
-    cfg: Config,
-    about: str,
-    filter_: str | None = None,
-    in_: str | None = None,
-) -> dict[str, Any]:
-    return _spark_call(
-        lambda: SparkEmailSource.from_config(cfg, require_installed=True).search(
-            about,
-            filter_=filter_,
-            in_=in_,
-        )
-    )
-
-
-def spark_email_thread(
-    cfg: Config,
-    message_id: str,
-    download_attachments: bool = False,
-) -> dict[str, Any]:
-    return _spark_call(
-        lambda: SparkEmailSource.from_config(cfg, require_installed=True).thread(
-            message_id,
-            download_attachments=download_attachments,
-        )
-    )
-
-
 def _context_call(fn) -> dict[str, Any]:
     try:
         return {"ok": True, **fn().as_dict()}
@@ -296,140 +208,6 @@ def email_read_thread(
             download_attachments=download_attachments,
         )
     )
-
-
-def finance_enrich_receipt_stub(
-    cfg: Config,
-    finance_transaction_id: str,
-    window_days: int = 7,
-    scope: str | None = None,
-) -> dict[str, Any]:
-    try:
-        return {"ok": True, **enrich_transaction_receipt_stub(
-            cfg,
-            finance_transaction_id,
-            window_days=window_days,
-            scope=scope,
-        )}
-    except Exception as e:
-        return {
-            "ok": False,
-            "enrichment_name": "finance.transaction_receipt_stub",
-            "input_id": finance_transaction_id,
-            "error": str(e),
-        }
-
-
-def finance_enrich_receipt_v1(
-    cfg: Config,
-    finance_transaction_id: str,
-    window_days: int = 7,
-    scope: str | None = None,
-    max_threads: int = 3,
-    max_candidate_threads: int = 20,
-) -> dict[str, Any]:
-    try:
-        return {"ok": True, **enrich_transaction_receipt_v1(
-            cfg,
-            finance_transaction_id,
-            window_days=window_days,
-            scope=scope,
-            max_threads=max_threads,
-            max_candidate_threads=max_candidate_threads,
-        )}
-    except Exception as e:
-        return {
-            "ok": False,
-            "enrichment_name": RECEIPT_V1_ENRICHMENT,
-            "input_id": finance_transaction_id,
-            "error": str(e),
-        }
-
-
-def finance_enqueue_receipt_jobs(
-    cfg: Config,
-    limit: int = 50,
-    window_days: int = 7,
-    scope: str | None = None,
-    force: bool = False,
-) -> dict[str, Any]:
-    try:
-        return {
-            "ok": True,
-            **enqueue_missing_receipt_enrichments(
-                cfg,
-                limit=limit,
-                window_days=window_days,
-                scope=scope,
-                force=force,
-            ),
-        }
-    except Exception as e:
-        return {
-            "ok": False,
-            "enrichment_name": "finance.transaction_receipt_stub",
-            "error": str(e),
-        }
-
-
-def finance_enqueue_receipt_v1_jobs(
-    cfg: Config,
-    limit: int = 50,
-    window_days: int = 7,
-    scope: str | None = None,
-    max_threads: int = 3,
-    max_candidate_threads: int = 20,
-    force: bool = False,
-    start_date: str | None = None,
-    end_date: str | None = None,
-    snippet_window_chars: int = 300,
-    only_ready: bool = False,
-) -> dict[str, Any]:
-    try:
-        return {
-            "ok": True,
-            **enqueue_missing_receipt_v1_enrichments(
-                cfg,
-                limit=limit,
-                start_date=start_date,
-                end_date=end_date,
-                window_days=window_days,
-                scope=scope,
-                max_threads=max_threads,
-                max_candidate_threads=max_candidate_threads,
-                snippet_window_chars=snippet_window_chars,
-                only_ready=only_ready,
-                force=force,
-            ),
-        }
-    except Exception as e:
-        return {
-            "ok": False,
-            "enrichment_name": RECEIPT_V1_ENRICHMENT,
-            "error": str(e),
-        }
-
-
-def finance_run_due_receipt_jobs(cfg: Config, limit: int = 5) -> dict[str, Any]:
-    try:
-        return {"ok": True, **run_due_finance_receipt_jobs(cfg, limit=limit)}
-    except Exception as e:
-        return {
-            "ok": False,
-            "enrichment_name": "finance.transaction_receipt_stub",
-            "error": str(e),
-        }
-
-
-def finance_run_due_receipt_v1_jobs(cfg: Config, limit: int = 5) -> dict[str, Any]:
-    try:
-        return {"ok": True, **run_due_finance_receipt_v1_jobs(cfg, limit=limit)}
-    except Exception as e:
-        return {
-            "ok": False,
-            "enrichment_name": RECEIPT_V1_ENRICHMENT,
-            "error": str(e),
-        }
 
 
 def enrichment_jobs_list(
@@ -489,86 +267,11 @@ def enrichment_job_cancel(
         return {"ok": False, "job_id": job_id, "error": str(e)}
 
 
-def finance_receipt_latest(
-    cfg: Config,
-    finance_transaction_id: str,
-    v1: bool = False,
-) -> dict[str, Any]:
-    enrichment_name = RECEIPT_V1_ENRICHMENT if v1 else RECEIPT_ENRICHMENT
-    try:
-        return {
-            "ok": True,
-            "latest": get_latest_enrichment(
-                cfg,
-                enrichment_name,
-                "finance_transactions",
-                finance_transaction_id,
-            ),
-        }
-    except Exception as e:
-        return {
-            "ok": False,
-            "enrichment_name": enrichment_name,
-            "input_id": finance_transaction_id,
-            "error": str(e),
-        }
-
-
 def enrichment_queue_summary(cfg: Config) -> dict[str, Any]:
     try:
         return {"ok": True, **get_enrichment_queue_summary(cfg)}
     except Exception as e:
         return {"ok": False, "error": str(e)}
-
-
-def log_life_context(
-    cfg: Config,
-    start_date: str,
-    end_date: str | None = None,
-    state: str | None = None,
-    note: str | None = None,
-) -> dict[str, Any]:
-    """Insert one or more rows into the life_context tracker.
-
-    For ranges (end_date set and >= start_date), fans out one row per day with
-    the same state/note. At least one of state/note must be provided.
-
-    Returns: {"inserted": N, "dates": [...]}.
-    """
-    from datetime import date as date_t
-    from datetime import datetime
-
-    if not state and not note:
-        raise ValueError("at least one of `state` or `note` is required")
-    try:
-        start = date_t.fromisoformat(start_date)
-    except ValueError as e:
-        raise ValueError(f"start_date must be YYYY-MM-DD: {e}") from e
-    if end_date:
-        try:
-            end = date_t.fromisoformat(end_date)
-        except ValueError as e:
-            raise ValueError(f"end_date must be YYYY-MM-DD: {e}") from e
-        if end < start:
-            raise ValueError(f"end_date {end_date} is before start_date {start_date}")
-    else:
-        end = start
-
-    logged_at = datetime.now().astimezone().isoformat()
-    with transaction(cfg.db_path) as con:
-        cur = con.cursor()
-        dates: list[str] = []
-        d = start
-        from datetime import timedelta
-
-        while d <= end:
-            cur.execute(
-                "INSERT INTO life_context(date, state, note, logged_at) VALUES (?, ?, ?, ?)",
-                (d.isoformat(), state, note, logged_at),
-            )
-            dates.append(d.isoformat())
-            d += timedelta(days=1)
-    return {"inserted": len(dates), "dates": dates}
 
 
 # ---------- tracker scaffolding tools ----------

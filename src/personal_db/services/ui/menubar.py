@@ -21,8 +21,8 @@ from pathlib import Path
 import rumps
 
 from personal_db.core.config import Config
+from personal_db.core.log_event import log_life_context
 from personal_db.services.daemon import client as dc
-from personal_db.services.mcp_server.tools import log_life_context
 
 # Color → text mapping. macOS renders these emojis as native menu bar glyphs.
 _HEALTHY = "🟢"

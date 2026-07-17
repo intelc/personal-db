@@ -14,9 +14,11 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from pydantic import ValidationError
 
 from personal_db.core.config import Config
 from personal_db.core.db import connect, connection, transaction
+from personal_db.core.manifest import BackgroundJobSpec, McpToolSpec
 
 _APP_NAME_RE = re.compile(r"^[a-z0-9_]+$")
 _QUERY_MARKER_RE = re.compile(r"^\s*--\s*name:\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*$")
@@ -28,6 +30,8 @@ _APP_TEMPLATE_FILES = (
     "actions.py",
     "models.py",
     "instructions.md",
+    "jobs.py",   # optional — declared background_jobs entrypoints
+    "tools.py",  # optional — declared mcp_tools entrypoints
 )
 
 
@@ -66,6 +70,8 @@ class AppManifest:
     pages: tuple[AppPage, ...]
     reads: AppReads = field(default_factory=AppReads)
     writes: AppWrites = field(default_factory=AppWrites)
+    background_jobs: tuple[BackgroundJobSpec, ...] = field(default_factory=tuple)
+    mcp_tools: tuple[McpToolSpec, ...] = field(default_factory=tuple)
 
     @property
     def default_page(self) -> AppPage:
@@ -135,6 +141,28 @@ def _strings(value: Any, *, field_name: str) -> tuple[str, ...]:
     return tuple(value)
 
 
+def _background_jobs(value: Any, *, field_name: str) -> tuple[BackgroundJobSpec, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise AppManifestError(f"{field_name} must be a list")
+    try:
+        return tuple(BackgroundJobSpec.model_validate(item) for item in value)
+    except ValidationError as exc:
+        raise AppManifestError(f"invalid {field_name}: {exc}") from exc
+
+
+def _mcp_tools(value: Any, *, field_name: str) -> tuple[McpToolSpec, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise AppManifestError(f"{field_name} must be a list")
+    try:
+        return tuple(McpToolSpec.model_validate(item) for item in value)
+    except ValidationError as exc:
+        raise AppManifestError(f"invalid {field_name}: {exc}") from exc
+
+
 def load_app_manifest(path: Path) -> AppManifest:
     try:
         raw = yaml.safe_load(path.read_text()) or {}
@@ -185,6 +213,8 @@ def load_app_manifest(path: Path) -> AppManifest:
             tables=_strings(writes_raw.get("tables"), field_name="writes.tables"),
             actions=_strings(writes_raw.get("actions"), field_name="writes.actions"),
         ),
+        background_jobs=_background_jobs(raw.get("background_jobs"), field_name="background_jobs"),
+        mcp_tools=_mcp_tools(raw.get("mcp_tools"), field_name="mcp_tools"),
     )
 
 
@@ -241,17 +271,24 @@ def apply_app_schema(cfg: Config, app_dir: Path) -> None:
         con.executescript(schema_path.read_text())
 
 
-def discover_apps(cfg: Config) -> dict[str, AppDefinition]:
+def discover_apps(cfg: Config, *, include_bundled: bool = True) -> dict[str, AppDefinition]:
     """Discover installed apps, falling back to bundled app templates.
 
     Installed apps in <root>/apps/<name> override bundled apps with the same
     name, which lets users customize an app without changing package files.
+
+    `include_bundled=False` restricts discovery to apps actually installed
+    under <root>/apps/ — used by callers (background-job/MCP-tool registries)
+    that must not treat "ships with the package" as "the user opted in",
+    unlike routes/CLI listing which intentionally shows every bundled app
+    without requiring an explicit install step.
     """
     out: dict[str, AppDefinition] = {}
     roots: list[tuple[str, Path]] = []
-    bundled = _bundled_apps_root()
-    if bundled and bundled.exists():
-        roots.append(("bundled", bundled))
+    if include_bundled:
+        bundled = _bundled_apps_root()
+        if bundled and bundled.exists():
+            roots.append(("bundled", bundled))
     if cfg.apps_dir.exists():
         roots.append(("installed", cfg.apps_dir))
 

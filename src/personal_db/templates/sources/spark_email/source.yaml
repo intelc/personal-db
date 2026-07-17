@@ -28,3 +28,71 @@ setup_steps:
         personal-db source spark folders
 config:
   timeout_seconds: 60
+
+mcp_tools:
+  - name: spark_email_accounts
+    description: List Spark email accounts visible to Spark Desktop.
+    entrypoint: "tools:spark_email_accounts"
+    input_schema:
+      type: object
+      properties: {}
+  - name: spark_email_folders
+    description: List Spark email folders and message counts.
+    entrypoint: "tools:spark_email_folders"
+    input_schema:
+      type: object
+      properties:
+        scope:
+          type: string
+          description: Optional account/team/folder scope
+  - name: spark_email_list
+    description: >-
+      List Spark emails with optional folders and Gmail-style filters.
+      Returns parsed page metadata plus raw Spark output.
+    entrypoint: "tools:spark_email_list"
+    input_schema:
+      type: object
+      properties:
+        folders:
+          type: array
+          items:
+            type: string
+        filter:
+          type: string
+        page:
+          type: integer
+        page_size:
+          type: integer
+        order:
+          type: string
+        new_senders:
+          type: boolean
+  - name: spark_email_search
+    description: >-
+      Search Spark emails by topic. Returns Spark's raw result text plus
+      any parseable message IDs/page metadata.
+    entrypoint: "tools:spark_email_search"
+    input_schema:
+      type: object
+      properties:
+        about:
+          type: string
+        filter:
+          type: string
+        in:
+          type: string
+          description: Optional account/team/folder scope
+      required: [about]
+  - name: spark_email_thread
+    description: >-
+      Read a full Spark email thread by Spark message ID. Returns raw
+      thread text for context-provider/enrichment use.
+    entrypoint: "tools:spark_email_thread"
+    input_schema:
+      type: object
+      properties:
+        message_id:
+          type: string
+        download_attachments:
+          type: boolean
+      required: [message_id]

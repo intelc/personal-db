@@ -35,13 +35,13 @@ from personal_db.core.apps import (
     load_app_view,
 )
 from personal_db.core.config import Config
+from personal_db.core.log_event import log_life_context
 from personal_db.services.daemon.agent_terminal import AgentTerminalManager
 from personal_db.services.daemon.routes.agent import register_agent_routes
 from personal_db.services.daemon.routes.actions import register_action_routes
 from personal_db.services.daemon.routes.common import validate_name as _validate_name
 from personal_db.services.daemon.routes.setup import register_setup_routes
 from personal_db.services.daemon.routes.sync import register_sync_routes
-from personal_db.services.mcp_server.tools import log_life_context
 from personal_db.services.ui.viz import discover, list_trackers_with_viz, load_dashboard_slugs
 
 _HERE = Path(__file__).resolve().parents[2] / "ui"

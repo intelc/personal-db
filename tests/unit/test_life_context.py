@@ -1,4 +1,4 @@
-"""Tests for the life_context tracker + log_life_context MCP tool."""
+"""Tests for the life_context tracker + log_life_context implementation."""
 
 import sqlite3
 import subprocess
@@ -7,7 +7,7 @@ import sys
 import pytest
 
 from personal_db.core.config import Config
-from personal_db.services.mcp_server.tools import log_life_context
+from personal_db.core.log_event import log_life_context
 
 
 def _install(tmp_path):

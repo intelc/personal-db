@@ -5,31 +5,17 @@ import json
 import re
 import sys
 import traceback
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 from personal_db.core.config import Config
 from personal_db.core.data_horizon import compute_and_store as _store_horizon
 from personal_db.core.db import apply_tracker_schema, init_db
+from personal_db.core.intervals import parse_every as _parse_every
 from personal_db.core.manifest import OAuthStep, load_manifest
 from personal_db.core.oauth import ensure_adapter_from_manifest
 from personal_db.core.tracker import Tracker
 from personal_db.core.transforms import TransformError, make_context, topo_sort, validate
-
-_EVERY_RE = re.compile(r"^(\d+)\s*([smhd])$")
-
-
-def _parse_every(s: str) -> timedelta:
-    m = _EVERY_RE.match(s.strip())
-    if not m:
-        raise ValueError(f"bad schedule.every: {s!r}")
-    n, unit = int(m.group(1)), m.group(2)
-    return {
-        "s": timedelta(seconds=n),
-        "m": timedelta(minutes=n),
-        "h": timedelta(hours=n),
-        "d": timedelta(days=n),
-    }[unit]
 
 
 def _load_ingest_module(tracker_dir: Path, name: str):
