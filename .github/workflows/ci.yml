@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    name: checks (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Create venv and install (editable, dev extras)
+        run: |
+          uv venv
+          uv pip install -e ".[dev]"
+
+      # Invoked as `.venv/bin/<tool>` (not `uv run <tool>`) deliberately:
+      # `uv run` re-syncs its own managed environment from `pyproject.toml`'s
+      # base `dependencies` unless every invocation repeats `--extra dev`,
+      # which would silently drop ruff/pyright/import-linter from the env
+      # populated by the `uv pip install -e ".[dev]"` step above.
+      - name: ruff
+        # continue-on-error: the repo carries ~128 pre-existing lint findings
+        # (import-sort, a handful of UP/SIM/B/F rules) predating this CI
+        # workflow -- mostly in modules this change didn't touch. Fixing
+        # those is a separate, dedicated cleanup; gating CI on them today
+        # would make every PR red regardless of its own content. New code
+        # introduced by a PR should still be ruff-clean -- reviewers can spot
+        # new findings in this step's annotations even though the job itself
+        # doesn't fail the build.
+        continue-on-error: true
+        run: .venv/bin/ruff check .
+
+      - name: pyright
+        # continue-on-error: ~237 pre-existing type errors today (mostly
+        # templates/trackers/xhs*/ingest.py's optional-chaining and a few
+        # visualization helpers), predating this CI workflow -- see the
+        # comment on [tool.pyright] in pyproject.toml for the venv-detection
+        # fix that made this a real (non-misconfigured) count. Same rationale
+        # as ruff above: report, don't block, until that debt gets its own
+        # pass.
+        continue-on-error: true
+        run: .venv/bin/pyright
+
+      - name: lint-imports (layering contract)
+        run: .venv/bin/lint-imports
+
+      - name: pytest
+        run: .venv/bin/pytest -q -m "not live"
+
+  core-portability:
+    name: core portability (Linux, unit tests only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Create venv and install (editable, dev extras)
+        run: |
+          uv venv
+          uv pip install -e ".[dev]"
+
+      - name: pytest (unit only)
+        # Keeps the core engine honest about platform gates: darwin-only
+        # trackers/sources must refuse cleanly here (PlatformUnsupportedError),
+        # not import-error the whole suite. Integration tests are excluded --
+        # several assume macOS-only fixtures (FDA paths, Library dirs).
+        run: .venv/bin/pytest tests/unit -q -m "not live"

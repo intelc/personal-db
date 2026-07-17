@@ -40,7 +40,7 @@ source .venv/bin/activate
 
 ## Quick start
 
-`personal-db setup` is the only command you need to run after install. It walks through tracker selection, configuration, scheduler install, and agent wire-up in one flow.
+`personal-db setup` is the only command you need to run after install. It walks through tracker selection, configuration, daemon install, and agent wire-up in one flow.
 
 ```bash
 personal-db setup
@@ -58,14 +58,14 @@ You'll be asked which mode you want:
 
 After you finish configuring trackers, finalize steps run automatically:
 
-1. **Scheduler** — installs a launchd job (`~/Library/LaunchAgents/com.personal_db.scheduler.plist`) that runs `personal-db sync --due` every 10 minutes.
+1. **Daemon** — installs a launchd agent (`~/Library/LaunchAgents/com.personal_db.daemon.plist`) that keeps a long-running `personal-db daemon run` process alive. The daemon is the single writer-of-record: it serves the local HTTP API + dashboard, and an in-process scheduler thread runs `sync_due` (and any declared per-tracker/app background jobs) on their own cadences — there's no separate scheduler process anymore. If a command ever prints `personal-db daemon not running`, the fix is `personal-db daemon install`.
 2. **MCP server** — auto-installs `personal_db` into the agents you choose (Claude Code, Claude Desktop, Cursor). Behind the scenes this calls `claude mcp add` (Code), or merges into `~/Library/Application Support/Claude/claude_desktop_config.json` (Desktop), or `~/.cursor/mcp.json` (Cursor).
 3. **Dashboard** (optional) — offers to launch the menu bar + dashboard via `personal-db ui`. Default is skip; agents read your data over MCP regardless of the dashboard being open.
 
 ### After setup
 
 ```bash
-# Pull historical data once (the scheduler only handles incremental sync going forward)
+# Pull historical data once (the daemon's scheduler only handles incremental sync going forward)
 personal-db backfill github_commits
 personal-db backfill whoop
 
@@ -79,15 +79,21 @@ personal-db ui
 # Add MCP into another agent later
 personal-db mcp install              # interactive picker
 personal-db mcp install cursor       # non-interactive single target
+
+# See what apps are installed / available to install
+personal-db app list
+personal-db app available
 ```
 
-The dashboard is a small read-only view over your local data — handy for spot-checking sync state and logging quick entries. Agents read the same data over MCP whether or not the dashboard is open.
+The dashboard is read **and** write, not just a viewer: bundled apps like `finance` (categorize transactions, manage recurring/burn-rate buckets), `places` (label frequent locations, manage privacy settings), `subscriptions`, `attention`, and `calendar_reality` all expose actions alongside their views — every write still goes through the daemon, which is the single writer-of-record for `db.sqlite`. `personal-db app list|available|install|reinstall` manages which apps are installed, the same way `personal-db tracker ...` manages trackers. Agents read the same data over MCP whether or not the dashboard is open.
+
+An experimental in-browser agent terminal also lives in the daemon (spawn a `claude`/`codex` session from the dashboard); it will become off-by-default and config-gated once the in-progress security-hardening phase (daemon auth token, mandatory tracker validation) lands.
 
 ![dashboard](docs/demos/screenshots/dashboard.png)
 
 ### Re-running setup
 
-`personal-db setup` is idempotent. Run it any time to add a new tracker, rotate a credential, or re-enable the scheduler. Existing values are shown as defaults (secrets masked) so you can press Enter to keep them.
+`personal-db setup` is idempotent. Run it any time to add a new tracker, rotate a credential, or re-enable the daemon. Existing values are shown as defaults (secrets masked) so you can press Enter to keep them.
 
 ## CLI argument order note
 

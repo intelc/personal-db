@@ -238,6 +238,20 @@ def test_calendar_reality_app_views_render_with_rows(tmp_root, tmp_path, monkeyp
     from personal_db.templates.apps.calendar_reality import views
     from personal_db.templates.trackers.calendar import ingest
 
+    # render_blocks windows to the last 30 days via datetime.now(); the fixture
+    # event below is dated 2026-05-30, so freeze "now" nearby rather than let
+    # it drift out of the window as real time passes. `views` is a regular
+    # (cached, not reloaded-per-call) import, so patching its own `datetime`
+    # name directly -- rather than the real stdlib class -- is sufficient and
+    # doesn't touch anything else in the process.
+    class _FrozenDatetime(views.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            fixed = views.datetime(2026, 6, 10, 12, 0, 0, tzinfo=views.UTC)
+            return fixed.astimezone(tz) if tz is not None else fixed.replace(tzinfo=None)
+
+    monkeypatch.setattr(views, "datetime", _FrozenDatetime)
+
     source = tmp_path / "Calendar.sqlitedb"
     _make_calendar_db(source)
     monkeypatch.setenv("PERSONAL_DB_CALENDAR_DB", str(source))

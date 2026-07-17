@@ -16,11 +16,11 @@ from personal_db.core.apps import (
     update_app_template,
 )
 from personal_db.core.config import Config
-from personal_db.interfaces.email_context import EvidenceRef
-from personal_db.services.daemon.http import build_app
 from personal_db.core.db import apply_tracker_schema, connect, init_db
 from personal_db.enrichments.core import EnrichmentRunRecord, record_enrichment_run
 from personal_db.enrichments.finance import RECEIPT_V1_ENRICHMENT
+from personal_db.interfaces.email_context import EvidenceRef
+from personal_db.services.daemon.http import build_app
 
 FINANCE_SCHEMA = (
     Path(__file__).resolve().parents[2]
@@ -1430,7 +1430,11 @@ def test_bundled_places_route_renders_without_location_tables(tmp_root):
     assert "Maps use exact local GPS coordinates" in overview.text
 
 
-def test_bundled_places_pages_render_with_synthetic_data(tmp_root):
+def test_bundled_places_pages_render_with_synthetic_data(tmp_root, frozen_datetime):
+    # Places views window to the last `default_days` (30) via datetime.now();
+    # the fixture data below is dated 2026-05-29/30, so freeze "now" nearby
+    # rather than let it drift out of the window as real time passes.
+    frozen_datetime(2026, 6, 5)
     cfg = Config(root=tmp_root)
     _seed_places_app_db(cfg)
     client = TestClient(build_app(cfg))
@@ -1466,7 +1470,8 @@ def test_bundled_places_pages_render_with_synthetic_data(tmp_root):
     assert "Place Aliases" in privacy.text
 
 
-def test_places_pages_render_with_raw_points_before_geocoding(tmp_root):
+def test_places_pages_render_with_raw_points_before_geocoding(tmp_root, frozen_datetime):
+    frozen_datetime(2026, 6, 5)
     cfg = Config(root=tmp_root)
     init_db(cfg.db_path)
     con = sqlite3.connect(cfg.db_path)
@@ -1503,7 +1508,8 @@ def test_places_pages_render_with_raw_points_before_geocoding(tmp_root):
     assert "(unlabeled)" in timeline.text
 
 
-def test_places_pages_render_with_installed_location_tracker_schema(tmp_root):
+def test_places_pages_render_with_installed_location_tracker_schema(tmp_root, frozen_datetime):
+    frozen_datetime(2026, 6, 5)
     cfg = Config(root=tmp_root)
     init_db(cfg.db_path)
     con = sqlite3.connect(cfg.db_path)

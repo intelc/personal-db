@@ -181,8 +181,14 @@ def test_daily_time_accounting_redistributes_chrome_via_visits(tmp_path):
     assert by_cat.get("leisure", 0) == 1.0
 
 
-def test_daily_time_accounting_marks_pre_horizon_days_as_no_data(tmp_path):
+def test_daily_time_accounting_marks_pre_horizon_days_as_no_data(tmp_path, frozen_datetime):
     """Days before the local-only sources' horizon should be _no_data, not _unaccounted."""
+    # With no sync cursor yet, the tracker's window is `today - 90 days`; the
+    # fixture dates below (2026-04-10/13) need to fall inside that window, so
+    # freeze "now" to shortly after them (matching the fixture's own
+    # `computed_at` of 2026-04-26) rather than let real time march the window
+    # past them entirely.
+    frozen_datetime(2026, 4, 26)
     root = tmp_path / "personal_db"
     subprocess.run(
         [sys.executable, "-m", "personal_db.cli.main", "--root", str(root), "init"],

@@ -36,6 +36,18 @@ personal-db = "personal_db.cli.main:app"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.pyright]
+include = ["src"]
+# Without this, pyright fails to auto-detect the project's venv/Python
+# version and misreports hundreds of spurious errors (e.g. "Alternative
+# syntax for unions requires Python 3.10 or newer" against `X | Y` syntax
+# this project uses everywhere, and unresolved imports for dependencies that
+# are in fact installed) -- see CI workflow comment for the current
+# non-spurious error count.
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.11"
+
 [tool.importlinter]
 root_packages = ["personal_db"]
 

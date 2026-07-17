@@ -4,9 +4,9 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from personal_db.core.config import Config
-from personal_db.services.daemon.http import build_app
 from personal_db.core.db import apply_tracker_schema, connect, init_db
 from personal_db.core.tracker import Tracker
+from personal_db.services.daemon.http import build_app
 
 ROOT = Path(__file__).resolve().parents[2]
 FINANCE_DIR = ROOT / "src" / "personal_db" / "templates" / "trackers" / "finance"
@@ -127,7 +127,13 @@ def _seed_db(cfg: Config) -> None:
     con.close()
 
 
-def test_subscriptions_sync_materializes_charges_usage_and_periods(tmp_root):
+def test_subscriptions_sync_materializes_charges_usage_and_periods(tmp_root, frozen_datetime):
+    # _status()/_period_rows() compute subscription age and period coverage
+    # off datetime.now(); the fixture charge below is dated 2026-05-01, so
+    # freeze "now" nearby rather than let real time drift the subscription
+    # into "stale". Must freeze before _load_module() executes the module's
+    # `from datetime import ... datetime`.
+    frozen_datetime(2026, 6, 15)
     ingest = _load_module("ingest.py", "subscriptions_ingest_test")
     cfg = Config(root=tmp_root)
     _seed_db(cfg)

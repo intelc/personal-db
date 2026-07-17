@@ -12,10 +12,14 @@
 #
 # Environment:
 #   PERSONAL_DB_NO_SETUP=1   skip auto-launching the setup wizard
+#   PERSONAL_DB_REPO=<url>   install from a fork/local path instead of intelc/personal-db
 
 set -euo pipefail
 
-REPO_URL="git+https://github.com/intelc/personal-db.git"
+# Forks: override with `PERSONAL_DB_REPO=git+https://github.com/<you>/personal-db.git`
+# (or a local path / different ref) before running this script, instead of
+# editing the default below.
+REPO_URL="${PERSONAL_DB_REPO:-git+https://github.com/intelc/personal-db.git}"
 
 info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn()  { printf '\033[1;33m==>\033[0m %s\n' "$*" >&2; }
