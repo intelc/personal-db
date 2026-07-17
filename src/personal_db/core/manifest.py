@@ -1,3 +1,4 @@
+import sys
 import warnings
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -7,6 +8,33 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 
 class ManifestError(Exception): ...
+
+
+class PlatformUnsupportedError(RuntimeError):
+    """Raised when a manifest declares a `platform` list that excludes the
+    OS personal-db is currently running on."""
+
+
+PlatformName = Literal["darwin", "linux", "win32"]
+
+_PLATFORM_LABELS: dict[str, str] = {"darwin": "macOS", "linux": "Linux", "win32": "Windows"}
+
+
+def platform_label(name: str) -> str:
+    """Human-friendly name for a `sys.platform` value (falls back to the raw value)."""
+    return _PLATFORM_LABELS.get(name, name)
+
+
+def check_platform_supported(manifest: "Manifest", *, current: str | None = None) -> None:
+    """Raise PlatformUnsupportedError if `manifest.platform` is set and excludes
+    the current OS. `manifest.platform is None` means portable (no gate)."""
+    if manifest.platform is None:
+        return
+    current = sys.platform if current is None else current
+    if current in manifest.platform:
+        return
+    names = " or ".join(platform_label(p) for p in manifest.platform)
+    raise PlatformUnsupportedError(f"tracker {manifest.name} requires {names}")
 
 
 class ColumnSpec(BaseModel):
@@ -181,6 +209,16 @@ class Manifest(BaseModel):
     # See BackgroundJobSpec/McpToolSpec docstrings for the entrypoint contract.
     background_jobs: list[BackgroundJobSpec] = Field(default_factory=list)
     mcp_tools: list[McpToolSpec] = Field(default_factory=list)
+    # manifest_version: the shape of this manifest file itself (bumped to 2
+    # when a manifest gains `platform`/`schema_version`-era fields). Not the
+    # data schema version -- see `schema_version` for that.
+    manifest_version: int = 1
+    # None (default) = portable, runs on any OS. A non-None list gates
+    # sync/install via `check_platform_supported` -- see that function.
+    platform: list[PlatformName] | None = None
+    # Version of this tracker's *data* schema (schema.sql + any migrations/
+    # dir). Bump when a migration is added; see core/migrations.py.
+    schema_version: int = 1
 
 
 def load_manifest(path: Path) -> Manifest:

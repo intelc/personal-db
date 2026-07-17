@@ -3,6 +3,8 @@ description: >-
   Coding-agent runtime state — Claude Code (via hooks) and Codex CLI (via rollout JSONL).
   Records session-level intervals (agent_running, awaiting_user, inactive) so efficiency,
   engagement, and prompt-cadence questions are answerable without leaving db.sqlite.
+manifest_version: 2
+platform: [darwin]
 permission_type: none
 local_only: true
 schedule:

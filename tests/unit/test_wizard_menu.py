@@ -148,6 +148,37 @@ def test_format_choice_shows_no_data_yet_for_empty_table(tmp_root):
     assert "no data yet" in label
 
 
+def test_format_choice_shows_permission_and_platform_badge(tmp_root):
+    cfg = Config(root=tmp_root)
+    init_db(cfg.db_path)
+    d = tmp_root / "trackers" / "imessage_like"
+    d.mkdir(parents=True)
+    (d / "manifest.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": "imessage_like",
+                "description": "test",
+                "permission_type": "full_disk_access",
+                "platform": ["darwin"],
+                "time_column": "ts",
+                "schema": {"tables": {"imessage_like": {"columns": {"ts": {"type": "TEXT", "semantic": "ts"}}}}},
+            }
+        )
+    )
+    label = _format_choice(cfg, "imessage_like")
+    assert "full_disk_access" in label
+    assert "macOS" in label
+
+
+def test_format_bundled_choice_shows_permission_and_platform_badge():
+    """imessage is bundled with permission_type full_disk_access and
+    platform: [darwin] -- the not-yet-installed picker line must show both
+    up front, before the user commits to installing it."""
+    label = _format_bundled_choice("imessage")
+    assert "full_disk_access" in label
+    assert "macOS" in label
+
+
 def test_format_choice_falls_back_when_table_missing(tmp_root):
     """If the schema table doesn't exist (e.g., never synced), don't crash —
     fall back to the icon's default suffix."""

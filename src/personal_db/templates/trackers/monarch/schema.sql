@@ -129,26 +129,15 @@ CREATE TABLE IF NOT EXISTS monarch_account_labels (
 CREATE INDEX IF NOT EXISTS idx_monarch_account_labels_owner ON monarch_account_labels(owner);
 CREATE INDEX IF NOT EXISTS idx_monarch_account_labels_group ON monarch_account_labels(account_group);
 
+-- monarch_account_exports' end-state shape. Installs that predate the
+-- `updated_at NOT NULL` constraint are brought here by
+-- migrations/002_account_exports_rebuild.sql (schema_version: 2); a fresh
+-- install lands on this shape directly via CREATE TABLE IF NOT EXISTS.
 CREATE TABLE IF NOT EXISTS monarch_account_exports (
   account_id      TEXT PRIMARY KEY,
   export_enabled  INTEGER NOT NULL DEFAULT 0,
   updated_at      TEXT NOT NULL
 );
-
-DROP TABLE IF EXISTS monarch_account_exports_new;
-CREATE TABLE monarch_account_exports_new (
-  account_id      TEXT PRIMARY KEY,
-  export_enabled  INTEGER NOT NULL DEFAULT 0,
-  updated_at      TEXT NOT NULL
-);
-
-INSERT OR REPLACE INTO monarch_account_exports_new(account_id, export_enabled, updated_at)
-SELECT account_id, export_enabled, COALESCE(updated_at, datetime('now'))
-FROM monarch_account_exports
-WHERE account_id IS NOT NULL;
-
-DROP TABLE monarch_account_exports;
-ALTER TABLE monarch_account_exports_new RENAME TO monarch_account_exports;
 
 CREATE INDEX IF NOT EXISTS idx_monarch_exports_enabled ON monarch_account_exports(export_enabled);
 

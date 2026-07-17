@@ -13,6 +13,7 @@ from statistics import median
 from typing import Any
 
 from personal_db.db import connect
+from personal_db.migrations import ensure_columns
 from personal_db.tracker import Tracker
 
 _AMOUNT_SERIES_MERCHANT_PATTERNS = ("apple",)
@@ -86,26 +87,20 @@ def _coerce_float(value: Any) -> float:
 def _ensure_schema_compat(con: sqlite3.Connection) -> None:
     if not _table_exists(con, "subscription_entities"):
         return
-    changed = False
-    columns = {str(row[1]) for row in con.execute("PRAGMA table_info(subscription_entities)")}
-    for column, decl in (
-        ("series_key", "TEXT"),
-        ("typical_amount", "REAL"),
-        ("amount_min", "REAL"),
-        ("amount_max", "REAL"),
-        ("expected_day", "INTEGER"),
-        ("monthly_avg_amount", "REAL"),
-    ):
-        if column not in columns:
-            con.execute(f"ALTER TABLE subscription_entities ADD COLUMN {column} {decl}")
-            columns.add(column)
-            changed = True
-    charge_columns = {str(row[1]) for row in con.execute("PRAGMA table_info(subscription_charges)")}
-    if "series_key" not in charge_columns:
-        con.execute("ALTER TABLE subscription_charges ADD COLUMN series_key TEXT")
-        changed = True
-    if changed:
-        con.commit()
+    ensure_columns(
+        con,
+        "subscription_entities",
+        {
+            "series_key": "TEXT",
+            "typical_amount": "REAL",
+            "amount_min": "REAL",
+            "amount_max": "REAL",
+            "expected_day": "INTEGER",
+            "monthly_avg_amount": "REAL",
+        },
+    )
+    ensure_columns(con, "subscription_charges", {"series_key": "TEXT"})
+    con.commit()
 
 
 def _charge_source_query(con: sqlite3.Connection) -> str | None:

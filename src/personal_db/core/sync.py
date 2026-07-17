@@ -12,7 +12,8 @@ from personal_db.core.config import Config
 from personal_db.core.data_horizon import compute_and_store as _store_horizon
 from personal_db.core.db import apply_tracker_schema, init_db
 from personal_db.core.intervals import parse_every as _parse_every
-from personal_db.core.manifest import OAuthStep, load_manifest
+from personal_db.core.manifest import OAuthStep, check_platform_supported, load_manifest
+from personal_db.core.migrations import apply_pending_migrations
 from personal_db.core.oauth import ensure_adapter_from_manifest
 from personal_db.core.tracker import Tracker
 from personal_db.core.transforms import TransformError, make_context, topo_sort, validate
@@ -57,8 +58,9 @@ def _is_due(cfg: Config, name: str) -> bool:
     return datetime.fromisoformat(last) + delta <= datetime.now(UTC)
 
 
-def _ensure_schema(cfg: Config, tracker_dir: Path) -> None:
+def _ensure_schema(cfg: Config, name: str, tracker_dir: Path, manifest) -> None:
     init_db(cfg.db_path)
+    apply_pending_migrations(cfg, name, tracker_dir, manifest)
     schema_sql = (tracker_dir / "schema.sql").read_text()
     apply_tracker_schema(cfg.db_path, schema_sql)
 
@@ -144,8 +146,9 @@ def _register_oauth_adapters(tracker_dir: Path, manifest) -> None:
 def sync_one(cfg: Config, name: str) -> None:
     tracker_dir = cfg.trackers_dir / name
     manifest = load_manifest(tracker_dir / "manifest.yaml")
+    check_platform_supported(manifest)
     _register_oauth_adapters(tracker_dir, manifest)
-    _ensure_schema(cfg, tracker_dir)
+    _ensure_schema(cfg, name, tracker_dir, manifest)
     mod = _load_ingest_module(tracker_dir, name)
     t = Tracker(name=name, cfg=cfg, manifest=manifest)
     mod.sync(t)
@@ -157,8 +160,9 @@ def sync_one(cfg: Config, name: str) -> None:
 def backfill_one(cfg: Config, name: str, start: str | None, end: str | None) -> None:
     tracker_dir = cfg.trackers_dir / name
     manifest = load_manifest(tracker_dir / "manifest.yaml")
+    check_platform_supported(manifest)
     _register_oauth_adapters(tracker_dir, manifest)
-    _ensure_schema(cfg, tracker_dir)
+    _ensure_schema(cfg, name, tracker_dir, manifest)
     mod = _load_ingest_module(tracker_dir, name)
     t = Tracker(name=name, cfg=cfg, manifest=manifest)
     mod.backfill(t, start, end)

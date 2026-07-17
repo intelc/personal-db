@@ -1,7 +1,10 @@
+import sys
+
 import pytest
 
 from personal_db.core.config import Config
 from personal_db.core.installer import install_template, is_outdated, list_bundled, update_template
+from personal_db.core.manifest import PlatformUnsupportedError
 
 
 def test_list_bundled_returns_known_templates():
@@ -23,6 +26,7 @@ def test_list_bundled_returns_known_templates():
 
 def test_granola_manifest_loads():
     from pathlib import Path
+
     from personal_db.core.manifest import load_manifest
 
     here = Path(__file__).resolve().parents[2]
@@ -138,3 +142,52 @@ def test_is_outdated_detects_adapter_module_drift(tmp_root, monkeypatch):
     assert is_outdated(cfg, "withings"), (
         "adapter module drift was not detected by is_outdated"
     )
+
+
+def test_install_template_refuses_unsupported_platform(tmp_root, monkeypatch):
+    """imessage declares `platform: [darwin]`; installing it on a simulated
+    non-macOS OS must refuse with a clear message rather than copy files."""
+    cfg = Config(root=tmp_root)
+    monkeypatch.setattr(sys, "platform", "linux")
+    with pytest.raises(PlatformUnsupportedError, match="imessage requires macOS"):
+        install_template(cfg, "imessage")
+    assert not (tmp_root / "trackers" / "imessage").exists()
+
+
+def test_install_template_allows_supported_platform(tmp_root, monkeypatch):
+    cfg = Config(root=tmp_root)
+    monkeypatch.setattr(sys, "platform", "darwin")
+    dest = install_template(cfg, "imessage")
+    assert dest.exists()
+
+
+def test_update_template_refuses_unsupported_platform(tmp_root, monkeypatch):
+    cfg = Config(root=tmp_root)
+    install_template(cfg, "imessage")
+    monkeypatch.setattr(sys, "platform", "linux")
+    with pytest.raises(PlatformUnsupportedError, match="imessage requires macOS"):
+        update_template(cfg, "imessage")
+
+
+def test_monarch_manifest_version_and_migration_file_shipped():
+    """monarch is schema_version 2; its migrations/ dir must ship the
+    account-exports rebuild file the schema-version bump depends on."""
+    from pathlib import Path
+
+    here = Path(__file__).resolve().parents[2]
+    monarch_dir = here / "src/personal_db/templates/trackers/monarch"
+    from personal_db.core.manifest import load_manifest
+
+    m = load_manifest(monarch_dir / "manifest.yaml")
+    assert m.schema_version == 2
+    migration_files = sorted(p.name for p in (monarch_dir / "migrations").glob("*.sql"))
+    assert migration_files == ["002_account_exports_rebuild.sql"]
+
+
+def test_update_template_copies_migrations_dir(tmp_root):
+    """reinstall (update_template) must mirror migrations/*.sql into the
+    installed tracker dir, not just the four canonical files -- otherwise a
+    tracker installed before a migration was added never gets it."""
+    cfg = Config(root=tmp_root)
+    dest = update_template(cfg, "monarch")
+    assert (dest / "migrations" / "002_account_exports_rebuild.sql").is_file()

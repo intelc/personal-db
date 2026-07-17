@@ -1,5 +1,7 @@
 name: calendar
 description: macOS Calendar events and planned-vs-actual reality blocks
+manifest_version: 2
+platform: [darwin]
 permission_type: full_disk_access
 setup_steps:
   - type: fda_check

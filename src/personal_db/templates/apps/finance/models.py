@@ -5,6 +5,7 @@ from typing import Any
 
 from personal_db.apps import AppContext, apply_app_schema
 from personal_db.db import connect
+from personal_db.migrations import ensure_columns
 
 _BURN_RATE_EVIDENCE_DAYS = 90
 _BURN_RATE_SMOOTHING_DAYS = 180
@@ -94,11 +95,7 @@ def ensure_burn_bucket_metadata(ctx: AppContext) -> None:
             )
             """
         )
-        columns = {str(row[1]) for row in con.execute("PRAGMA table_info(app_finance_burn_buckets)")}
-        if "color" not in columns:
-            con.execute("ALTER TABLE app_finance_burn_buckets ADD COLUMN color TEXT")
-        if "emoji" not in columns:
-            con.execute("ALTER TABLE app_finance_burn_buckets ADD COLUMN emoji TEXT")
+        ensure_columns(con, "app_finance_burn_buckets", {"color": "TEXT", "emoji": "TEXT"})
         con.executemany(
             """
             INSERT OR IGNORE INTO app_finance_burn_buckets(

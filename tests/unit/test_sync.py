@@ -1,10 +1,13 @@
 import json
+import sys
 from pathlib import Path
 
+import pytest
 import yaml
 
 from personal_db.core.config import Config
 from personal_db.core.db import init_db
+from personal_db.core.manifest import PlatformUnsupportedError
 from personal_db.core.sync import _is_due, sync_due, sync_one
 
 
@@ -95,7 +98,7 @@ def test_sync_one_registers_oauth_adapter_from_manifest(tmp_root, monkeypatch):
     """Ingest.py's sync() does not need to register the adapter itself —
     sync_one wires it up based on the manifest's OAuthStep.adapter field."""
     from personal_db.core.config import Config
-    from personal_db.core.oauth import _adapter_for, _adapters, StandardAdapter
+    from personal_db.core.oauth import StandardAdapter, _adapter_for, _adapters
     from personal_db.core.sync import sync_one
 
     cfg = Config(root=tmp_root)
@@ -159,7 +162,7 @@ def test_backfill_one_registers_oauth_adapter_from_manifest(tmp_root, monkeypatc
     """backfill_one shares the same _register_oauth_adapters call site as sync_one;
     cover it explicitly so future regressions in either are caught."""
     from personal_db.core.config import Config
-    from personal_db.core.oauth import _adapter_for, _adapters, StandardAdapter
+    from personal_db.core.oauth import StandardAdapter, _adapter_for, _adapters
     from personal_db.core.sync import backfill_one
 
     cfg = Config(root=tmp_root)
@@ -219,3 +222,62 @@ def backfill(t, start, end):
         )
     finally:
         _adapters.pop("fake_backfill_oauth_provider", None)
+
+
+def _make_platform_gated_tracker_dir(tmp_root: Path, name: str, platform: list[str]) -> Path:
+    d = tmp_root / "trackers" / name
+    d.mkdir(parents=True)
+    (d / "manifest.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": name,
+                "description": "test",
+                "permission_type": "full_disk_access",
+                "platform": platform,
+                "time_column": "ts",
+                "schema": {
+                    "tables": {name: {"columns": {"ts": {"type": "TEXT", "semantic": "ts"}}}}
+                },
+            }
+        )
+    )
+    (d / "schema.sql").write_text(f"CREATE TABLE IF NOT EXISTS {name} (ts TEXT);")
+    (d / "ingest.py").write_text("def sync(t):\n    pass\ndef backfill(t, start, end):\n    pass\n")
+    return d
+
+
+def test_sync_one_refuses_on_unsupported_platform(tmp_root, monkeypatch):
+    """A tracker declaring `platform: [darwin]` must refuse to sync (with a
+    message naming the tracker and the required OS) when personal-db is
+    running somewhere else -- simulated here via sys.platform, since the
+    check reads that at call time."""
+    cfg = Config(root=tmp_root)
+    init_db(cfg.db_path)
+    _make_platform_gated_tracker_dir(tmp_root, "imessage_like", platform=["darwin"])
+    monkeypatch.setattr(sys, "platform", "linux")
+
+    with pytest.raises(PlatformUnsupportedError, match="imessage_like requires macOS"):
+        sync_one(cfg, "imessage_like")
+
+
+def test_sync_one_runs_on_supported_platform(tmp_root, monkeypatch):
+    cfg = Config(root=tmp_root)
+    init_db(cfg.db_path)
+    _make_platform_gated_tracker_dir(tmp_root, "imessage_like", platform=["darwin"])
+    monkeypatch.setattr(sys, "platform", "darwin")
+
+    sync_one(cfg, "imessage_like")  # must not raise
+
+    last_run = json.loads((tmp_root / "state" / "last_run.json").read_text())
+    assert "imessage_like" in last_run
+
+
+def test_sync_one_runs_when_manifest_platform_is_portable(tmp_root, monkeypatch):
+    """`platform: None` (the default -- most trackers never set this field)
+    means portable: no gate at all, regardless of sys.platform."""
+    cfg = Config(root=tmp_root)
+    init_db(cfg.db_path)
+    _make_tracker_dir(tmp_root, "demo")
+    monkeypatch.setattr(sys, "platform", "linux")
+
+    sync_one(cfg, "demo")  # must not raise even on a "foreign" OS

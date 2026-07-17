@@ -1,5 +1,7 @@
 name: screen_time
 description: macOS app usage from ~/Library/Application Support/Knowledge/knowledgeC.db
+manifest_version: 2
+platform: [darwin]
 permission_type: full_disk_access
 setup_steps:
   - type: fda_check

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from personal_db.db import connect
+from personal_db.migrations import ensure_columns
 from personal_db.tracker import Tracker
 
 COCOA_EPOCH = datetime(2001, 1, 1, tzinfo=UTC)
@@ -183,7 +184,7 @@ def _durable_event_id(path: Path, uid: str) -> str:
     # Keyed on the store's per-row UID alone so renames/reschedules update the
     # same event instead of forking a ghost copy. Rows without a durable UID
     # keep the legacy composite identity above.
-    return hashlib.sha256(f"uid|{path}|{uid}".encode("utf-8")).hexdigest()
+    return hashlib.sha256(f"uid|{path}|{uid}".encode()).hexdigest()
 
 
 def _import_coredata_events(path: Path, con: sqlite3.Connection) -> list[dict[str, Any]]:
@@ -368,10 +369,8 @@ def _read_calendar_db(path: Path) -> list[dict[str, Any]]:
 def _ensure_deleted_at_column(t: Tracker) -> None:
     con = connect(t.cfg.db_path)
     try:
-        cols = {row[1] for row in con.execute("PRAGMA table_info(calendar_events)")}
-        if cols and "deleted_at" not in cols:
-            con.execute("ALTER TABLE calendar_events ADD COLUMN deleted_at TEXT")
-            con.commit()
+        ensure_columns(con, "calendar_events", {"deleted_at": "TEXT"})
+        con.commit()
     finally:
         con.close()
 

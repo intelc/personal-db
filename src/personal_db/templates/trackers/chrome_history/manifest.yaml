@@ -1,5 +1,7 @@
 name: chrome_history
 description: Chrome browser visits — per-URL with title, domain, dwell time, profile
+manifest_version: 2
+platform: [darwin]
 permission_type: full_disk_access
 setup_steps:
   - type: fda_check

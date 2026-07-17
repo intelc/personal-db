@@ -4,7 +4,8 @@ from personal_db.cli.state import get_root
 from personal_db.core.config import Config
 from personal_db.core.db import apply_tracker_schema, init_db
 from personal_db.core.installer import install_template, update_template
-from personal_db.core.manifest import load_manifest
+from personal_db.core.manifest import PlatformUnsupportedError, load_manifest
+from personal_db.core.migrations import apply_pending_migrations
 from personal_db.services.wizard.menu import run_menu
 from personal_db.services.wizard.runner import run_tracker
 
@@ -89,9 +90,14 @@ def install(name: str) -> None:
     except ValueError as e:
         typer.echo(str(e), err=True)
         raise typer.Exit(1) from e
+    except PlatformUnsupportedError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from e
     # Apply schema eagerly so manual-capture trackers (life_context, habits)
     # have their tables ready without needing a no-op sync first.
+    manifest = load_manifest(dest / "manifest.yaml")
     init_db(cfg.db_path)
+    apply_pending_migrations(cfg, name, dest, manifest)
     apply_tracker_schema(cfg.db_path, (dest / "schema.sql").read_text())
     typer.echo(f"Installed {name} -> {dest}")
 
@@ -103,14 +109,19 @@ def reinstall(name: str) -> None:
     schema.sql / visualizations.py) — `personal-db sync` runs the *installed*
     copy at <root>/trackers/<name>/, so template edits don't take effect until
     the installed copy is refreshed. Re-applies schema.sql so additive column
-    changes land on the live DB."""
+    changes land on the live DB (running any pending migrations first)."""
     cfg = Config(root=get_root())
     try:
         dest = update_template(cfg, name)
     except ValueError as e:
         typer.echo(str(e), err=True)
         raise typer.Exit(1) from e
+    except PlatformUnsupportedError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from e
+    manifest = load_manifest(dest / "manifest.yaml")
     init_db(cfg.db_path)
+    apply_pending_migrations(cfg, name, dest, manifest)
     apply_tracker_schema(cfg.db_path, (dest / "schema.sql").read_text())
     typer.echo(f"Reinstalled {name} -> {dest}")
 

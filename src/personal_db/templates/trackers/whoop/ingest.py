@@ -4,6 +4,7 @@ import sqlite3
 import requests
 
 from personal_db.db import connect
+from personal_db.migrations import ensure_columns
 from personal_db.oauth import refresh_if_needed
 from personal_db.tracker import Cursor, Tracker
 
@@ -23,10 +24,7 @@ def _migrate_schema(db_path) -> None:
     """Add new columns to whoop_cycles if they are missing (idempotent)."""
     con = sqlite3.connect(db_path)
     try:
-        existing = {row[1] for row in con.execute("PRAGMA table_info(whoop_cycles)")}
-        for col, col_type in _CYCLES_NEW_COLS:
-            if col not in existing:
-                con.execute(f"ALTER TABLE whoop_cycles ADD COLUMN {col} {col_type}")
+        ensure_columns(con, "whoop_cycles", dict(_CYCLES_NEW_COLS))
         con.commit()
     finally:
         con.close()

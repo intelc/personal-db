@@ -1,5 +1,7 @@
 name: granola
 description: Granola meeting notes — title, content, transcript, participants
+manifest_version: 2
+platform: [darwin]
 permission_type: api_key
 setup_steps:
   - type: instructions

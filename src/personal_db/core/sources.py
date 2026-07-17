@@ -11,7 +11,7 @@ import yaml
 from pydantic import ValidationError
 
 from personal_db.core.config import Config
-from personal_db.core.manifest import McpToolSpec
+from personal_db.core.manifest import McpToolSpec, PlatformName
 
 _SOURCE_NAME_RE = re.compile(r"^[a-z0-9_]+$")
 _SOURCE_TEMPLATE_FILES = ("source.yaml", "instructions.md", "tools.py")
@@ -32,6 +32,8 @@ class SourceManifest:
     config: dict[str, Any] = field(default_factory=dict)
     setup_steps: tuple[dict[str, Any], ...] = ()
     mcp_tools: tuple[McpToolSpec, ...] = ()
+    # None (default) = portable. Mirrors Manifest.platform for trackers.
+    platform: tuple[PlatformName, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -95,6 +97,9 @@ def load_source_manifest(path: Path) -> SourceManifest:
         except ValidationError as exc:
             raise SourceManifestError(f"invalid mcp_tools: {exc}") from exc
 
+    platform_raw = raw.get("platform")
+    platform = None if platform_raw is None else _strings(platform_raw, field_name="platform")
+
     return SourceManifest(
         name=name,
         description=str(raw.get("description") or ""),
@@ -105,6 +110,7 @@ def load_source_manifest(path: Path) -> SourceManifest:
         config=config,
         setup_steps=tuple(setup_steps),
         mcp_tools=mcp_tools,
+        platform=platform,  # type: ignore[arg-type]
     )
 
 

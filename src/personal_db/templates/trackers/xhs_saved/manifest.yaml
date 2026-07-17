@@ -1,5 +1,7 @@
 name: xhs_saved
 description: Xiaohongshu / RedNote saved posts collected from a logged-in Chrome session
+manifest_version: 2
+platform: [darwin]
 permission_type: manual
 setup_steps:
   - type: env_var

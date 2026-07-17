@@ -10,6 +10,7 @@ from typing import Any
 
 from personal_db.core.config import Config
 from personal_db.core.db import connect
+from personal_db.core.migrations import ensure_columns
 from personal_db.interfaces.email_context import EvidenceRef
 
 _SCHEMA_SQL = """
@@ -161,11 +162,7 @@ def apply_enrichment_schema(cfg: Config) -> None:
 
 
 def _ensure_job_columns(con: sqlite3.Connection) -> None:
-    cols = {row[1] for row in con.execute("PRAGMA table_info(enrichment_jobs)").fetchall()}
-    if "lease_until" not in cols:
-        con.execute("ALTER TABLE enrichment_jobs ADD COLUMN lease_until TEXT")
-    if "failed_at" not in cols:
-        con.execute("ALTER TABLE enrichment_jobs ADD COLUMN failed_at TEXT")
+    ensure_columns(con, "enrichment_jobs", {"lease_until": "TEXT", "failed_at": "TEXT"})
 
 
 def enrichment_job_id(enrichment_name: str, input_table: str, input_id: str) -> str:

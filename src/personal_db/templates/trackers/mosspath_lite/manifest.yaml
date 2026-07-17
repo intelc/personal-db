@@ -1,5 +1,7 @@
 name: mosspath_lite
 description: Mosspath Lite computer activity events, semantic sessions, work episodes, and routine answers
+manifest_version: 2
+platform: [darwin]
 permission_type: none
 setup_steps:
   - type: instructions

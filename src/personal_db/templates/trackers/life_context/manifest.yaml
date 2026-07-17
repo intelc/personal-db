@@ -5,6 +5,8 @@ description: |
   trackers look weird (sick stretch, travel, system reinstall, vacation, etc.)
   so future-you (or future-Claude) reads the data correctly.
 
+manifest_version: 2
+platform: [darwin]
 permission_type: none
 
 setup_steps:

@@ -17,8 +17,8 @@ import yaml
 from pydantic import ValidationError
 
 from personal_db.core.config import Config
-from personal_db.core.db import connect, connection, transaction
-from personal_db.core.manifest import BackgroundJobSpec, McpToolSpec
+from personal_db.core.db import connection, transaction
+from personal_db.core.manifest import BackgroundJobSpec, McpToolSpec, PlatformName
 
 _APP_NAME_RE = re.compile(r"^[a-z0-9_]+$")
 _QUERY_MARKER_RE = re.compile(r"^\s*--\s*name:\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*$")
@@ -72,6 +72,10 @@ class AppManifest:
     writes: AppWrites = field(default_factory=AppWrites)
     background_jobs: tuple[BackgroundJobSpec, ...] = field(default_factory=tuple)
     mcp_tools: tuple[McpToolSpec, ...] = field(default_factory=tuple)
+    # None (default) = portable. Mirrors Manifest.platform for tracker
+    # manifests; not currently gated at app-install time (apps are pure-Python
+    # views/actions over tables a platform-gated tracker already populated).
+    platform: tuple[PlatformName, ...] | None = None
 
     @property
     def default_page(self) -> AppPage:
@@ -200,6 +204,12 @@ def load_app_manifest(path: Path) -> AppManifest:
     writes_raw = raw.get("writes") or {}
     if not isinstance(reads_raw, dict) or not isinstance(writes_raw, dict):
         raise AppManifestError("reads and writes must be mappings")
+
+    platform_raw = raw.get("platform")
+    platform: tuple[str, ...] | None = (
+        None if platform_raw is None else _strings(platform_raw, field_name="platform")
+    )
+
     return AppManifest(
         name=name,
         title=str(raw.get("title") or name.replace("_", " ").title()),
@@ -215,6 +225,7 @@ def load_app_manifest(path: Path) -> AppManifest:
         ),
         background_jobs=_background_jobs(raw.get("background_jobs"), field_name="background_jobs"),
         mcp_tools=_mcp_tools(raw.get("mcp_tools"), field_name="mcp_tools"),
+        platform=platform,  # type: ignore[arg-type]
     )
 
 

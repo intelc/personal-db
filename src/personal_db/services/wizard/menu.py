@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from importlib import resources
 
@@ -11,7 +12,7 @@ import yaml
 
 from personal_db.core.config import Config
 from personal_db.core.installer import install_template, is_outdated, list_bundled, update_template
-from personal_db.core.manifest import load_manifest
+from personal_db.core.manifest import PlatformUnsupportedError, load_manifest, platform_label
 from personal_db.services.wizard.mcp_setup import run_mcp_setup_menu
 from personal_db.services.wizard.runner import run_tracker
 from personal_db.services.wizard.status import compute_icon, read_status
@@ -61,13 +62,24 @@ def _list_bundled_not_installed(cfg: Config) -> list[str]:
     return [n for n in list_bundled() if n not in installed]
 
 
+def _badge(permission_type: str, platform: Sequence[str] | None) -> str:
+    """Permission-type + platform badge, e.g. `[full_disk_access · macOS]`,
+    shown *before* the user picks a tracker so cost/compatibility is visible
+    up front rather than discovered mid-setup."""
+    parts = [permission_type]
+    if platform:
+        parts.append("/".join(platform_label(p) for p in platform))
+    return "[" + " · ".join(parts) + "]"
+
+
 def _format_choice(cfg: Config, name: str) -> str:
     try:
         manifest = load_manifest(cfg.trackers_dir / name / "manifest.yaml")
     except Exception as e:
         return f"⚠ {name:18s} broken manifest      — {type(e).__name__}: {e}"
+    badge = _badge(manifest.permission_type, manifest.platform)
     if is_outdated(cfg, name):
-        return f"⟳ {name:18s} update available — {manifest.description}"
+        return f"⟳ {name:18s} {badge} update available — {manifest.description}"
     icon = compute_icon(cfg, name)
     status = read_status(cfg).get(name)
     if icon == "—":
@@ -79,19 +91,21 @@ def _format_choice(cfg: Config, name: str) -> str:
         suffix = f"configured · {detail}"
     else:  # ✗
         suffix = "needs setup"
-    return f"{icon} {name:18s} {suffix} — {manifest.description}"
+    return f"{icon} {name:18s} {badge} {suffix} — {manifest.description}"
 
 
 def _format_bundled_choice(name: str) -> str:
     pkg = resources.files("personal_db.templates.trackers")
     try:
         manifest_text = pkg.joinpath(name, "manifest.yaml").read_text()
-        description = (yaml.safe_load(manifest_text) or {}).get("description", "")
+        data = yaml.safe_load(manifest_text) or {}
     except (yaml.YAMLError, OSError) as e:
         # A broken bundled manifest shouldn't take down the whole menu.
         # Surface it as a choice the user can see, so they know what to fix.
         return f"⚠ {name:18s} broken manifest      — {type(e).__name__}: {e}"
-    return f"+ {name:18s} not installed       — {description}"
+    description = data.get("description", "")
+    badge = _badge(data.get("permission_type", "none"), data.get("platform"))
+    return f"+ {name:18s} {badge} not installed       — {description}"
 
 
 def run_menu(cfg: Config) -> None:
@@ -137,12 +151,16 @@ def run_menu(cfg: Config) -> None:
             try:
                 install_template(cfg, name)
                 print(f"  Installed {name}")
-            except (FileExistsError, ValueError) as e:
+            except (FileExistsError, ValueError, PlatformUnsupportedError) as e:
                 print(f"  ✗ install failed: {e}")
                 continue
             run_tracker(cfg, name)
         else:
             if is_outdated(cfg, selection):
-                update_template(cfg, selection)
-                print(f"  ⟳ Updated {selection} from bundle")
+                try:
+                    update_template(cfg, selection)
+                    print(f"  ⟳ Updated {selection} from bundle")
+                except PlatformUnsupportedError as e:
+                    print(f"  ✗ update failed: {e}")
+                    continue
             run_tracker(cfg, selection)

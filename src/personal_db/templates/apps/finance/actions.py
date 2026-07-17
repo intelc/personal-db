@@ -11,6 +11,7 @@ from personal_db.enrichments.finance import (
     DEFAULT_MAX_RECEIPT_CANDIDATE_THREADS,
     RECEIPT_V1_ENRICHMENT,
 )
+from personal_db.migrations import ensure_columns
 
 _KINDS = {"parent_draw", "recurring_candidate"}
 _STATUSES = {"reviewed", "ignored"}
@@ -332,11 +333,7 @@ def _ensure_burn_bucket_metadata(ctx: AppContext) -> None:
             )
             """
         )
-        columns = {str(row[1]) for row in con.execute("PRAGMA table_info(app_finance_burn_buckets)")}
-        if "color" not in columns:
-            con.execute("ALTER TABLE app_finance_burn_buckets ADD COLUMN color TEXT")
-        if "emoji" not in columns:
-            con.execute("ALTER TABLE app_finance_burn_buckets ADD COLUMN emoji TEXT")
+        ensure_columns(con, "app_finance_burn_buckets", {"color": "TEXT", "emoji": "TEXT"})
         con.executemany(
             """
             INSERT OR IGNORE INTO app_finance_burn_buckets(

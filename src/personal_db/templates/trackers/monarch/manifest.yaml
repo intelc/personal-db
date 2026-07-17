@@ -1,5 +1,7 @@
 name: monarch
 description: Monarch Money accounts, transactions, balances, holdings, and selected finance exports
+manifest_version: 2
+schema_version: 2
 permission_type: api_key
 setup_steps:
   - type: instructions

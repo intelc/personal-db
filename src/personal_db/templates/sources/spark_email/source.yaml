@@ -2,6 +2,7 @@ name: spark_email
 description: Live email, calendar, contacts, and meeting access through Spark Desktop CLI
 provider: spark
 enabled: true
+platform: [darwin]
 command: spark
 capabilities:
   - accounts

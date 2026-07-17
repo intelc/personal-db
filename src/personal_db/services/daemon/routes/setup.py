@@ -15,7 +15,8 @@ from fastapi.templating import Jinja2Templates
 from personal_db.core.config import Config
 from personal_db.core.db import apply_tracker_schema, init_db
 from personal_db.core.installer import install_template
-from personal_db.core.manifest import OAuthStep, load_manifest
+from personal_db.core.manifest import OAuthStep, PlatformUnsupportedError, load_manifest
+from personal_db.core.migrations import apply_pending_migrations
 from personal_db.core.oauth import ensure_adapter_from_manifest, start_web_oauth
 from personal_db.services.ui.setup_runner import list_overview, list_step_views, process_form
 from personal_db.services.wizard.env_file import read_env
@@ -63,10 +64,13 @@ def register_setup_routes(
     async def setup_install(name: str):
         try:
             dest = install_template(cfg, name)
+            manifest = load_manifest(dest / "manifest.yaml")
             init_db(cfg.db_path)
+            apply_pending_migrations(cfg, name, dest, manifest)
             apply_tracker_schema(cfg.db_path, (dest / "schema.sql").read_text())
-        except (FileExistsError, ValueError):
-            # Already installed or unknown -- the per-tracker page handles the final state.
+        except (FileExistsError, ValueError, PlatformUnsupportedError):
+            # Already installed, unknown, or unsupported on this OS -- the
+            # per-tracker page handles the final state.
             pass
         return RedirectResponse(url=f"/setup/{name}", status_code=303)
 

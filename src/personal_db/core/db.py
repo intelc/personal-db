@@ -2,7 +2,20 @@ import contextlib
 import sqlite3
 from pathlib import Path
 
-CORE_TABLES = ("people", "people_aliases", "topics", "topics_aliases", "notes")
+CORE_TABLES = (
+    "people",
+    "people_aliases",
+    "topics",
+    "topics_aliases",
+    "notes",
+    "tracker_schema_versions",
+)
+
+# Bumped when the shape of the core tables above changes. Stored in
+# `PRAGMA user_version` (forward-only: init_db never lowers it), separate from
+# any per-tracker `tracker_schema_versions` stamp, which tracks extension
+# schemas instead.
+CORE_SCHEMA_VERSION = 1
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS people (
@@ -29,6 +42,11 @@ CREATE TABLE IF NOT EXISTS notes (
   created_at TEXT NOT NULL,
   body_excerpt TEXT
 );
+CREATE TABLE IF NOT EXISTS tracker_schema_versions (
+  tracker    TEXT PRIMARY KEY,
+  version    INTEGER NOT NULL,
+  applied_at TEXT NOT NULL
+);
 """
 
 
@@ -41,6 +59,12 @@ def init_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with transaction(db_path) as con:
         con.executescript(_SCHEMA_SQL)
+        # Whole-DB stamp for the core tables' shape. Forward-only: never lower
+        # an existing db's user_version, even if CORE_SCHEMA_VERSION were ever
+        # decreased by mistake.
+        (current_version,) = con.execute("PRAGMA user_version").fetchone()
+        if current_version < CORE_SCHEMA_VERSION:
+            con.execute(f"PRAGMA user_version = {CORE_SCHEMA_VERSION}")
 
 
 def connect(db_path: Path, read_only: bool = False) -> sqlite3.Connection:

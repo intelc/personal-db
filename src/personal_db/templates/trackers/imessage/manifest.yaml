@@ -1,5 +1,7 @@
 name: imessage
 description: iMessage messages from ~/Library/Messages/chat.db
+manifest_version: 2
+platform: [darwin]
 permission_type: full_disk_access
 setup_steps:
   - type: fda_check

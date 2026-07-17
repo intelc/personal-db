@@ -32,6 +32,7 @@ except ImportError as exc:
         "pip install 'personal_db[xhs]'"
     ) from exc
 
+from personal_db.migrations import ensure_columns
 from personal_db.tracker import Tracker
 
 NOTE_ID_RE = re.compile(
@@ -877,12 +878,7 @@ def _migrate_schema(db_path: Path) -> None:
     con = sqlite3.connect(db_path)
     try:
         for table, cols in _SCHEMA_NEW_COLS.items():
-            existing = {row[1] for row in con.execute(f"PRAGMA table_info({table})")}
-            if not existing:
-                continue
-            for col, col_type in cols:
-                if col not in existing:
-                    con.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}")
+            ensure_columns(con, table, dict(cols))
         con.commit()
     finally:
         con.close()

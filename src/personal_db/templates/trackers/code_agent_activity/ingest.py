@@ -15,22 +15,22 @@ state/cursors.sqlite):
 
 from __future__ import annotations
 
-import json
-import logging
-import os
-import shutil
-import sqlite3
-from datetime import datetime, timezone
-from pathlib import Path
-
-from personal_db.tracker import Tracker
-
 # Sibling modules (parsers.py, intervals.py) need to load both when this file
 # is imported as a member of the personal_db package (tests) AND when the
 # daemon loads it via importlib.util from <root>/trackers/code_agent_activity/
 # (production — see personal_db.sync._load_ingest_module). Direct relative
 # imports break the second case. Load siblings explicitly by file path:
 import importlib.util as _ilu
+import json
+import logging
+import os
+import shutil
+import sqlite3
+from datetime import UTC, datetime
+from pathlib import Path
+
+from personal_db.migrations import ensure_columns
+from personal_db.tracker import Tracker
 
 
 def _load_sibling(name: str):
@@ -208,11 +208,7 @@ def _ensure_schema_columns(con: sqlite3.Connection) -> None:
     already exist.
     """
     for table in ("code_agent_events", "code_agent_intervals"):
-        cols = {r[1] for r in con.execute(f"PRAGMA table_info({table})").fetchall()}
-        if cols and "is_remote" not in cols:
-            con.execute(
-                f"ALTER TABLE {table} ADD COLUMN is_remote INTEGER NOT NULL DEFAULT 0"
-            )
+        ensure_columns(con, table, {"is_remote": "INTEGER NOT NULL DEFAULT 0"})
     con.commit()
 
 
@@ -310,7 +306,7 @@ def _materialize_for_changed_sessions(t: Tracker, new_events: list[dict]) -> int
         return 0
 
     changed_keys = {(e["agent"], e["session_id"]) for e in new_events}
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     total = 0
 
     con = sqlite3.connect(t.cfg.db_path)
