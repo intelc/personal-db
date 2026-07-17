@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from personal_db.core.config import Config
-from personal_db.context_providers.email import SparkEmailContextProvider
+from personal_db.interfaces.email_context import EmailContextProvider
 from personal_db.core.db import connect
 from personal_db.core.enrichment_queue import (
     apply_enrichment_schema,
@@ -91,7 +91,7 @@ def enqueue_missing_receipt_v1_enrichments(
     stale_after_days: int | None = None,
     force: bool = False,
     rerun_statuses: Sequence[str] | None = None,
-    provider: SparkEmailContextProvider | None = None,
+    provider: EmailContextProvider | None = None,
 ) -> dict[str, Any]:
     return _enqueue_missing_receipt_enrichments(
         cfg,
@@ -220,7 +220,7 @@ def _enqueue_missing_receipt_enrichments(
     stale_after_days: int | None,
     force: bool,
     rerun_statuses: Sequence[str] | None = None,
-    provider: SparkEmailContextProvider | None = None,
+    provider: EmailContextProvider | None = None,
 ) -> dict[str, Any]:
     apply_enrichment_schema(cfg)
     rows = _select_enqueue_receipt_rows(

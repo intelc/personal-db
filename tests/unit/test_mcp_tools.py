@@ -137,10 +137,6 @@ def test_email_search_receipts_returns_context_result(tmp_root, monkeypatch):
     cfg = Config(root=tmp_root)
 
     class FakeProvider:
-        @classmethod
-        def from_config(cls, cfg):
-            return cls()
-
         def search_receipts(
             self,
             *,
@@ -170,8 +166,8 @@ def test_email_search_receipts_returns_context_result(tmp_root, monkeypatch):
             return Result()
 
     monkeypatch.setattr(
-        "personal_db.services.mcp_server.tools.SparkEmailContextProvider",
-        FakeProvider,
+        "personal_db.services.mcp_server.tools.resolve_email_context_provider",
+        lambda cfg: FakeProvider(),
     )
 
     out = email_search_receipts(cfg, "Store", "12.34", "2026-06-01", 3, "Inbox")
@@ -179,6 +175,19 @@ def test_email_search_receipts_returns_context_result(tmp_root, monkeypatch):
     assert out["ok"] is True
     assert out["provider"] == "email"
     assert out["evidence"][0]["ref"] == "spark_email:message:123"
+
+
+def test_email_search_receipts_degrades_when_unconfigured(tmp_root, monkeypatch):
+    cfg = Config(root=tmp_root)
+    monkeypatch.setattr(
+        "personal_db.services.mcp_server.tools.resolve_email_context_provider",
+        lambda cfg: None,
+    )
+
+    out = email_search_receipts(cfg, "Store")
+
+    assert out["ok"] is False
+    assert "no email context provider configured" in out["error"]
 
 
 def test_enrichment_queue_control_tools_wrap_results(tmp_root, monkeypatch):

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from personal_db.core.config import Config
-from personal_db.context_providers.email import SparkEmailContextProvider
+from personal_db.interfaces.email_context import EmailContextProvider
 from personal_db.enrichments.agent import (
     EnrichmentAgentHarness,
     EnrichmentAgentRequest,
@@ -13,6 +13,7 @@ from personal_db.enrichments.agent import (
     receipt_harness_from_env,
 )
 from personal_db.core.enrichment_queue import EnrichmentRunRecord, record_enrichment_run
+from personal_db.enrichments.finance.context import require_email_context_provider
 from personal_db.enrichments.finance.constants import (
     DEFAULT_MAX_RECEIPT_CANDIDATE_THREADS,
     DEFAULT_RECEIPT_SNIPPET_WINDOW_CHARS,
@@ -36,7 +37,7 @@ def enrich_transaction_receipt_stub(
     *,
     window_days: int = 7,
     scope: str | None = None,
-    provider: SparkEmailContextProvider | None = None,
+    provider: EmailContextProvider | None = None,
 ) -> dict[str, Any]:
     """Find receipt email candidates and persist a stub enrichment result.
 
@@ -65,7 +66,7 @@ def enrich_transaction_receipt_stub(
             ),
         )
 
-    context_provider = provider or SparkEmailContextProvider.from_config(cfg)
+    context_provider = require_email_context_provider(cfg, provider)
     context = context_provider.search_receipts(
         merchant=tx.merchant_hint,
         amount=abs(tx.amount),
@@ -116,7 +117,7 @@ def enrich_transaction_receipt_v1(
     max_candidate_threads: int = DEFAULT_MAX_RECEIPT_CANDIDATE_THREADS,
     snippet_window_chars: int = DEFAULT_RECEIPT_SNIPPET_WINDOW_CHARS,
     max_thread_chars: int = 4000,
-    provider: SparkEmailContextProvider | None = None,
+    provider: EmailContextProvider | None = None,
     harness: EnrichmentAgentHarness | None = None,
 ) -> dict[str, Any]:
     """Run the agent-shaped receipt enrichment for one finance transaction.
@@ -148,7 +149,7 @@ def enrich_transaction_receipt_v1(
             ),
         )
 
-    context_provider = provider or SparkEmailContextProvider.from_config(cfg)
+    context_provider = require_email_context_provider(cfg, provider)
     search_context = context_provider.search_receipts(
         merchant=tx.merchant_hint,
         amount=abs(tx.amount),
@@ -247,7 +248,7 @@ def enrich_transaction_receipt_v1(
 
 
 def _read_receipt_candidate_contexts(
-    context_provider: SparkEmailContextProvider,
+    context_provider: EmailContextProvider,
     message_ids: list[Any],
     *,
     max_threads: int,

@@ -2,7 +2,7 @@ import json
 from datetime import UTC, datetime, timedelta
 
 from personal_db.core.config import Config
-from personal_db.context_providers.base import ContextResult, EvidenceRef
+from personal_db.interfaces.email_context import ContextResult, EvidenceRef
 from personal_db.core.db import connect, init_db
 from personal_db.enrichments.agent import EnrichmentAgentResult
 from personal_db.enrichments.core import (

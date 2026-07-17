@@ -35,31 +35,45 @@ build-backend = "hatchling.build"
 root_packages = ["personal_db"]
 
 [[tool.importlinter.contracts]]
-name = "Layered architecture: cli -> services -> extensions -> ui -> interfaces -> core"
+name = "Layered architecture: cli -> services -> ui -> core -> interfaces"
 type = "layers"
 containers = ["personal_db"]
 layers = [
   "cli",
   "services",
-  # Extension-ish packages that still live at top level. enrichments sits below
-  # services (daemon/mcp still import enrichments.finance until Phase 1b/1c) and
-  # above context_providers/remote_sources, which it consumes. All three move or
-  # dissolve in later phases (1b/1c/1e).
-  "enrichments",
-  "context_providers",
-  "remote_sources",
   "ui",
-  "interfaces",
   "core",
+  "interfaces",
 ]
 ignore_imports = [
-  # removed in Phase 1b/1c: the generic enrichment queue still borrows
-  # EvidenceRef from context_providers.base; it moves to interfaces/.
-  "personal_db.core.enrichment_queue -> personal_db.context_providers.base",
   # Backward-compat shim only: personal_db.ui.viz re-exports the service module
   # for an in-flight test file we cannot edit. Internal code must import
   # personal_db.services.ui.viz directly. Shim (and this ignore) drop later.
   "personal_db.ui.viz -> personal_db.services.ui.viz",
+]
+
+[[tool.importlinter.contracts]]
+name = "Services depend only on core/interfaces, never extension concretes"
+type = "forbidden"
+source_modules = [
+  "personal_db.services",
+  "personal_db.ui",
+]
+forbidden_modules = [
+  "personal_db.enrichments",
+  "personal_db.context_providers",
+  "personal_db.remote_sources",
+]
+ignore_imports = [
+  # The one narrow, intentional bridge: core.providers resolves the built-in
+  # "spark_email" provider name by lazily importing context_providers.email
+  # inside a function body (see core/providers.py docstring for why this is
+  # the chosen design over self-registration, instead of the provider
+  # self-registering). services/ui reach context_providers only through this
+  # one edge (services -> core.providers -> context_providers.email), which
+  # import-linter's forbidden contract otherwise flags transitively; ignoring
+  # the single direct edge below removes it from the whole contract's graph.
+  "personal_db.core.providers -> personal_db.context_providers.email",
 ]
 
 [tool.hatch.build.targets.wheel]

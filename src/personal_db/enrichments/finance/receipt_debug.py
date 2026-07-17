@@ -5,13 +5,14 @@ from __future__ import annotations
 from typing import Any
 
 from personal_db.core.config import Config
-from personal_db.context_providers.email import SparkEmailContextProvider
+from personal_db.interfaces.email_context import EmailContextProvider
 from personal_db.core.db import connect
 from personal_db.enrichments.agent import EnrichmentAgentHarness, receipt_harness_from_env
 from personal_db.enrichments.finance.constants import (
     DEFAULT_MAX_RECEIPT_CANDIDATE_THREADS,
     DEFAULT_RECEIPT_SNIPPET_WINDOW_CHARS,
 )
+from personal_db.enrichments.finance.context import require_email_context_provider
 from personal_db.enrichments.finance.receipt_matching import (
     _full_thread_context,
     _normalize_receipt_agent_result,
@@ -43,7 +44,7 @@ def debug_transaction_receipt_v1(
     snippet_window_chars: int = DEFAULT_RECEIPT_SNIPPET_WINDOW_CHARS,
     max_thread_chars: int = 4000,
     run_agent: bool = False,
-    provider: SparkEmailContextProvider | None = None,
+    provider: EmailContextProvider | None = None,
     harness: EnrichmentAgentHarness | None = None,
 ) -> dict[str, Any]:
     """Return a non-persisting receipt enrichment debug payload."""
@@ -66,7 +67,7 @@ def debug_transaction_receipt_v1(
             "candidate_evidence": [],
         }
 
-    context_provider = provider or SparkEmailContextProvider.from_config(cfg)
+    context_provider = require_email_context_provider(cfg, provider)
     search_context = context_provider.search_receipts(
         merchant=tx.merchant_hint,
         amount=abs(tx.amount),
@@ -148,7 +149,7 @@ def debug_receipt_batch_v1(
     snippet_window_chars: int = DEFAULT_RECEIPT_SNIPPET_WINDOW_CHARS,
     run_agent: bool = False,
     include_details: bool = False,
-    provider: SparkEmailContextProvider | None = None,
+    provider: EmailContextProvider | None = None,
     harness: EnrichmentAgentHarness | None = None,
 ) -> dict[str, Any]:
     """Run non-persisting receipt debug over a recent transaction sample."""

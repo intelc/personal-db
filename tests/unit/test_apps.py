@@ -16,7 +16,7 @@ from personal_db.core.apps import (
     update_app_template,
 )
 from personal_db.core.config import Config
-from personal_db.context_providers.base import EvidenceRef
+from personal_db.interfaces.email_context import EvidenceRef
 from personal_db.services.daemon.http import build_app
 from personal_db.core.db import apply_tracker_schema, connect, init_db
 from personal_db.enrichments.core import EnrichmentRunRecord, record_enrichment_run

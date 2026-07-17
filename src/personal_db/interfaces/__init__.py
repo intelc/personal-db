@@ -1,10 +1,9 @@
 """Capability protocols for personal_db extensions.
 
-This package is the future home of Protocol definitions that let services
-(daemon, MCP server) depend on a capability contract instead of a concrete
-extension implementation — e.g. an ``EmailContextProvider`` protocol that
-``enrichments/finance`` depends on instead of importing
-``context_providers.email`` / ``remote_sources.spark`` directly.
-
-Content arrives in a later refactor phase (see interfaces/README.md).
+Protocol definitions here let services (daemon, MCP server) and extensions
+(enrichments.finance) depend on a capability contract instead of a concrete
+extension implementation — e.g. ``email_context.EmailContextProvider``, which
+``enrichments.finance`` and the core email MCP tools depend on instead of
+importing ``context_providers.email`` / ``remote_sources.spark`` directly.
+Concrete providers are resolved by name via ``core.providers``.
 """

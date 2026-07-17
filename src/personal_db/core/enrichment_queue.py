@@ -9,8 +9,8 @@ from hashlib import sha256
 from typing import Any
 
 from personal_db.core.config import Config
-from personal_db.context_providers.base import EvidenceRef
 from personal_db.core.db import connect
+from personal_db.interfaces.email_context import EvidenceRef
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS enrichment_runs (

@@ -10,7 +10,6 @@ from typing import Any
 import yaml
 
 from personal_db.core.config import Config
-from personal_db.context_providers.email import SparkEmailContextProvider
 from personal_db.core.db import connection
 from personal_db.core.enrichment_queue import (
     cancel_enrichment_job,
@@ -24,7 +23,7 @@ from personal_db.core.enrichment_queue import (
 from personal_db.core.log_event import log_event
 from personal_db.core.manifest import load_manifest
 from personal_db.core.notes import list_notes, read_note
-from personal_db.remote_sources.spark import SparkCommandError, SparkSourceConfigError
+from personal_db.core.providers import resolve_email_context_provider
 from personal_db.core.sources import discover_sources
 
 # Cap file writes to keep the tool from being a foot-gun. Real tracker files
@@ -161,19 +160,27 @@ def list_remote_sources(cfg: Config) -> list[dict[str, Any]]:
     ]
 
 
-def _context_call(fn) -> dict[str, Any]:
-    try:
-        return {"ok": True, **fn().as_dict()}
-    except SparkCommandError as e:
+def _context_call(cfg: Config, fn) -> dict[str, Any]:
+    """Resolve the configured email context provider and run `fn(provider)`.
+
+    Depends only on core.providers + the EmailContextProvider protocol — no
+    concrete provider (SparkEmailContextProvider) or remote-source exception
+    types are imported here, so this degrades to a clear "not configured"
+    result instead of failing on unconfigured/failed provider construction,
+    and to a generic error message for whatever the provider itself raises.
+    """
+    provider = resolve_email_context_provider(cfg)
+    if provider is None:
         return {
             "ok": False,
             "provider": "email",
-            "source": "spark_email",
-            "error": str(e),
-            "returncode": e.returncode,
+            "error": (
+                "no email context provider configured; set config.yaml "
+                "providers.email_context (or install the spark_email source)"
+            ),
         }
-    except SparkSourceConfigError as e:
-        return {"ok": False, "provider": "email", "source": "spark_email", "error": str(e)}
+    try:
+        return {"ok": True, **fn(provider).as_dict()}
     except Exception as e:
         return {"ok": False, "provider": "email", "error": str(e)}
 
@@ -187,13 +194,14 @@ def email_search_receipts(
     scope: str | None = None,
 ) -> dict[str, Any]:
     return _context_call(
-        lambda: SparkEmailContextProvider.from_config(cfg).search_receipts(
+        cfg,
+        lambda provider: provider.search_receipts(
             merchant=merchant,
             amount=amount,
             date_=date_,
             window_days=window_days,
             scope=scope,
-        )
+        ),
     )
 
 
@@ -203,10 +211,11 @@ def email_read_thread(
     download_attachments: bool = False,
 ) -> dict[str, Any]:
     return _context_call(
-        lambda: SparkEmailContextProvider.from_config(cfg).read_thread(
+        cfg,
+        lambda provider: provider.read_thread(
             message_id,
             download_attachments=download_attachments,
-        )
+        ),
     )
 
 

@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
 from personal_db.core.config import Config
-from personal_db.context_providers.base import ContextResult, EvidenceRef
+from personal_db.interfaces.email_context import ContextResult, EvidenceRef
 from personal_db.remote_sources.spark import SparkEmailSource
 
 
