@@ -6,6 +6,7 @@ import yaml
 
 from personal_db.core.config import Config
 from personal_db.core.sync import sync_one
+from tests._validation_helpers import mark_valid
 
 
 def _init_with_tracker(tmp_path, ingest_body: str):
@@ -42,6 +43,7 @@ def _init_with_tracker(tmp_path, ingest_body: str):
     )
     (d / "schema.sql").write_text("CREATE TABLE IF NOT EXISTS demo (id TEXT PRIMARY KEY, ts TEXT);")
     (d / "ingest.py").write_text(ingest_body)
+    mark_valid(Config(root=root), "demo")
     return root
 
 

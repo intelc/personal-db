@@ -5,8 +5,9 @@ from __future__ import annotations
 import yaml
 
 from personal_db.core.config import Config
-from personal_db.services.daemon._locks import sync_due_locked, sync_one_locked
 from personal_db.core.db import init_db
+from personal_db.services.daemon._locks import sync_due_locked, sync_one_locked
+from tests._validation_helpers import mark_valid
 
 
 def _make_tracker(tmp_root, name="alpha", every="1h"):
@@ -46,6 +47,7 @@ def _make_tracker(tmp_root, name="alpha", every="1h"):
         "def sync(t):\n"
         "    t.upsert(t.name, [{'id': 's1', 'ts': '2026-04-25'}], key=['id'])\n"
     )
+    mark_valid(cfg, name)
     return cfg
 
 

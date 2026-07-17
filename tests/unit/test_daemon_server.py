@@ -141,6 +141,34 @@ def test_start_periodic_background_job_swallows_errors_and_continues(tmp_root, c
     ), "the swallowed exception should have been logged"
 
 
+def test_start_periodic_background_job_writes_audit_log_rows(tmp_root):
+    """Phase 2b: every background-job tick gets an action_log row
+    (surface='background_job'), result updated to 'ok'/'error: ...'
+    after the entrypoint runs."""
+    import sqlite3
+
+    cfg = Config(root=tmp_root)
+    job = _make_job_tracker(tmp_root, name="audited_tracker")
+    stop = threading.Event()
+
+    thread = ds.start_periodic_background_job(cfg, job, interval_seconds=0.05, stop_event=stop)
+    time.sleep(0.12)
+    stop.set()
+    thread.join(timeout=2.0)
+
+    con = sqlite3.connect(cfg.db_path)
+    rows = con.execute(
+        "SELECT surface, extension, action, result FROM action_log ORDER BY id"
+    ).fetchall()
+    con.close()
+    assert len(rows) >= 1
+    for surface, extension, action, result in rows:
+        assert surface == "background_job"
+        assert extension == "tracker:audited_tracker"
+        assert action == "run"
+        assert result == "ok"
+
+
 def test_start_declared_background_jobs_discovers_and_schedules(tmp_root):
     cfg = Config(root=tmp_root)
     _make_job_tracker(tmp_root, name="tracker_a")

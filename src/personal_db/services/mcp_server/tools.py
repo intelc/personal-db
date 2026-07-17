@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-import py_compile
 import re
-import sqlite3
 import tempfile
 from pathlib import Path
 from typing import Any
-
-import yaml
 
 from personal_db.core.config import Config
 from personal_db.core.db import connection
@@ -25,6 +21,7 @@ from personal_db.core.manifest import load_manifest
 from personal_db.core.notes import list_notes, read_note
 from personal_db.core.providers import resolve_email_context_provider
 from personal_db.core.sources import discover_sources
+from personal_db.core.validation import validate_tracker as _validate_tracker_impl
 
 # Cap file writes to keep the tool from being a foot-gun. Real tracker files
 # are well under 100 KB; 1 MiB leaves plenty of headroom.
@@ -410,67 +407,8 @@ def backfill_tool(
 
 
 def validate_tracker(cfg: Config, name: str) -> dict[str, Any]:
-    """Run lint checks on a tracker dir. Returns structured pass/fail per check.
-
-    Checks:
-      - manifest_yaml: yaml.safe_load parses
-      - manifest_schema: load_manifest() (Pydantic) accepts the manifest
-      - ingest_py: py_compile passes
-      - schema_sql: executescript() runs against an in-memory sqlite
-
-    Result shape:
-      {"name": <name>, "ok": bool,
-       "checks": [{"name": str, "ok": bool, "detail": str}, ...]}
-    """
-    if not _TRACKER_NAME_RE.match(name):
-        raise ValueError(f"invalid tracker name: {name!r}")
-    tdir = cfg.trackers_dir / name
-    if not tdir.is_dir():
-        raise FileNotFoundError(f"no such tracker: {name}")
-
-    checks: list[dict[str, Any]] = []
-
-    def _check(name_: str, fn) -> None:
-        try:
-            detail = fn() or "ok"
-            checks.append({"name": name_, "ok": True, "detail": detail})
-        except Exception as e:
-            checks.append({"name": name_, "ok": False, "detail": f"{type(e).__name__}: {e}"})
-
-    manifest_path = tdir / "manifest.yaml"
-    schema_path = tdir / "schema.sql"
-    ingest_path = tdir / "ingest.py"
-
-    def _yaml_check():
-        if not manifest_path.is_file():
-            raise FileNotFoundError("manifest.yaml missing")
-        yaml.safe_load(manifest_path.read_text())
-        return "manifest.yaml parses"
-
-    def _manifest_check():
-        load_manifest(manifest_path)
-        return "manifest passes Pydantic schema"
-
-    def _ingest_check():
-        if not ingest_path.is_file():
-            raise FileNotFoundError("ingest.py missing")
-        py_compile.compile(str(ingest_path), doraise=True)
-        return "ingest.py compiles"
-
-    def _schema_check():
-        if not schema_path.is_file():
-            raise FileNotFoundError("schema.sql missing")
-        sql = schema_path.read_text()
-        con = sqlite3.connect(":memory:")
-        try:
-            con.executescript(sql)
-        finally:
-            con.close()
-        return "schema.sql executes against in-memory sqlite"
-
-    _check("manifest_yaml", _yaml_check)
-    _check("manifest_schema", _manifest_check)
-    _check("ingest_py", _ingest_check)
-    _check("schema_sql", _schema_check)
-
-    return {"name": name, "ok": all(c["ok"] for c in checks), "checks": checks}
+    """Thin wrapper: the lint checks + validation-stamp logic live in
+    core/validation.py so core/sync.py can enforce the same stamp without
+    depending on the MCP service layer. See that module's docstring for the
+    check list and the hash-scope rationale."""
+    return _validate_tracker_impl(cfg, name)

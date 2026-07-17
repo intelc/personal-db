@@ -6,6 +6,7 @@ from personal_db.core.db import apply_tracker_schema, init_db
 from personal_db.core.installer import install_template, update_template
 from personal_db.core.manifest import PlatformUnsupportedError, load_manifest
 from personal_db.core.migrations import apply_pending_migrations
+from personal_db.core.validation import validate_tracker
 from personal_db.services.wizard.menu import run_menu
 from personal_db.services.wizard.runner import run_tracker
 
@@ -124,6 +125,31 @@ def reinstall(name: str) -> None:
     apply_pending_migrations(cfg, name, dest, manifest)
     apply_tracker_schema(cfg.db_path, (dest / "schema.sql").read_text())
     typer.echo(f"Reinstalled {name} -> {dest}")
+
+
+def validate(name: str) -> None:
+    """Lint-check a tracker's files and, if they pass, stamp them as validated.
+
+    `personal-db sync`/`backfill` refuse to run a tracker whose current files
+    don't match a validation stamp (core/validation.py) — this is how you
+    clear that gate after hand-editing a tracker's ingest.py/manifest.yaml/
+    schema.sql. Bundled templates are stamped automatically by
+    `tracker install`/`tracker reinstall`; this command is for
+    custom/agent-authored trackers."""
+    cfg = Config(root=get_root())
+    try:
+        result = validate_tracker(cfg, name)
+    except (ValueError, FileNotFoundError) as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from e
+    for check in result["checks"]:
+        mark = "✓" if check["ok"] else "✗"
+        typer.echo(f"  {mark} {check['name']}: {check['detail']}")
+    if result["ok"]:
+        typer.echo(f"{name}: validated — sync will accept these files")
+    else:
+        typer.echo(f"{name}: validation failed — sync will refuse these files", err=True)
+        raise typer.Exit(1)
 
 
 def setup(name: str | None = typer.Argument(None)) -> None:

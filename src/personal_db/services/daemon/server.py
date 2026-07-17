@@ -7,6 +7,7 @@ import threading
 
 import uvicorn
 
+from personal_db.core.action_log import log_action_result, log_action_start
 from personal_db.core.background_jobs import DeclaredBackgroundJob, discover_background_jobs
 from personal_db.core.config import Config
 from personal_db.core.entrypoints import load_entrypoint
@@ -67,6 +68,12 @@ def start_periodic_background_job(
 
     def _loop() -> None:
         while not stop.is_set():
+            log_id = log_action_start(
+                cfg,
+                surface="background_job",
+                extension=f"{job.extension_kind}:{job.extension_name}",
+                action=job.spec.name,
+            )
             try:
                 func = load_entrypoint(
                     job.base_dir,
@@ -75,8 +82,10 @@ def start_periodic_background_job(
                 )
                 result = func(cfg)
                 log.info("background job %s completed: %s", job.qualified_name, result)
-            except Exception:
+                log_action_result(cfg, log_id, "ok")
+            except Exception as exc:
                 log.exception("background job %s failed", job.qualified_name)
+                log_action_result(cfg, log_id, f"error: {exc}")
             stop.wait(timeout=interval_seconds)
 
     t = threading.Thread(

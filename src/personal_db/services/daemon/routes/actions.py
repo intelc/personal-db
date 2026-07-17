@@ -10,6 +10,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
+from personal_db.core.action_log import log_action_result, log_action_start
 from personal_db.core.apps import (
     AppContext,
     AppDefinition,
@@ -55,25 +56,33 @@ def register_action_routes(
                 status_code=404, detail=f"action '{action}' not found on tracker '{name}'"
             )
 
-        try:
-            params = inspect.signature(handler).parameters
-            payload: dict[str, Any] = {}
-            if len(params) >= 2 and request.headers.get("content-length", "0") != "0":
-                payload = await request.json()
+        params = inspect.signature(handler).parameters
+        payload: dict[str, Any] = {}
+        if len(params) >= 2 and request.headers.get("content-length", "0") != "0":
+            payload = await request.json()
 
+        log_id = log_action_start(
+            cfg, surface="tracker_action", extension=name, action=action, params=payload
+        )
+        try:
             if inspect.iscoroutinefunction(handler):
                 if len(params) >= 2:
-                    return await handler(cfg, payload)
-                return await handler(cfg)
+                    result = await handler(cfg, payload)
+                else:
+                    result = await handler(cfg)
+            else:
 
-            def _call_handler():
-                if len(params) >= 2:
-                    return handler(cfg, payload)
-                return handler(cfg)
+                def _call_handler():
+                    if len(params) >= 2:
+                        return handler(cfg, payload)
+                    return handler(cfg)
 
-            return await asyncio.to_thread(_call_handler)
+                result = await asyncio.to_thread(_call_handler)
         except Exception as exc:
+            log_action_result(cfg, log_id, f"error: {exc}")
             raise HTTPException(status_code=500, detail=str(exc)) from exc
+        log_action_result(cfg, log_id, "ok")
+        return result
 
     @app.get("/api/apps/{name}/queries/{query_name}")
     async def app_query(name: str, query_name: str, request: Request) -> dict[str, Any]:
@@ -170,41 +179,42 @@ def register_action_routes(
                 status_code=404, detail=f"action '{action}' not found on app '{name}'"
             )
 
-        try:
-            ctx = AppContext(cfg=cfg, app_dir=definition.root, manifest=definition.manifest)
-            params = inspect.signature(handler).parameters
-            payload: dict[str, Any] = {}
-            form_post = False
-            if len(params) >= 2 and request.headers.get("content-length", "0") != "0":
-                content_type = request.headers.get("content-type", "")
-                if content_type.startswith("application/json"):
-                    payload = await request.json()
-                else:
-                    form_post = True
-                    form = await request.form()
-                    payload = {key: str(value) for key, value in form.items()}
+        ctx = AppContext(cfg=cfg, app_dir=definition.root, manifest=definition.manifest)
+        params = inspect.signature(handler).parameters
+        payload: dict[str, Any] = {}
+        form_post = False
+        if len(params) >= 2 and request.headers.get("content-length", "0") != "0":
+            content_type = request.headers.get("content-type", "")
+            if content_type.startswith("application/json"):
+                payload = await request.json()
+            else:
+                form_post = True
+                form = await request.form()
+                payload = {key: str(value) for key, value in form.items()}
 
+        log_id = log_action_start(
+            cfg, surface="app_action", extension=name, action=action, params=payload
+        )
+        try:
             if inspect.iscoroutinefunction(handler):
                 if len(params) >= 2:
                     result = await handler(ctx, payload)
                 else:
                     result = await handler(ctx)
-                if form_post:
-                    return RedirectResponse(
-                        url=request.headers.get("referer") or f"/a/{name}", status_code=303
-                    )
-                return result
+            else:
 
-            def _call_handler():
-                if len(params) >= 2:
-                    return handler(ctx, payload)
-                return handler(ctx)
+                def _call_handler():
+                    if len(params) >= 2:
+                        return handler(ctx, payload)
+                    return handler(ctx)
 
-            result = await asyncio.to_thread(_call_handler)
-            if form_post:
-                return RedirectResponse(
-                    url=request.headers.get("referer") or f"/a/{name}", status_code=303
-                )
-            return result
+                result = await asyncio.to_thread(_call_handler)
         except Exception as exc:
+            log_action_result(cfg, log_id, f"error: {exc}")
             raise HTTPException(status_code=500, detail=str(exc)) from exc
+        log_action_result(cfg, log_id, "ok")
+        if form_post:
+            return RedirectResponse(
+                url=request.headers.get("referer") or f"/a/{name}", status_code=303
+            )
+        return result

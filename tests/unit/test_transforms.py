@@ -19,6 +19,7 @@ from personal_db.core.transforms import (
     transform,
     validate,
 )
+from tests._validation_helpers import mark_valid
 
 
 def _spec(name: str, writes: str, depends_on: list[str]) -> TransformSpec:
@@ -642,6 +643,7 @@ def test_sync_one_runs_transforms_after_ingest(tmp_root):
     _write_tracker(tmp_root, "x", schema, ingest, manifest)
 
     cfg = Config(root=tmp_root)
+    mark_valid(cfg, "x")
     sync_one(cfg, "x")
 
     con = sqlite3.connect(cfg.db_path)
@@ -677,6 +679,7 @@ def test_sync_one_skips_transforms_when_none_declared(tmp_root):
 
     _write_tracker(tmp_root, "y", schema, ingest, manifest)
     cfg = Config(root=tmp_root)
+    mark_valid(cfg, "y")
     sync_one(cfg, "y")  # must not raise
 
     con = sqlite3.connect(cfg.db_path)
@@ -720,6 +723,7 @@ def test_failed_transform_does_not_break_sync_and_is_logged(tmp_root):
 
     _write_tracker(tmp_root, "z", schema, ingest, manifest)
     cfg = Config(root=tmp_root)
+    mark_valid(cfg, "z")
 
     # sync_one should NOT raise even though the transform did
     sync_one(cfg, "z")
@@ -772,6 +776,7 @@ def test_independent_branches_continue_when_sibling_fails(tmp_root):
 
     _write_tracker(tmp_root, "w", schema, ingest, manifest)
     cfg = Config(root=tmp_root)
+    mark_valid(cfg, "w")
     sync_one(cfg, "w")
 
     con = sqlite3.connect(cfg.db_path)
@@ -820,6 +825,7 @@ def test_downstream_transform_skipped_when_dep_fails(tmp_root):
 
     _write_tracker(tmp_root, "chain", schema, ingest, manifest)
     cfg = Config(root=tmp_root)
+    mark_valid(cfg, "chain")
     sync_one(cfg, "chain")
 
     con = sqlite3.connect(cfg.db_path)
@@ -870,6 +876,7 @@ def test_backfill_one_also_runs_transforms(tmp_root):
     _write_tracker(tmp_root, "bf", schema, ingest, manifest)
 
     cfg = Config(root=tmp_root)
+    mark_valid(cfg, "bf")
     backfill_one(cfg, "bf", start=None, end=None)
 
     con = sqlite3.connect(cfg.db_path)

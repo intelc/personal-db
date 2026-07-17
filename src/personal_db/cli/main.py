@@ -57,6 +57,7 @@ tracker_app.command("list")(tracker_cmd.list_cmd)
 tracker_app.command("install")(tracker_cmd.install)
 tracker_app.command("reinstall")(tracker_cmd.reinstall)
 tracker_app.command("setup")(tracker_cmd.setup)
+tracker_app.command("validate")(tracker_cmd.validate)
 app.add_typer(tracker_app, name="tracker")
 
 app_app = typer.Typer(no_args_is_help=True, help="App management")

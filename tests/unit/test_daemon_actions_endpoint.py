@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 
 from personal_db.core.config import Config
+from personal_db.core.db import init_db
 from personal_db.services.daemon.http import build_app
-
 from tests._daemon_auth import auth_headers
 
 
@@ -107,3 +109,76 @@ def test_path_traversal_rejected(client: TestClient) -> None:
     r = client.post("/api/trackers/..%2Fevil/actions/hello")
     # FastAPI/Starlette URL-decodes `..` and passes it through; _validate_name catches it.
     assert r.status_code in (400, 404)
+
+
+def test_tracker_action_writes_audit_log_row(tmp_path: Path) -> None:
+    cfg = Config(root=tmp_path / "personal_db")
+    init_db(cfg.db_path)
+    cfg.trackers_dir.mkdir(parents=True, exist_ok=True)
+    cfg.state_dir.mkdir(parents=True, exist_ok=True)
+
+    tracker_dir = cfg.trackers_dir / "stub"
+    tracker_dir.mkdir(parents=True)
+    (tracker_dir / "manifest.yaml").write_text(
+        "name: stub\ndescription: x\npermission_type: none\nschema:\n  tables: {}\n"
+    )
+    (tracker_dir / "actions.py").write_text(
+        "def hello(cfg):\n    return {'ok': True, 'message': 'hi'}\n"
+        "def boom(cfg):\n    raise RuntimeError('intentional')\n"
+    )
+
+    app = build_app(cfg)
+    client = TestClient(app, headers=auth_headers(cfg))
+
+    ok = client.post("/api/trackers/stub/actions/hello")
+    assert ok.status_code == 200
+    failed = client.post("/api/trackers/stub/actions/boom")
+    assert failed.status_code == 500
+
+    con = sqlite3.connect(cfg.db_path)
+    rows = con.execute(
+        "SELECT surface, extension, action, result FROM action_log ORDER BY id"
+    ).fetchall()
+    con.close()
+    assert rows[0] == ("tracker_action", "stub", "hello", "ok")
+    assert rows[1][:3] == ("tracker_action", "stub", "boom")
+    assert rows[1][3].startswith("error:")
+
+
+def test_app_action_writes_audit_log_row(tmp_path: Path) -> None:
+    cfg = Config(root=tmp_path / "personal_db")
+    init_db(cfg.db_path)
+    cfg.trackers_dir.mkdir(parents=True, exist_ok=True)
+    cfg.state_dir.mkdir(parents=True, exist_ok=True)
+
+    app_dir = cfg.apps_dir / "stub_app"
+    app_dir.mkdir(parents=True)
+    (app_dir / "app.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": "stub_app",
+                "title": "Stub App",
+                "pages": [{"slug": "home", "title": "Home", "view": "render_home"}],
+                "writes": {"actions": ["ping"]},
+            }
+        )
+    )
+    (app_dir / "views.py").write_text(
+        "def render_home(ctx):\n    return '<p>stub</p>'\n"
+    )
+    (app_dir / "actions.py").write_text(
+        "def ping(ctx):\n    return {'ok': True}\n"
+    )
+
+    app = build_app(cfg)
+    client = TestClient(app, headers=auth_headers(cfg))
+    r = client.post("/api/apps/stub_app/actions/ping", json={})
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+
+    con = sqlite3.connect(cfg.db_path)
+    row = con.execute(
+        "SELECT surface, extension, action, result FROM action_log ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    con.close()
+    assert row == ("app_action", "stub_app", "ping", "ok")

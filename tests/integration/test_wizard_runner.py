@@ -4,6 +4,7 @@ from personal_db.core.config import Config
 from personal_db.core.db import init_db
 from personal_db.services.wizard.runner import run_tracker
 from personal_db.services.wizard.status import read_status
+from tests._validation_helpers import mark_valid
 
 
 def _install_demo_tracker(tmp_root, setup_steps):
@@ -43,6 +44,7 @@ def test_run_tracker_with_no_setup_steps_runs_test_sync(tmp_root):
     cfg = Config(root=tmp_root)
     init_db(cfg.db_path)
     _install_demo_tracker(tmp_root, [])
+    mark_valid(cfg, "demo")
     result = run_tracker(cfg, "demo")
     assert result.success is True
     s = read_status(cfg)["demo"]
@@ -73,6 +75,7 @@ def test_run_tracker_records_test_sync_failure(tmp_root, monkeypatch):
     (tmp_root / "trackers" / "demo" / "ingest.py").write_text(
         "def backfill(t,start,end): pass\ndef sync(t):\n    raise RuntimeError('boom')\n"
     )
+    mark_valid(cfg, "demo")
     result = run_tracker(cfg, "demo")
     assert result.success is False
     assert "boom" in result.detail

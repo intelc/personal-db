@@ -9,13 +9,15 @@ CORE_TABLES = (
     "topics_aliases",
     "notes",
     "tracker_schema_versions",
+    "tracker_validation",
+    "action_log",
 )
 
 # Bumped when the shape of the core tables above changes. Stored in
 # `PRAGMA user_version` (forward-only: init_db never lowers it), separate from
 # any per-tracker `tracker_schema_versions` stamp, which tracks extension
 # schemas instead.
-CORE_SCHEMA_VERSION = 1
+CORE_SCHEMA_VERSION = 2
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS people (
@@ -46,6 +48,20 @@ CREATE TABLE IF NOT EXISTS tracker_schema_versions (
   tracker    TEXT PRIMARY KEY,
   version    INTEGER NOT NULL,
   applied_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS tracker_validation (
+  tracker      TEXT PRIMARY KEY,
+  files_sha256 TEXT NOT NULL,
+  validated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS action_log (
+  id          INTEGER PRIMARY KEY,
+  ts          TEXT NOT NULL,
+  surface     TEXT NOT NULL,
+  extension   TEXT,
+  action      TEXT NOT NULL,
+  params_json TEXT,
+  result      TEXT
 );
 """
 

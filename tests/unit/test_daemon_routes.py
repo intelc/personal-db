@@ -2,12 +2,12 @@ import yaml
 from fastapi.testclient import TestClient
 
 from personal_db.core.config import Config
-from personal_db.services.daemon.agent_terminal import build_cli_command
-from personal_db.services.daemon.http import build_app
-
-from tests._daemon_auth import auth_headers
 from personal_db.core.db import apply_tracker_schema, init_db
 from personal_db.core.installer import install_template
+from personal_db.services.daemon.agent_terminal import build_cli_command
+from personal_db.services.daemon.http import build_app
+from tests._daemon_auth import auth_headers
+from tests._validation_helpers import mark_valid
 
 
 def _make_runnable(tmp_root, name="runnable"):
@@ -39,6 +39,7 @@ def _make_runnable(tmp_root, name="runnable"):
         "def sync(t):\n"
         "    t.upsert(t.name, [{'id': 's1', 'ts': '2026-04-25'}], key=['id'])\n"
     )
+    mark_valid(cfg, name)
     return cfg
 
 

@@ -9,6 +9,7 @@ from pathlib import Path
 
 from personal_db.core.config import Config
 from personal_db.core.manifest import check_platform_supported, load_manifest
+from personal_db.core.validation import compute_files_hash, record_validation
 
 _TRACKER_FILES = (
     "manifest.yaml",
@@ -115,7 +116,11 @@ def update_template(cfg: Config, name: str) -> Path:
     Also copies any OAuth adapter modules declared in the manifest and any
     migrations/*.sql files. Preserves any other files in the dir. Raises
     ValueError if no bundled template; PlatformUnsupportedError if the
-    manifest declares a `platform` list that excludes the current OS."""
+    manifest declares a `platform` list that excludes the current OS.
+
+    Auto-stamps the tracker as validated (core/validation.py) — bundled
+    templates are pre-trusted, so `sync_one`'s validation gate shouldn't
+    make a user re-run `tracker validate` after every `tracker reinstall`."""
     src_pkg = resources.files("personal_db.templates.trackers").joinpath(name)
     if not src_pkg.is_dir():
         raise ValueError(f"unknown built-in tracker: {name}")
@@ -133,6 +138,7 @@ def update_template(cfg: Config, name: str) -> Path:
             if src_f.is_file():
                 (dest / f"{module_name}.py").write_bytes(src_f.read_bytes())
         _copy_migrations_dir(src_path, dest)
+    record_validation(cfg, name, compute_files_hash(dest))
     return dest
 
 
@@ -158,6 +164,9 @@ def install_template(cfg: Config, name: str) -> Path:
         ValueError: if no bundled template named `name` exists.
         PlatformUnsupportedError: if the manifest declares a `platform` list
             that excludes the current OS.
+
+    Auto-stamps the tracker as validated (core/validation.py) — see
+    update_template's docstring for why bundled templates are pre-trusted.
     """
     dest = cfg.trackers_dir / name
     if dest.exists():
@@ -169,4 +178,5 @@ def install_template(cfg: Config, name: str) -> Path:
     with resources.as_file(src_pkg) as src_path:
         _check_bundled_platform(src_path)
         shutil.copytree(src_path, dest)
+    record_validation(cfg, name, compute_files_hash(dest))
     return dest

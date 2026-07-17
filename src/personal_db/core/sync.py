@@ -17,6 +17,7 @@ from personal_db.core.migrations import apply_pending_migrations
 from personal_db.core.oauth import ensure_adapter_from_manifest
 from personal_db.core.tracker import Tracker
 from personal_db.core.transforms import TransformError, make_context, topo_sort, validate
+from personal_db.core.validation import ensure_validated
 
 
 def _load_ingest_module(tracker_dir: Path, name: str):
@@ -147,6 +148,8 @@ def sync_one(cfg: Config, name: str) -> None:
     tracker_dir = cfg.trackers_dir / name
     manifest = load_manifest(tracker_dir / "manifest.yaml")
     check_platform_supported(manifest)
+    init_db(cfg.db_path)
+    ensure_validated(cfg, name, tracker_dir)
     _register_oauth_adapters(tracker_dir, manifest)
     _ensure_schema(cfg, name, tracker_dir, manifest)
     mod = _load_ingest_module(tracker_dir, name)
@@ -161,6 +164,8 @@ def backfill_one(cfg: Config, name: str, start: str | None, end: str | None) -> 
     tracker_dir = cfg.trackers_dir / name
     manifest = load_manifest(tracker_dir / "manifest.yaml")
     check_platform_supported(manifest)
+    init_db(cfg.db_path)
+    ensure_validated(cfg, name, tracker_dir)
     _register_oauth_adapters(tracker_dir, manifest)
     _ensure_schema(cfg, name, tracker_dir, manifest)
     mod = _load_ingest_module(tracker_dir, name)

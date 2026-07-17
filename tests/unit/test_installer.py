@@ -5,6 +5,7 @@ import pytest
 from personal_db.core.config import Config
 from personal_db.core.installer import install_template, is_outdated, list_bundled, update_template
 from personal_db.core.manifest import PlatformUnsupportedError
+from personal_db.core.validation import is_validated
 
 
 def test_list_bundled_returns_known_templates():
@@ -50,6 +51,25 @@ def test_install_template_raises_on_already_installed(tmp_root):
     install_template(cfg, "habits")
     with pytest.raises(FileExistsError):
         install_template(cfg, "habits")
+
+
+def test_install_template_auto_stamps_validation(tmp_root):
+    """Bundled templates are pre-trusted: install_template should stamp them
+    as validated so sync_one's gate (core/validation.py) doesn't make a user
+    run `tracker validate` just to use a tracker we shipped."""
+    cfg = Config(root=tmp_root)
+    dest = install_template(cfg, "habits")
+    assert is_validated(cfg, "habits", dest) is True
+
+
+def test_update_template_auto_stamps_validation(tmp_root):
+    cfg = Config(root=tmp_root)
+    dest = install_template(cfg, "habits")
+    # Simulate hand-edited drift, then reinstall from the bundle.
+    (dest / "ingest.py").write_text("# tampered\n" + (dest / "ingest.py").read_text())
+    assert is_validated(cfg, "habits", dest) is False
+    update_template(cfg, "habits")
+    assert is_validated(cfg, "habits", dest) is True
 
 
 def test_install_template_raises_on_unknown(tmp_root):
