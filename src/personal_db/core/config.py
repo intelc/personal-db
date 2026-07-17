@@ -7,6 +7,17 @@ DEFAULT_ROOT = "~/personal_db"
 
 
 @dataclass(frozen=True)
+class AgentTerminalConfig:
+    """`config.yaml: agent_terminal: {enabled, auto_approve}`. Off by default —
+    the terminal drawer spawns a real `claude`/`codex` process on the user's
+    machine, so it's opt-in. `auto_approve` further controls whether that
+    process is spawned with its provider's permission-bypass flag."""
+
+    enabled: bool = False
+    auto_approve: bool = False
+
+
+@dataclass(frozen=True)
 class Config:
     root: Path
 
@@ -64,6 +75,28 @@ class Config:
         if not isinstance(tokens, list):
             return ()
         return tuple(str(t).strip().lower() for t in tokens if str(t).strip())
+
+    @property
+    def agent_terminal(self) -> AgentTerminalConfig:
+        """`config.yaml: agent_terminal.{enabled,auto_approve}`, computed on
+        demand like `user_name_tokens` above. Returns the all-False default
+        if config.yaml is absent or doesn't declare the section."""
+        config_path = self.root / "config.yaml"
+        if not config_path.is_file():
+            return AgentTerminalConfig()
+        try:
+            data = yaml.safe_load(config_path.read_text()) or {}
+        except yaml.YAMLError:
+            return AgentTerminalConfig()
+        if not isinstance(data, dict):
+            return AgentTerminalConfig()
+        raw = data.get("agent_terminal")
+        if not isinstance(raw, dict):
+            return AgentTerminalConfig()
+        return AgentTerminalConfig(
+            enabled=bool(raw.get("enabled", False)),
+            auto_approve=bool(raw.get("auto_approve", False)),
+        )
 
 
 def load_config(path: Path | None = None) -> Config:

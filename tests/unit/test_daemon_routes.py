@@ -6,6 +6,7 @@ from personal_db.core.db import apply_tracker_schema, init_db
 from personal_db.core.installer import install_template
 from personal_db.services.daemon.agent_terminal import build_cli_command
 from personal_db.services.daemon.http import build_app
+from tests._agent_terminal_helpers import enable_agent_terminal
 from tests._daemon_auth import auth_headers
 from tests._validation_helpers import mark_valid
 
@@ -133,6 +134,7 @@ def test_agent_context_tracker_route(tmp_root):
 def test_agent_session_lifecycle_uses_configured_cli(tmp_root, monkeypatch):
     monkeypatch.setenv("PERSONAL_DB_CLAUDE_COMMAND", "true")
     cfg = _make_runnable(tmp_root)
+    enable_agent_terminal(cfg)
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     created = client.post(
@@ -151,12 +153,25 @@ def test_agent_session_lifecycle_uses_configured_cli(tmp_root, monkeypatch):
     assert deleted.status_code == 200
 
 
-def test_agent_cli_commands_use_default_permission_modes(monkeypatch):
+def test_agent_cli_commands_default_to_no_bypass_flags(monkeypatch):
+    """auto_approve defaults to False (config.yaml: agent_terminal.auto_approve) --
+    without it, the CLI spawns with its normal interactive approval prompts."""
     monkeypatch.delenv("PERSONAL_DB_CLAUDE_COMMAND", raising=False)
     monkeypatch.delenv("PERSONAL_DB_CODEX_COMMAND", raising=False)
 
     claude = build_cli_command("claude", "hello")
     codex = build_cli_command("codex", "hello")
+
+    assert claude == "claude hello"
+    assert codex == "codex --no-alt-screen hello"
+
+
+def test_agent_cli_commands_use_bypass_flags_when_auto_approve(monkeypatch):
+    monkeypatch.delenv("PERSONAL_DB_CLAUDE_COMMAND", raising=False)
+    monkeypatch.delenv("PERSONAL_DB_CODEX_COMMAND", raising=False)
+
+    claude = build_cli_command("claude", "hello", auto_approve=True)
+    codex = build_cli_command("codex", "hello", auto_approve=True)
 
     assert claude == "claude --permission-mode auto hello"
     assert codex == "codex --no-alt-screen --dangerously-bypass-approvals-and-sandbox hello"

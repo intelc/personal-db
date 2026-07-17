@@ -9,10 +9,21 @@ from fastapi import FastAPI, HTTPException, Request, WebSocket
 
 from personal_db.core.apps import load_named_queries
 from personal_db.core.config import Config
-from personal_db.services.daemon import auth as _auth
-from personal_db.services.daemon.agent_terminal import AgentTerminalManager, attach_terminal_websocket
 from personal_db.core.manifest import load_manifest
+from personal_db.services.daemon import auth as _auth
+from personal_db.services.daemon.agent_terminal import (
+    AgentTerminalManager,
+    attach_terminal_websocket,
+)
 from personal_db.services.ui.viz import load_dashboard_slugs
+
+
+def _require_agent_terminal_enabled(cfg: Config) -> None:
+    if not cfg.agent_terminal.enabled:
+        raise HTTPException(
+            status_code=403,
+            detail="agent terminal disabled; set agent_terminal.enabled in config.yaml",
+        )
 
 
 def register_agent_routes(
@@ -35,6 +46,10 @@ def register_agent_routes(
         apps = app_registry()
         base: dict[str, Any] = {
             "path": route,
+            # Not itself gated by agent_terminal.enabled -- the dashboard
+            # frontend needs this to decide whether to show the terminal
+            # drawer affordance in the first place.
+            "agent_terminal_enabled": cfg.agent_terminal.enabled,
             "dashboard_api": {
                 "health": "/api/health",
                 "sync_due": "/api/sync_due",
@@ -165,10 +180,12 @@ def register_agent_routes(
 
     @app.get("/api/agent/sessions")
     async def api_agent_sessions() -> dict[str, Any]:
+        _require_agent_terminal_enabled(cfg)
         return {"sessions": agent_terminals.list()}
 
     @app.post("/api/agent/sessions")
     async def api_agent_session_create(request: Request) -> dict[str, Any]:
+        _require_agent_terminal_enabled(cfg)
         verify_same_origin_write(request)
         try:
             body = await request.json()
@@ -204,6 +221,7 @@ def register_agent_routes(
 
     @app.delete("/api/agent/sessions/{session_id}")
     async def api_agent_session_delete(session_id: str, request: Request) -> dict[str, Any]:
+        _require_agent_terminal_enabled(cfg)
         verify_same_origin_write(request)
         ok = agent_terminals.terminate(session_id)
         if not ok:
@@ -212,6 +230,9 @@ def register_agent_routes(
 
     @app.websocket("/api/agent/sessions/{session_id}/terminal")
     async def api_agent_terminal_ws(websocket: WebSocket, session_id: str) -> None:
+        if not cfg.agent_terminal.enabled:
+            await websocket.close(code=4403)
+            return
         if not _auth.is_authenticated(websocket, daemon_token):
             # Reject before accept() so the client sees a clean handshake
             # failure rather than an open-then-closed socket.

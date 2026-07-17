@@ -782,7 +782,46 @@
     return true;
   }
 
-  function mount() {
+  async function agentTerminalEnabled() {
+    // The dashboard has no session yet when this runs, so this hits the
+    // token-authenticated /api/agent/context route the same way the rest of
+    // the page's own fetches do (cookie set at page load). A failed/blocked
+    // request is treated as "disabled" -- fail closed, not open.
+    try {
+      const context = await requestJson('/api/agent/context?path=/');
+      return Boolean(context.agent_terminal_enabled);
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  async function mount() {
+    // "note" is an independent feature (delegates to window.pdbNotes) that
+    // happens to share this file/mount() for convenience -- it mounts
+    // unconditionally regardless of the agent terminal's enabled state.
+    const noteToggle = document.getElementById('pdb-note-toggle') || document.createElement('button');
+    noteToggle.id = 'pdb-note-toggle';
+    noteToggle.className = 'pdb-note-toggle';
+    noteToggle.type = 'button';
+    noteToggle.setAttribute('aria-pressed', 'false');
+    noteToggle.title = 'Add or view notes on this page';
+    noteToggle.textContent = 'note';
+    if (!noteToggle.isConnected && window.pdbNotes) document.body.appendChild(noteToggle);
+    noteToggle.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
+      toggleNoteMode();
+    });
+    state.noteButton = noteToggle;
+
+    // Everything below is the agent terminal itself (drawer, "agent"/"ask"
+    // toggles, the PTY websocket) -- gated behind config.yaml:
+    // agent_terminal.enabled (default off). Hidden entirely rather than
+    // shown-then-403'd so a disabled terminal doesn't leave broken-looking
+    // affordances on the page.
+    if (!(await agentTerminalEnabled())) return;
+
     const toggle = document.createElement('button');
     toggle.id = 'pdb-agent-toggle';
     toggle.className = 'pdb-agent-toggle';
@@ -798,14 +837,6 @@
     askToggle.setAttribute('aria-pressed', 'false');
     askToggle.title = 'Select something on the page to ask about';
     askToggle.textContent = 'ask';
-
-    const noteToggle = document.getElementById('pdb-note-toggle') || document.createElement('button');
-    noteToggle.id = 'pdb-note-toggle';
-    noteToggle.className = 'pdb-note-toggle';
-    noteToggle.type = 'button';
-    noteToggle.setAttribute('aria-pressed', 'false');
-    noteToggle.title = 'Add or view notes on this page';
-    noteToggle.textContent = 'note';
 
     const drawer = document.createElement('aside');
     drawer.id = 'pdb-agent-drawer';
@@ -831,7 +862,6 @@
       <div id="pdb-agent-terminal" class="pdb-agent-terminal" aria-label="Agent terminal"></div>
     `;
     document.body.appendChild(askToggle);
-    if (!noteToggle.isConnected && window.pdbNotes) document.body.appendChild(noteToggle);
     document.body.appendChild(toggle);
     document.body.appendChild(drawer);
     ensureAskTooltip();
@@ -846,13 +876,6 @@
       setAskMode(!state.askMode);
     });
     state.askButton = askToggle;
-    noteToggle.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
-      toggleNoteMode();
-    });
-    state.noteButton = noteToggle;
     state.providerMenu = $('#pdb-agent-provider-menu', drawer);
     $('.pdb-agent-close', drawer)?.addEventListener('click', () => setOpen(false));
     $('[data-pdb-agent-new]', drawer)?.addEventListener('click', () => {

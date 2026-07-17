@@ -78,12 +78,27 @@ def build_context_prompt(context: dict[str, Any] | None) -> str:
     )
 
 
-def build_cli_command(cli_type: str, prompt: str) -> str:
+def build_cli_command(cli_type: str, prompt: str, *, auto_approve: bool = False) -> str:
+    """Build the shell command that spawns the agent CLI in the PTY.
+
+    `auto_approve` mirrors `config.yaml: agent_terminal.auto_approve` (default
+    False): only when explicitly enabled do we pass the provider's
+    permission-bypass flag (`claude --permission-mode auto` /
+    `codex --dangerously-bypass-approvals-and-sandbox`). Without it, the CLI
+    spawns with its normal interactive approval prompts."""
+    parts: list[str]
     if cli_type == "codex":
         base = os.environ.get("PERSONAL_DB_CODEX_COMMAND", "codex")
-        return f"{base} --no-alt-screen --dangerously-bypass-approvals-and-sandbox {shlex.quote(prompt)}"
-    base = os.environ.get("PERSONAL_DB_CLAUDE_COMMAND", "claude")
-    return f"{base} --permission-mode auto {shlex.quote(prompt)}"
+        parts = [base, "--no-alt-screen"]
+        if auto_approve:
+            parts.append("--dangerously-bypass-approvals-and-sandbox")
+    else:
+        base = os.environ.get("PERSONAL_DB_CLAUDE_COMMAND", "claude")
+        parts = [base]
+        if auto_approve:
+            parts.append("--permission-mode auto")
+    parts.append(shlex.quote(prompt))
+    return " ".join(parts)
 
 
 @dataclass
@@ -211,7 +226,7 @@ class AgentTerminalManager:
     ) -> AgentTerminalSession:
         cli = "codex" if cli_type == "codex" else "claude"
         prompt = build_context_prompt(context)
-        command = build_cli_command(cli, prompt)
+        command = build_cli_command(cli, prompt, auto_approve=self.cfg.agent_terminal.auto_approve)
         master_fd, slave_fd = pty.openpty()
         size = _terminal_size(cols, rows)
         import fcntl

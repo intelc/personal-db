@@ -45,3 +45,34 @@ def test_user_name_tokens_ignores_malformed_config_yaml(tmp_path):
     (tmp_path / "config.yaml").write_text("not: [valid, yaml")
     cfg = Config(root=tmp_path)
     assert cfg.user_name_tokens == ()
+
+
+def test_agent_terminal_defaults_to_disabled_without_config_yaml(tmp_path):
+    cfg = Config(root=tmp_path)
+    assert cfg.agent_terminal.enabled is False
+    assert cfg.agent_terminal.auto_approve is False
+
+
+def test_agent_terminal_reads_config_yaml(tmp_path):
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "config.yaml").write_text(
+        yaml.safe_dump({"agent_terminal": {"enabled": True, "auto_approve": True}})
+    )
+    cfg = Config(root=tmp_path)
+    assert cfg.agent_terminal.enabled is True
+    assert cfg.agent_terminal.auto_approve is True
+
+
+def test_agent_terminal_enabled_without_auto_approve_defaults_that_off(tmp_path):
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "config.yaml").write_text(yaml.safe_dump({"agent_terminal": {"enabled": True}}))
+    cfg = Config(root=tmp_path)
+    assert cfg.agent_terminal.enabled is True
+    assert cfg.agent_terminal.auto_approve is False
+
+
+def test_agent_terminal_ignores_malformed_config_yaml(tmp_path):
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "config.yaml").write_text("not: [valid, yaml")
+    cfg = Config(root=tmp_path)
+    assert cfg.agent_terminal.enabled is False

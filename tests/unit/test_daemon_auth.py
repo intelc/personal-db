@@ -17,6 +17,7 @@ from personal_db.core.daemon_token import ensure_token, read_token
 from personal_db.services.daemon import auth as auth_mod
 from personal_db.services.daemon.http import build_app
 from personal_db.services.daemon.otc import OtcStore
+from tests._agent_terminal_helpers import enable_agent_terminal
 from tests._daemon_auth import auth_headers
 
 _PARAM_RE = re.compile(r"\{[^{}]+\}")
@@ -179,6 +180,7 @@ def test_otc_store_single_use_directly():
 def test_agent_ws_rejects_without_auth(tmp_root, monkeypatch):
     monkeypatch.setenv("PERSONAL_DB_CLAUDE_COMMAND", "true")
     cfg = _base_cfg(tmp_root)
+    enable_agent_terminal(cfg)
     app = build_app(cfg)
     owner = TestClient(app, headers=auth_headers(cfg))
     created = owner.post(
@@ -195,6 +197,7 @@ def test_agent_ws_rejects_without_auth(tmp_root, monkeypatch):
 def test_agent_ws_accepts_with_bearer_header(tmp_root, monkeypatch):
     monkeypatch.setenv("PERSONAL_DB_CLAUDE_COMMAND", "true")
     cfg = _base_cfg(tmp_root)
+    enable_agent_terminal(cfg)
     app = build_app(cfg)
     owner = TestClient(app, headers=auth_headers(cfg))
     created = owner.post(
@@ -209,6 +212,7 @@ def test_agent_ws_accepts_with_bearer_header(tmp_root, monkeypatch):
 def test_agent_ws_accepts_with_session_cookie(tmp_root, monkeypatch):
     monkeypatch.setenv("PERSONAL_DB_CLAUDE_COMMAND", "true")
     cfg = _base_cfg(tmp_root)
+    enable_agent_terminal(cfg)
     token = ensure_token(cfg)
     app = build_app(cfg)
 
