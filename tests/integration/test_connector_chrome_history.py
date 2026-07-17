@@ -6,8 +6,8 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from personal_db.config import Config
-from personal_db.sync import sync_one
+from personal_db.core.config import Config
+from personal_db.core.sync import sync_one
 
 
 def _build_fake_chrome_history(path: Path):

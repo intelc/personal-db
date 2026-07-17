@@ -5,8 +5,8 @@ from __future__ import annotations
 import typer
 
 from personal_db.cli.state import get_root
-from personal_db.config import Config
-from personal_db.daemon import install as di
+from personal_db.core.config import Config
+from personal_db.services.daemon import install as di
 
 
 def install() -> None:
@@ -45,7 +45,7 @@ def run(
     interval_seconds: float = typer.Option(600, "--interval-seconds"),
 ) -> None:
     """Run the daemon in the foreground (called by launchd)."""
-    from personal_db.daemon.server import run as _run
+    from personal_db.services.daemon.server import run as _run
 
     cfg = Config(root=get_root())
     _run(cfg, port=port, interval_seconds=interval_seconds)

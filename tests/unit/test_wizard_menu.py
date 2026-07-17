@@ -2,9 +2,9 @@ from unittest.mock import patch
 
 import yaml
 
-from personal_db.config import Config
-from personal_db.db import init_db
-from personal_db.wizard.menu import (
+from personal_db.core.config import Config
+from personal_db.core.db import init_db
+from personal_db.services.wizard.menu import (
     _format_bundled_choice,
     _format_choice,
     _list_bundled_not_installed,
@@ -59,7 +59,7 @@ def test_run_menu_exits_on_done_selection(tmp_root):
     init_db(cfg.db_path)
     _install(tmp_root, "habits", setup_steps=[])
     # Select "Done" immediately
-    with patch("personal_db.wizard.menu.questionary.select") as sel:
+    with patch("personal_db.services.wizard.menu.questionary.select") as sel:
         sel.return_value.ask.return_value = "__DONE__"
         run_menu(cfg)
     assert sel.called
@@ -124,7 +124,7 @@ def test_format_choice_shows_latest_and_7d_count_for_healthy_tracker(tmp_root):
     # _install creates a manifest that differs from the bundled one, so is_outdated
     # returns True and the ⟳ branch would fire before reaching our new code.
     # Patch is_outdated so we can exercise the data-summary path.
-    with patch("personal_db.wizard.menu.is_outdated", return_value=False):
+    with patch("personal_db.services.wizard.menu.is_outdated", return_value=False):
         label = _format_choice(cfg, "habits")
     assert "latest" in label
     assert "in 7d" in label
@@ -143,7 +143,7 @@ def test_format_choice_shows_no_data_yet_for_empty_table(tmp_root):
     con.commit()
     con.close()
 
-    with patch("personal_db.wizard.menu.is_outdated", return_value=False):
+    with patch("personal_db.services.wizard.menu.is_outdated", return_value=False):
         label = _format_choice(cfg, "habits")
     assert "no data yet" in label
 
@@ -156,7 +156,7 @@ def test_format_choice_falls_back_when_table_missing(tmp_root):
     _install(tmp_root, "habits", setup_steps=[])
     # Don't create the habits table at all
 
-    with patch("personal_db.wizard.menu.is_outdated", return_value=False):
+    with patch("personal_db.services.wizard.menu.is_outdated", return_value=False):
         label = _format_choice(cfg, "habits")
     # Should NOT crash; should fall back to the original "no setup needed" or similar
     assert "habits" in label

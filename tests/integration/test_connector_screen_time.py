@@ -3,8 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from personal_db.config import Config
-from personal_db.sync import sync_one
+from personal_db.core.config import Config
+from personal_db.core.sync import sync_one
 
 
 def test_screen_time_sync_reads_fixture_db(tmp_path, monkeypatch):

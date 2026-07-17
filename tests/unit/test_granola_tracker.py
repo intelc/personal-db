@@ -346,8 +346,8 @@ def test_fetch_transcript_whitespace_only_text_preserves_timestamps(monkeypatch)
 @pytest.fixture
 def fake_tracker(tmp_path, monkeypatch):
     """Build a Tracker pointing at a temp DB + state dir."""
-    from personal_db.config import Config
-    from personal_db.tracker import Tracker
+    from personal_db.core.config import Config
+    from personal_db.core.tracker import Tracker
 
     cfg = Config(root=tmp_path)
     cfg.state_dir.mkdir(parents=True, exist_ok=True)

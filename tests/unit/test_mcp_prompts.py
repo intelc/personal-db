@@ -4,8 +4,8 @@ import sqlite3
 
 import yaml
 
-from personal_db.config import Config
-from personal_db.mcp_server.prompts import build_create_tracker_prompt
+from personal_db.core.config import Config
+from personal_db.services.mcp_server.prompts import build_create_tracker_prompt
 
 
 def _init_root(tmp_path):

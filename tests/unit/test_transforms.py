@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from personal_db.config import Config
-from personal_db.db import init_db
-from personal_db.sync import backfill_one, sync_one
-from personal_db.tracker import Tracker
-from personal_db.transforms import (
+from personal_db.core.config import Config
+from personal_db.core.db import init_db
+from personal_db.core.sync import backfill_one, sync_one
+from personal_db.core.tracker import Tracker
+from personal_db.core.transforms import (
     TransformContext,
     TransformError,
     TransformSpec,
@@ -608,8 +608,8 @@ def test_sync_one_runs_transforms_after_ingest(tmp_root):
     """).strip()
 
     ingest = textwrap.dedent("""
-        from personal_db.tracker import Tracker
-        from personal_db.transforms import transform
+        from personal_db.core.tracker import Tracker
+        from personal_db.core.transforms import transform
 
         def sync(t: Tracker) -> None:
             t.upsert("raw", [{"id": 1, "val": 10}, {"id": 2, "val": 20}], key=["id"])
@@ -658,7 +658,7 @@ def test_sync_one_skips_transforms_when_none_declared(tmp_root):
     """A tracker with no @transform-decorated functions should still sync cleanly."""
     schema = "CREATE TABLE IF NOT EXISTS raw (id INTEGER PRIMARY KEY, val INTEGER);"
     ingest = textwrap.dedent("""
-        from personal_db.tracker import Tracker
+        from personal_db.core.tracker import Tracker
         def sync(t: Tracker) -> None:
             t.upsert("raw", [{"id": 1, "val": 99}], key=["id"])
     """).strip()
@@ -695,7 +695,7 @@ def test_failed_transform_does_not_break_sync_and_is_logged(tmp_root):
     """).strip()
 
     ingest = textwrap.dedent("""
-        from personal_db.transforms import transform
+        from personal_db.core.transforms import transform
 
         def sync(t):
             t.upsert("raw", [{"id": 1}], key=["id"])
@@ -743,7 +743,7 @@ def test_independent_branches_continue_when_sibling_fails(tmp_root):
     """).strip()
 
     ingest = textwrap.dedent("""
-        from personal_db.transforms import transform
+        from personal_db.core.transforms import transform
 
         def sync(t):
             t.upsert("raw", [{"id": 1, "val": 7}], key=["id"])
@@ -790,7 +790,7 @@ def test_downstream_transform_skipped_when_dep_fails(tmp_root):
     """).strip()
 
     ingest = textwrap.dedent("""
-        from personal_db.transforms import transform
+        from personal_db.core.transforms import transform
 
         def sync(t):
             t.upsert("raw", [{"id": 1}], key=["id"])
@@ -839,8 +839,8 @@ def test_backfill_one_also_runs_transforms(tmp_root):
     """).strip()
 
     ingest = textwrap.dedent("""
-        from personal_db.tracker import Tracker
-        from personal_db.transforms import transform
+        from personal_db.core.tracker import Tracker
+        from personal_db.core.transforms import transform
 
         def backfill(t: Tracker, start, end) -> None:
             t.upsert("raw", [{"id": 1, "val": 5}, {"id": 2, "val": 10}], key=["id"])

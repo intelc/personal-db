@@ -3,7 +3,7 @@ from typer.testing import CliRunner
 import typer
 
 from personal_db.cli import daemon_cmd
-from personal_db.daemon import install as di
+from personal_db.services.daemon import install as di
 
 
 def _build_app() -> typer.Typer:

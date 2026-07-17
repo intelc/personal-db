@@ -5,8 +5,8 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from personal_db.config import Config
-from personal_db.sync import sync_one
+from personal_db.core.config import Config
+from personal_db.core.sync import sync_one
 
 
 def _init_and_install(root):
@@ -119,7 +119,7 @@ def test_github_sync_skips_repos_pushed_before_cursor(tmp_path, monkeypatch):
             raise AssertionError(f"unexpected URL: {url}")
 
     # Pre-seed the cursor before syncing
-    from personal_db.tracker import Tracker
+    from personal_db.core.tracker import Tracker
 
     Tracker(name="github_commits", cfg=cfg, manifest=None).cursor.set(cursor_value)
 
@@ -158,7 +158,7 @@ def test_github_sync_matches_login_only_when_emails_unset(tmp_path, monkeypatch)
 
     # Set cursor past repo2's pushed_at so only repo1 is fetched
     cursor_value = "2026-04-22T00:00:00+00:00"
-    from personal_db.tracker import Tracker
+    from personal_db.core.tracker import Tracker
 
     Tracker(name="github_commits", cfg=cfg, manifest=None).cursor.set(cursor_value)
 
@@ -187,7 +187,7 @@ def test_github_sync_includes_nested_email_when_emails_set(tmp_path, monkeypatch
 
     # Set cursor past repo2's pushed_at so only repo1 is fetched
     cursor_value = "2026-04-22T00:00:00+00:00"
-    from personal_db.tracker import Tracker
+    from personal_db.core.tracker import Tracker
 
     Tracker(name="github_commits", cfg=cfg, manifest=None).cursor.set(cursor_value)
 
@@ -215,7 +215,7 @@ def test_github_sync_emails_set_is_case_insensitive(tmp_path, monkeypatch):
 
     # Set cursor past repo2's pushed_at so only repo1 is fetched
     cursor_value = "2026-04-22T00:00:00+00:00"
-    from personal_db.tracker import Tracker
+    from personal_db.core.tracker import Tracker
 
     Tracker(name="github_commits", cfg=cfg, manifest=None).cursor.set(cursor_value)
 

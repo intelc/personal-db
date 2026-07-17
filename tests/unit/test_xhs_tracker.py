@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from personal_db.installer import list_bundled
-from personal_db.manifest import load_manifest
+from personal_db.core.installer import list_bundled
+from personal_db.core.manifest import load_manifest
 from personal_db.templates.trackers.xhs import ingest, visualizations
 
 

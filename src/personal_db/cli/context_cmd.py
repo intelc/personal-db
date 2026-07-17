@@ -6,7 +6,7 @@ import sys
 import typer
 
 from personal_db.cli.state import get_root
-from personal_db.config import Config
+from personal_db.core.config import Config
 from personal_db.context_providers.email import SparkEmailContextProvider
 from personal_db.remote_sources.spark import SparkCommandError, SparkSourceConfigError
 

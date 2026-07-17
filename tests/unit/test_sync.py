@@ -3,9 +3,9 @@ from pathlib import Path
 
 import yaml
 
-from personal_db.config import Config
-from personal_db.db import init_db
-from personal_db.sync import _is_due, sync_due, sync_one
+from personal_db.core.config import Config
+from personal_db.core.db import init_db
+from personal_db.core.sync import _is_due, sync_due, sync_one
 
 
 def _make_tracker_dir(tmp_root: Path, name: str, schedule_every: str = "1h"):
@@ -94,9 +94,9 @@ def test_sync_due_uses_provided_sync_one_fn(tmp_root):
 def test_sync_one_registers_oauth_adapter_from_manifest(tmp_root, monkeypatch):
     """Ingest.py's sync() does not need to register the adapter itself —
     sync_one wires it up based on the manifest's OAuthStep.adapter field."""
-    from personal_db.config import Config
-    from personal_db.oauth import _adapter_for, _adapters, StandardAdapter
-    from personal_db.sync import sync_one
+    from personal_db.core.config import Config
+    from personal_db.core.oauth import _adapter_for, _adapters, StandardAdapter
+    from personal_db.core.sync import sync_one
 
     cfg = Config(root=tmp_root)
     tracker_dir = cfg.trackers_dir / "fake_oauth_tracker"
@@ -158,9 +158,9 @@ def backfill(t, start, end):
 def test_backfill_one_registers_oauth_adapter_from_manifest(tmp_root, monkeypatch):
     """backfill_one shares the same _register_oauth_adapters call site as sync_one;
     cover it explicitly so future regressions in either are caught."""
-    from personal_db.config import Config
-    from personal_db.oauth import _adapter_for, _adapters, StandardAdapter
-    from personal_db.sync import backfill_one
+    from personal_db.core.config import Config
+    from personal_db.core.oauth import _adapter_for, _adapters, StandardAdapter
+    from personal_db.core.sync import backfill_one
 
     cfg = Config(root=tmp_root)
     tracker_dir = cfg.trackers_dir / "fake_oauth_tracker_b"

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import yaml
 
-from personal_db.config import DEFAULT_ROOT, load_config
+from personal_db.core.config import DEFAULT_ROOT, load_config
 
 
 def test_default_root_path():

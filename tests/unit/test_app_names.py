@@ -1,11 +1,11 @@
-"""Tests for personal_db.app_names - the 5-tier bundle-ID resolver."""
+"""Tests for personal_db.core.app_names - the 5-tier bundle-ID resolver."""
 
 from __future__ import annotations
 
 import json
 
-import personal_db.app_names as app_names
-from personal_db.app_names import resolve_app_name
+import personal_db.core.app_names as app_names
+from personal_db.core.app_names import resolve_app_name
 
 # ---------------------------------------------------------------------------
 # Tier 1: hardcoded overrides

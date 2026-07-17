@@ -1,10 +1,10 @@
 import pytest
 import yaml
 
-from personal_db.config import Config
-from personal_db.db import apply_tracker_schema, connect, init_db
-from personal_db.entities import sync_entities_from_yaml
-from personal_db.tracker import Tracker
+from personal_db.core.config import Config
+from personal_db.core.db import apply_tracker_schema, connect, init_db
+from personal_db.core.entities import sync_entities_from_yaml
+from personal_db.core.tracker import Tracker
 
 
 @pytest.fixture

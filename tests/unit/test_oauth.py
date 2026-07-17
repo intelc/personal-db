@@ -4,8 +4,8 @@ import urllib.parse
 import urllib.request
 from unittest.mock import MagicMock, patch
 
-from personal_db.config import Config
-from personal_db.oauth import (
+from personal_db.core.config import Config
+from personal_db.core.oauth import (
     OAuthFlow,
     exchange_code,
     load_token,
@@ -47,7 +47,7 @@ def test_callback_captures_code():
 # requests.post mock thus verifies StandardAdapter's wire format
 # end-to-end via the dispatcher.
 def test_exchange_code_posts_to_token_url_and_returns_token():
-    with patch("personal_db.oauth.requests.post") as mock_post:
+    with patch("personal_db.core.oauth.requests.post") as mock_post:
         mock_post.return_value = MagicMock(
             status_code=200,
             json=lambda: {
@@ -84,7 +84,7 @@ def test_start_web_oauth_returns_auth_url_and_completes_flow(tmp_root):
     cfg = Config(root=tmp_root)
     port = _free_port()
 
-    with patch("personal_db.oauth.exchange_code") as mock_exchange:
+    with patch("personal_db.core.oauth.exchange_code") as mock_exchange:
         mock_exchange.return_value = {
             "access_token": "AT",
             "refresh_token": "RT",
@@ -146,7 +146,7 @@ def test_start_web_oauth_returns_auth_url_and_completes_flow(tmp_root):
 def test_start_web_oauth_state_mismatch_returns_400(tmp_root):
     cfg = Config(root=tmp_root)
     port = _free_port()
-    with patch("personal_db.oauth.exchange_code") as mock_exchange:
+    with patch("personal_db.core.oauth.exchange_code") as mock_exchange:
         start_web_oauth(
             cfg,
             provider="testprov2",
@@ -172,13 +172,13 @@ def test_start_web_oauth_state_mismatch_returns_400(tmp_root):
         # Token NOT saved.
         assert load_token(cfg, "testprov2") is None
         # Cleanup the still-running session.
-        from personal_db.oauth import _shutdown_existing
+        from personal_db.core.oauth import _shutdown_existing
 
         _shutdown_existing("testprov2")
 
 
 def test_exchange_code_dispatches_to_registered_adapter():
-    from personal_db.oauth import _adapters, exchange_code, register_adapter
+    from personal_db.core.oauth import _adapters, exchange_code, register_adapter
 
     seen = {}
 
@@ -213,7 +213,7 @@ def test_exchange_code_dispatches_to_registered_adapter():
 
 
 def test_register_and_lookup_adapter():
-    from personal_db.oauth import _adapter_for, _adapters, register_adapter, StandardAdapter
+    from personal_db.core.oauth import _adapter_for, _adapters, register_adapter, StandardAdapter
 
     class _Fake:
         def exchange_code(self, **kw): return {}
@@ -230,7 +230,7 @@ def test_register_and_lookup_adapter():
 
 
 def test_refresh_if_needed_dispatches_to_registered_adapter(tmp_root):
-    from personal_db.oauth import (
+    from personal_db.core.oauth import (
         _adapters,
         load_token,
         refresh_if_needed,
@@ -279,8 +279,8 @@ def test_refresh_if_needed_dispatches_to_registered_adapter(tmp_root):
 
 
 def test_ensure_adapter_from_manifest_loads_and_registers(tmp_path):
-    from personal_db.manifest import OAuthStep
-    from personal_db.oauth import (
+    from personal_db.core.manifest import OAuthStep
+    from personal_db.core.oauth import (
         _adapter_for,
         _adapters,
         ensure_adapter_from_manifest,
@@ -326,8 +326,8 @@ class FakeAdapter:
 
 
 def test_ensure_adapter_from_manifest_noop_when_adapter_unset(tmp_path):
-    from personal_db.manifest import OAuthStep
-    from personal_db.oauth import (
+    from personal_db.core.manifest import OAuthStep
+    from personal_db.core.oauth import (
         _adapter_for,
         ensure_adapter_from_manifest,
         StandardAdapter,
@@ -348,7 +348,7 @@ def test_ensure_adapter_from_manifest_noop_when_adapter_unset(tmp_path):
 def test_refresh_if_needed_carries_prior_refresh_token_when_omitted(tmp_root):
     """If the adapter's response omits `refresh_token`, the dispatcher must
     carry the prior one forward (NOT lose it). Withings is the motivating case."""
-    from personal_db.oauth import (
+    from personal_db.core.oauth import (
         _adapters,
         load_token,
         refresh_if_needed,

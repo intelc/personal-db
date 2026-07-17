@@ -6,10 +6,10 @@ from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from personal_db.config import Config
+from personal_db.core.config import Config
 from personal_db.context_providers.email import SparkEmailContextProvider
-from personal_db.db import connect
-from personal_db.enrichments.core import (
+from personal_db.core.db import connect
+from personal_db.core.enrichment_queue import (
     apply_enrichment_schema,
     claim_due_enrichment_jobs,
     enqueue_enrichment_job,

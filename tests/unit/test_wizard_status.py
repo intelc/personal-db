@@ -1,7 +1,7 @@
 import yaml
 
-from personal_db.config import Config
-from personal_db.wizard.status import (
+from personal_db.core.config import Config
+from personal_db.services.wizard.status import (
     compute_icon,
     read_status,
     write_status,

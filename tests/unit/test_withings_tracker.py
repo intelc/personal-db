@@ -220,9 +220,9 @@ def test_flatten_timezone_fallback_to_default():
 @pytest.fixture
 def withings_tracker(tmp_root, monkeypatch):
     """A Tracker pointed at tmp_root with the schema applied and credentials set."""
-    from personal_db.config import Config
-    from personal_db.db import apply_tracker_schema, init_db
-    from personal_db.tracker import Tracker
+    from personal_db.core.config import Config
+    from personal_db.core.db import apply_tracker_schema, init_db
+    from personal_db.core.tracker import Tracker
 
     cfg = Config(root=tmp_root)
     init_db(cfg.db_path)
@@ -230,7 +230,7 @@ def withings_tracker(tmp_root, monkeypatch):
     monkeypatch.setenv("WITHINGS_CLIENT_ID", "CID")
     monkeypatch.setenv("WITHINGS_CLIENT_SECRET", "CS")
     # Persist a non-expiring token so refresh_if_needed returns immediately.
-    from personal_db.oauth import save_token
+    from personal_db.core.oauth import save_token
     save_token(cfg, "withings", {
         "access_token": "AT",
         "refresh_token": "RT",
@@ -264,7 +264,7 @@ def test_sync_first_run_no_cursor(withings_tracker, monkeypatch):
     # First run: no lastupdate sent
     assert seen_calls == [{"lastupdate": None, "offset": 0}]
     # Cursor advanced to the modified value
-    from personal_db.tracker import Cursor
+    from personal_db.core.tracker import Cursor
     cur = Cursor("withings:measurements", withings_tracker.cfg.state_dir)
     assert cur.get() == "1746752400"
 
@@ -293,7 +293,7 @@ def test_sync_paginates_until_more_is_zero(withings_tracker, monkeypatch):
     ).fetchall()
     assert rows == [("1", 80.0), ("2", 81.0), ("3", 82.0)]
     # Cursor is the max modified value across all pages
-    from personal_db.tracker import Cursor
+    from personal_db.core.tracker import Cursor
     cur = Cursor("withings:measurements", withings_tracker.cfg.state_dir)
     assert cur.get() == "1746200000"
 
@@ -301,7 +301,7 @@ def test_sync_paginates_until_more_is_zero(withings_tracker, monkeypatch):
 def test_sync_incremental_passes_lastupdate(withings_tracker, monkeypatch):
     ingest = _load_ingest_module()
     # Pre-set the cursor as if a prior sync ran.
-    from personal_db.tracker import Cursor
+    from personal_db.core.tracker import Cursor
     Cursor("withings:measurements", withings_tracker.cfg.state_dir).set("1700000000")
 
     seen = {}

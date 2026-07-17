@@ -3,9 +3,9 @@ from datetime import date
 
 import pytest
 
-from personal_db.config import Config
-from personal_db.db import init_db
-from personal_db.viz_helpers import daily_series, meta
+from personal_db.core.config import Config
+from personal_db.core.db import init_db
+from personal_db.core.viz_helpers import daily_series, meta
 
 
 def test_meta_wraps_text():

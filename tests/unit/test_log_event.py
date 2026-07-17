@@ -1,9 +1,9 @@
 import pytest
 import yaml
 
-from personal_db.config import Config
-from personal_db.db import apply_tracker_schema, connect, init_db
-from personal_db.log_event import log_event
+from personal_db.core.config import Config
+from personal_db.core.db import apply_tracker_schema, connect, init_db
+from personal_db.core.log_event import log_event
 
 
 def _setup_habits(tmp_root):

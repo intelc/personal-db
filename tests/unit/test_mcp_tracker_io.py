@@ -2,8 +2,8 @@
 
 import pytest
 
-from personal_db.config import Config
-from personal_db.mcp_server.tools import (
+from personal_db.core.config import Config
+from personal_db.services.mcp_server.tools import (
     _resolve_tracker_path,
     read_tracker_file,
     validate_tracker,

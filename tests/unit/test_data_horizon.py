@@ -4,9 +4,9 @@ import sqlite3
 
 import yaml
 
-from personal_db.config import Config
-from personal_db.data_horizon import compute_and_store, get, get_all
-from personal_db.manifest import Manifest
+from personal_db.core.config import Config
+from personal_db.core.data_horizon import compute_and_store, get, get_all
+from personal_db.core.manifest import Manifest
 
 
 def _make_manifest(name: str, time_col: str, table: str, *, local_only: bool) -> Manifest:

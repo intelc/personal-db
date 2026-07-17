@@ -2,9 +2,9 @@ import stat
 
 import pytest
 
-from personal_db.config import Config
-from personal_db.db import init_db
-from personal_db.notes import list_notes, read_note, write_note
+from personal_db.core.config import Config
+from personal_db.core.db import init_db
+from personal_db.core.notes import list_notes, read_note, write_note
 
 
 def test_init_db_creates_private_database_file(tmp_root):

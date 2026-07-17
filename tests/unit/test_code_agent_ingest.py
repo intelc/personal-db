@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from personal_db.config import Config
-from personal_db.tracker import Tracker
-from personal_db.installer import install_template
+from personal_db.core.config import Config
+from personal_db.core.tracker import Tracker
+from personal_db.core.installer import install_template
 
 
 @pytest.fixture
@@ -49,7 +49,7 @@ def test_sync_ingests_claude_hooks(cfg: Config, monkeypatch: pytest.MonkeyPatch)
     )
 
     from personal_db.templates.trackers.code_agent_activity import ingest
-    from personal_db.manifest import load_manifest
+    from personal_db.core.manifest import load_manifest
 
     manifest = load_manifest(cfg.trackers_dir / "code_agent_activity" / "manifest.yaml")
     t = Tracker(name="code_agent_activity", cfg=cfg, manifest=manifest)
@@ -76,7 +76,7 @@ def test_sync_is_idempotent(cfg: Config, monkeypatch: pytest.MonkeyPatch) -> Non
     )
 
     from personal_db.templates.trackers.code_agent_activity import ingest
-    from personal_db.manifest import load_manifest
+    from personal_db.core.manifest import load_manifest
 
     manifest = load_manifest(cfg.trackers_dir / "code_agent_activity" / "manifest.yaml")
     t = Tracker(name="code_agent_activity", cfg=cfg, manifest=manifest)
@@ -101,7 +101,7 @@ def test_sync_handles_malformed_line(cfg: Config, monkeypatch: pytest.MonkeyPatc
     )
 
     from personal_db.templates.trackers.code_agent_activity import ingest
-    from personal_db.manifest import load_manifest
+    from personal_db.core.manifest import load_manifest
 
     manifest = load_manifest(cfg.trackers_dir / "code_agent_activity" / "manifest.yaml")
     t = Tracker(name="code_agent_activity", cfg=cfg, manifest=manifest)
@@ -122,7 +122,7 @@ def test_sync_resumes_from_cursor(cfg: Config, monkeypatch: pytest.MonkeyPatch) 
     )
 
     from personal_db.templates.trackers.code_agent_activity import ingest
-    from personal_db.manifest import load_manifest
+    from personal_db.core.manifest import load_manifest
 
     manifest = load_manifest(cfg.trackers_dir / "code_agent_activity" / "manifest.yaml")
     t = Tracker(name="code_agent_activity", cfg=cfg, manifest=manifest)
@@ -162,7 +162,7 @@ def test_sync_dedupes_codex_multi_session_meta(cfg: Config, monkeypatch: pytest.
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex_home"))
 
     from personal_db.templates.trackers.code_agent_activity import ingest
-    from personal_db.manifest import load_manifest
+    from personal_db.core.manifest import load_manifest
     manifest = load_manifest(cfg.trackers_dir / "code_agent_activity" / "manifest.yaml")
     t = Tracker(name="code_agent_activity", cfg=cfg, manifest=manifest)
     ingest.sync(t)

@@ -3,8 +3,8 @@ from typing import Annotated
 import typer
 
 from personal_db.cli.state import get_root
-from personal_db.config import Config
-from personal_db.log_event import log_event
+from personal_db.core.config import Config
+from personal_db.core.log_event import log_event
 
 
 def log(

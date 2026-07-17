@@ -5,9 +5,9 @@ from unittest.mock import MagicMock
 
 import yaml
 
-from personal_db.config import Config
-from personal_db.db import apply_tracker_schema, connect, init_db
-from personal_db.tracker import Tracker
+from personal_db.core.config import Config
+from personal_db.core.db import apply_tracker_schema, connect, init_db
+from personal_db.core.tracker import Tracker
 
 PLAID_DIR = Path(__file__).resolve().parents[2] / "src" / "personal_db" / "templates" / "trackers" / "plaid"
 
@@ -20,7 +20,7 @@ def _load_module(filename: str, module_name: str):
 
 
 def test_plaid_manifest_loads():
-    from personal_db.manifest import load_manifest
+    from personal_db.core.manifest import load_manifest
 
     manifest = load_manifest(PLAID_DIR / "manifest.yaml")
     assert manifest.name == "plaid"

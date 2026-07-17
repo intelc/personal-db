@@ -3,10 +3,10 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from personal_db.config import Config
-from personal_db.daemon import client as dc
-from personal_db.db import apply_tracker_schema, connect, init_db
-from personal_db.mcp_server.tools import (
+from personal_db.core.config import Config
+from personal_db.services.daemon import client as dc
+from personal_db.core.db import apply_tracker_schema, connect, init_db
+from personal_db.services.mcp_server.tools import (
     backfill_tool,
     describe_tracker,
     email_search_receipts,
@@ -33,7 +33,7 @@ from personal_db.mcp_server.tools import (
     worker_log_tail,
     worker_status,
 )
-from personal_db.sources import install_source_template
+from personal_db.core.sources import install_source_template
 
 
 def _make_demo(tmp_root):
@@ -155,7 +155,7 @@ def test_spark_email_folders_returns_structured_result(tmp_root, monkeypatch):
 
             return Result()
 
-    monkeypatch.setattr("personal_db.mcp_server.tools.SparkEmailSource", FakeSpark)
+    monkeypatch.setattr("personal_db.services.mcp_server.tools.SparkEmailSource", FakeSpark)
 
     out = spark_email_folders(cfg, "Inbox")
 
@@ -212,7 +212,7 @@ def test_email_search_receipts_returns_context_result(tmp_root, monkeypatch):
             return Result()
 
     monkeypatch.setattr(
-        "personal_db.mcp_server.tools.SparkEmailContextProvider",
+        "personal_db.services.mcp_server.tools.SparkEmailContextProvider",
         FakeProvider,
     )
 
@@ -237,7 +237,7 @@ def test_finance_enrich_receipt_stub_wraps_result(tmp_root, monkeypatch):
         }
 
     monkeypatch.setattr(
-        "personal_db.mcp_server.tools.enrich_transaction_receipt_stub",
+        "personal_db.services.mcp_server.tools.enrich_transaction_receipt_stub",
         fake_enrich,
     )
 
@@ -272,7 +272,7 @@ def test_finance_enrich_receipt_v1_wraps_result(tmp_root, monkeypatch):
         }
 
     monkeypatch.setattr(
-        "personal_db.mcp_server.tools.enrich_transaction_receipt_v1",
+        "personal_db.services.mcp_server.tools.enrich_transaction_receipt_v1",
         fake_enrich,
     )
 
@@ -294,7 +294,7 @@ def test_finance_enqueue_receipt_jobs_wraps_result(tmp_root, monkeypatch):
         return {"enqueued": 1, "jobs": [{"job": {"input_id": "txn-1"}}]}
 
     monkeypatch.setattr(
-        "personal_db.mcp_server.tools.enqueue_missing_receipt_enrichments",
+        "personal_db.services.mcp_server.tools.enqueue_missing_receipt_enrichments",
         fake_enqueue,
     )
 
@@ -334,7 +334,7 @@ def test_finance_enqueue_receipt_v1_jobs_wraps_result(tmp_root, monkeypatch):
         return {"enqueued": 1, "jobs": [{"job": {"input_id": "txn-1"}}]}
 
     monkeypatch.setattr(
-        "personal_db.mcp_server.tools.enqueue_missing_receipt_v1_enrichments",
+        "personal_db.services.mcp_server.tools.enqueue_missing_receipt_v1_enrichments",
         fake_enqueue,
     )
 
@@ -364,7 +364,7 @@ def test_finance_run_due_receipt_jobs_wraps_result(tmp_root, monkeypatch):
         return {"ran": 1, "results": [{"ok": True}]}
 
     monkeypatch.setattr(
-        "personal_db.mcp_server.tools.run_due_finance_receipt_jobs",
+        "personal_db.services.mcp_server.tools.run_due_finance_receipt_jobs",
         fake_run_due,
     )
 
@@ -382,7 +382,7 @@ def test_finance_run_due_receipt_v1_jobs_wraps_result(tmp_root, monkeypatch):
         return {"ran": 1, "results": [{"ok": True}]}
 
     monkeypatch.setattr(
-        "personal_db.mcp_server.tools.run_due_finance_receipt_v1_jobs",
+        "personal_db.services.mcp_server.tools.run_due_finance_receipt_v1_jobs",
         fake_run_due,
     )
 
@@ -396,15 +396,15 @@ def test_enrichment_queue_control_tools_wrap_results(tmp_root, monkeypatch):
     cfg = Config(root=tmp_root)
 
     monkeypatch.setattr(
-        "personal_db.mcp_server.tools.list_enrichment_jobs",
+        "personal_db.services.mcp_server.tools.list_enrichment_jobs",
         lambda cfg, **kwargs: [{"job_id": "job-1", **kwargs}],
     )
     monkeypatch.setattr(
-        "personal_db.mcp_server.tools.get_enrichment_job_detail",
+        "personal_db.services.mcp_server.tools.get_enrichment_job_detail",
         lambda cfg, job_id: {"job": {"job_id": job_id}, "last_run": None, "latest": None},
     )
     monkeypatch.setattr(
-        "personal_db.mcp_server.tools.retry_enrichment_job",
+        "personal_db.services.mcp_server.tools.retry_enrichment_job",
         lambda cfg, job_id, *, reset_attempts=True: {
             "job_id": job_id,
             "status": "pending",
@@ -412,7 +412,7 @@ def test_enrichment_queue_control_tools_wrap_results(tmp_root, monkeypatch):
         },
     )
     monkeypatch.setattr(
-        "personal_db.mcp_server.tools.cancel_enrichment_job",
+        "personal_db.services.mcp_server.tools.cancel_enrichment_job",
         lambda cfg, job_id, *, reason=None: {
             "job_id": job_id,
             "status": "canceled",
@@ -442,7 +442,7 @@ def test_finance_receipt_latest_wraps_result(tmp_root, monkeypatch):
         assert input_id == "txn-1"
         return {"status": "context_found"}
 
-    monkeypatch.setattr("personal_db.mcp_server.tools.get_latest_enrichment", fake_latest)
+    monkeypatch.setattr("personal_db.services.mcp_server.tools.get_latest_enrichment", fake_latest)
 
     out = finance_receipt_latest(cfg, "txn-1", v1=True)
 
@@ -454,7 +454,7 @@ def test_enrichment_queue_summary_wraps_result(tmp_root, monkeypatch):
     cfg = Config(root=tmp_root)
 
     monkeypatch.setattr(
-        "personal_db.mcp_server.tools.get_enrichment_queue_summary",
+        "personal_db.services.mcp_server.tools.get_enrichment_queue_summary",
         lambda cfg: {"by_enrichment": {"x": {"statuses": {"pending": 1}}}, "failed_jobs": []},
     )
 
@@ -468,11 +468,11 @@ def test_worker_status_and_log_tail_wrap_results(tmp_root, monkeypatch):
     cfg = Config(root=tmp_root)
 
     monkeypatch.setattr(
-        "personal_db.mcp_server.tools.worker_install.info",
+        "personal_db.services.mcp_server.tools.worker_install.info",
         lambda root: {"installed": True, "loaded": True, "label": "worker"},
     )
     monkeypatch.setattr(
-        "personal_db.mcp_server.tools.worker_install.log_tail",
+        "personal_db.services.mcp_server.tools.worker_install.log_tail",
         lambda root, *, lines=50: {"exists": True, "lines": ["hello"], "lines_arg": lines},
     )
 

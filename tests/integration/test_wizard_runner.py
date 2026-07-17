@@ -1,9 +1,9 @@
 import yaml
 
-from personal_db.config import Config
-from personal_db.db import init_db
-from personal_db.wizard.runner import run_tracker
-from personal_db.wizard.status import read_status
+from personal_db.core.config import Config
+from personal_db.core.db import init_db
+from personal_db.services.wizard.runner import run_tracker
+from personal_db.services.wizard.status import read_status
 
 
 def _install_demo_tracker(tmp_root, setup_steps):
@@ -57,7 +57,7 @@ def test_run_tracker_with_failing_step_records_failure_skips_sync(tmp_root, monk
         [{"type": "env_var", "name": "DEMO_VAR", "prompt": "demo"}],
     )
     monkeypatch.delenv("DEMO_VAR", raising=False)
-    monkeypatch.setattr("personal_db.wizard.steps._prompt", lambda *a, **kw: "")
+    monkeypatch.setattr("personal_db.services.wizard.steps._prompt", lambda *a, **kw: "")
     result = run_tracker(cfg, "demo")
     assert result.success is False
     assert "no value" in result.detail.lower()

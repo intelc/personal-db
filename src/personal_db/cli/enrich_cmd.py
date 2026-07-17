@@ -10,8 +10,8 @@ from typing import Annotated
 import typer
 
 from personal_db.cli.state import get_root
-from personal_db.config import Config
-from personal_db.enrichments.core import (
+from personal_db.core.config import Config
+from personal_db.core.enrichment_queue import (
     cancel_enrichment_job,
     enrichment_queue_summary,
     get_enrichment_job_detail,

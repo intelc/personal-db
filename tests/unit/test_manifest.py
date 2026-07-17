@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from personal_db.manifest import Manifest, ManifestError, load_manifest
+from personal_db.core.manifest import Manifest, ManifestError, load_manifest
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
 
@@ -80,7 +80,7 @@ def test_load_manifest_parses_optional_env_var(tmp_path):
 
 
 def test_oauth_step_accepts_optional_adapter_field(tmp_path):
-    from personal_db.manifest import load_manifest, OAuthStep
+    from personal_db.core.manifest import load_manifest, OAuthStep
 
     p = tmp_path / "manifest.yaml"
     p.write_text(
@@ -108,7 +108,7 @@ schema:
 
 
 def test_oauth_step_adapter_field_is_optional(tmp_path):
-    from personal_db.manifest import load_manifest, OAuthStep
+    from personal_db.core.manifest import load_manifest, OAuthStep
 
     p = tmp_path / "manifest.yaml"
     p.write_text(

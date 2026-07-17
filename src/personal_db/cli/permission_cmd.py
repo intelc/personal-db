@@ -3,9 +3,9 @@ from pathlib import Path
 import typer
 
 from personal_db.cli.state import get_root
-from personal_db.config import Config
-from personal_db.manifest import load_manifest
-from personal_db.permissions import open_fda_settings_pane, probe_sqlite_access
+from personal_db.core.config import Config
+from personal_db.core.manifest import load_manifest
+from personal_db.core.permissions import open_fda_settings_pane, probe_sqlite_access
 
 # Trackers we know need to read a specific gated SQLite file.
 # Connectors declare this via manifest.permission_type + a probe path in their setup_steps;

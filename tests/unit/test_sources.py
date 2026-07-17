@@ -1,8 +1,8 @@
 import pytest
 import yaml
 
-from personal_db.config import Config
-from personal_db.sources import (
+from personal_db.core.config import Config
+from personal_db.core.sources import (
     SourceManifestError,
     discover_sources,
     install_source_template,

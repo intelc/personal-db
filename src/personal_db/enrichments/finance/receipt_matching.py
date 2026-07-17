@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from personal_db.config import Config
+from personal_db.core.config import Config
 from personal_db.context_providers.email import SparkEmailContextProvider
 from personal_db.enrichments.agent import (
     EnrichmentAgentHarness,
@@ -12,7 +12,7 @@ from personal_db.enrichments.agent import (
     EnrichmentAgentResult,
     receipt_harness_from_env,
 )
-from personal_db.enrichments.core import EnrichmentRunRecord, record_enrichment_run
+from personal_db.core.enrichment_queue import EnrichmentRunRecord, record_enrichment_run
 from personal_db.enrichments.finance.constants import (
     DEFAULT_MAX_RECEIPT_CANDIDATE_THREADS,
     DEFAULT_RECEIPT_SNIPPET_WINDOW_CHARS,

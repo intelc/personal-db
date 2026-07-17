@@ -2,17 +2,17 @@ import os
 import sqlite3
 from unittest.mock import MagicMock, patch
 
-from personal_db.config import Config
-from personal_db.manifest import (
+from personal_db.core.config import Config
+from personal_db.core.manifest import (
     CommandTestStep,
     EnvVarStep,
     FdaCheckStep,
     InstructionsStep,
     OAuthStep,
 )
-from personal_db.oauth import load_token
-from personal_db.wizard.env_file import read_env
-from personal_db.wizard.steps import (
+from personal_db.core.oauth import load_token
+from personal_db.services.wizard.env_file import read_env
+from personal_db.services.wizard.steps import (
     Failed,
     Ok,
     Skipped,
@@ -37,7 +37,7 @@ def _ctx(tmp_root) -> WizardContext:
 
 def test_env_var_writes_value_when_missing(tmp_root, monkeypatch):
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
-    monkeypatch.setattr("personal_db.wizard.steps._prompt", lambda prompt, **kw: "abc123")
+    monkeypatch.setattr("personal_db.services.wizard.steps._prompt", lambda prompt, **kw: "abc123")
     ctx = _ctx(tmp_root)
     step = EnvVarStep(type="env_var", name="GITHUB_TOKEN", prompt="tok", secret=True)
     r = handle_env_var(step, ctx)
@@ -49,7 +49,7 @@ def test_env_var_keeps_current_when_empty_input(tmp_root, monkeypatch):
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     ctx = _ctx(tmp_root)
     ctx.env_path.write_text("GITHUB_TOKEN=existing\n")
-    monkeypatch.setattr("personal_db.wizard.steps._prompt", lambda prompt, **kw: "")
+    monkeypatch.setattr("personal_db.services.wizard.steps._prompt", lambda prompt, **kw: "")
     step = EnvVarStep(type="env_var", name="GITHUB_TOKEN", prompt="tok")
     r = handle_env_var(step, ctx)
     assert isinstance(r, Ok)
@@ -58,7 +58,7 @@ def test_env_var_keeps_current_when_empty_input(tmp_root, monkeypatch):
 
 def test_env_var_failed_when_no_value_and_no_input(tmp_root, monkeypatch):
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
-    monkeypatch.setattr("personal_db.wizard.steps._prompt", lambda prompt, **kw: "")
+    monkeypatch.setattr("personal_db.services.wizard.steps._prompt", lambda prompt, **kw: "")
     ctx = _ctx(tmp_root)
     step = EnvVarStep(type="env_var", name="GITHUB_TOKEN", prompt="tok")
     r = handle_env_var(step, ctx)
@@ -70,7 +70,7 @@ def test_env_var_updates_os_environ_after_write(tmp_root, monkeypatch):
     """After writing to .env, the new value should be visible to subsequent
     sync calls in the same process (the wizard runs them in-process)."""
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
-    monkeypatch.setattr("personal_db.wizard.steps._prompt", lambda prompt, **kw: "newval")
+    monkeypatch.setattr("personal_db.services.wizard.steps._prompt", lambda prompt, **kw: "newval")
     ctx = _ctx(tmp_root)
     step = EnvVarStep(type="env_var", name="GITHUB_TOKEN", prompt="tok")
     handle_env_var(step, ctx)
@@ -88,11 +88,11 @@ def test_fda_check_returns_ok_when_db_accessible(tmp_root, monkeypatch):
 def test_fda_check_failed_after_3_retries_when_denied(tmp_root, monkeypatch):
     """Simulate a denied probe; user presses Enter 3 times without granting; should Fail."""
     monkeypatch.setattr(
-        "personal_db.wizard.steps.probe_sqlite_access",
+        "personal_db.services.wizard.steps.probe_sqlite_access",
         lambda p: type("R", (), {"granted": False, "reason": "FDA denied"})(),
     )
-    monkeypatch.setattr("personal_db.wizard.steps._prompt", lambda *a, **kw: "")
-    monkeypatch.setattr("personal_db.wizard.steps.open_fda_settings_pane", lambda: None)
+    monkeypatch.setattr("personal_db.services.wizard.steps._prompt", lambda *a, **kw: "")
+    monkeypatch.setattr("personal_db.services.wizard.steps.open_fda_settings_pane", lambda: None)
     step = FdaCheckStep(type="fda_check", probe_path="/dev/null/doesnt-matter")
     r = handle_fda_check(step, _ctx(tmp_root))
     assert isinstance(r, Failed)
@@ -102,11 +102,11 @@ def test_fda_check_failed_after_3_retries_when_denied(tmp_root, monkeypatch):
 def test_fda_check_message_includes_python_binary_path(tmp_root, monkeypatch, capsys):
     """When the probe fails, the message must tell the user which binary to grant FDA to."""
     monkeypatch.setattr(
-        "personal_db.wizard.steps.probe_sqlite_access",
+        "personal_db.services.wizard.steps.probe_sqlite_access",
         lambda p: type("R", (), {"granted": False, "reason": "FDA denied"})(),
     )
-    monkeypatch.setattr("personal_db.wizard.steps._prompt", lambda *a, **kw: "")
-    monkeypatch.setattr("personal_db.wizard.steps.open_fda_settings_pane", lambda: None)
+    monkeypatch.setattr("personal_db.services.wizard.steps._prompt", lambda *a, **kw: "")
+    monkeypatch.setattr("personal_db.services.wizard.steps.open_fda_settings_pane", lambda: None)
     step = FdaCheckStep(type="fda_check", probe_path="/dev/null/fake")
     handle_fda_check(step, _ctx(tmp_root))
     out = capsys.readouterr().out
@@ -128,16 +128,16 @@ def test_fda_check_succeeds_on_retry(tmp_root, monkeypatch):
         granted = state["calls"] >= 2
         return type("R", (), {"granted": granted, "reason": "ok" if granted else "denied"})()
 
-    monkeypatch.setattr("personal_db.wizard.steps.probe_sqlite_access", probe)
-    monkeypatch.setattr("personal_db.wizard.steps._prompt", lambda *a, **kw: "")
-    monkeypatch.setattr("personal_db.wizard.steps.open_fda_settings_pane", lambda: None)
+    monkeypatch.setattr("personal_db.services.wizard.steps.probe_sqlite_access", probe)
+    monkeypatch.setattr("personal_db.services.wizard.steps._prompt", lambda *a, **kw: "")
+    monkeypatch.setattr("personal_db.services.wizard.steps.open_fda_settings_pane", lambda: None)
     step = FdaCheckStep(type="fda_check", probe_path="/dev/null")
     r = handle_fda_check(step, _ctx(tmp_root))
     assert isinstance(r, Ok)
 
 
 def test_instructions_always_returns_ok(tmp_root, monkeypatch, capsys):
-    monkeypatch.setattr("personal_db.wizard.steps._prompt", lambda *a, **kw: "")
+    monkeypatch.setattr("personal_db.services.wizard.steps._prompt", lambda *a, **kw: "")
     step = InstructionsStep(
         type="instructions", text="Edit `<root>/entities/people.yaml` to add aliases."
     )
@@ -183,9 +183,9 @@ def test_oauth_handler_runs_full_flow(tmp_root, monkeypatch):
     fake_token = {"access_token": "AT", "refresh_token": "RT", "expires_at": 9999999999}
 
     with (
-        patch("personal_db.wizard.steps.OAuthFlow", return_value=fake_flow) as flow_cls,
-        patch("personal_db.wizard.steps.exchange_code", return_value=fake_token) as ex,
-        patch("personal_db.wizard.steps.webbrowser.open") as wb,
+        patch("personal_db.services.wizard.steps.OAuthFlow", return_value=fake_flow) as flow_cls,
+        patch("personal_db.services.wizard.steps.exchange_code", return_value=fake_token) as ex,
+        patch("personal_db.services.wizard.steps.webbrowser.open") as wb,
     ):
         ctx = _ctx(tmp_root)
         step = OAuthStep(
@@ -215,8 +215,8 @@ def test_oauth_handler_failed_when_code_never_arrives(tmp_root, monkeypatch):
     fake_flow.wait_for_code.return_value = None  # timeout
 
     with (
-        patch("personal_db.wizard.steps.OAuthFlow", return_value=fake_flow),
-        patch("personal_db.wizard.steps.webbrowser.open"),
+        patch("personal_db.services.wizard.steps.OAuthFlow", return_value=fake_flow),
+        patch("personal_db.services.wizard.steps.webbrowser.open"),
     ):
         step = OAuthStep(
             type="oauth",
@@ -249,7 +249,7 @@ def test_oauth_handler_failed_when_credentials_missing(tmp_root, monkeypatch):
 
 def test_env_var_optional_empty_returns_skipped(tmp_root, monkeypatch):
     monkeypatch.delenv("MAYBE_KEY", raising=False)
-    monkeypatch.setattr("personal_db.wizard.steps._prompt", lambda *a, **kw: "")
+    monkeypatch.setattr("personal_db.services.wizard.steps._prompt", lambda *a, **kw: "")
     ctx = _ctx(tmp_root)
     step = EnvVarStep(type="env_var", name="MAYBE_KEY", prompt="opt", optional=True)
     r = handle_env_var(step, ctx)
@@ -263,7 +263,7 @@ def test_env_var_optional_empty_returns_skipped(tmp_root, monkeypatch):
 def test_env_var_optional_with_value_still_writes(tmp_root, monkeypatch):
     """If user provides a value for an optional field, it's still written."""
     monkeypatch.delenv("MAYBE_KEY", raising=False)
-    monkeypatch.setattr("personal_db.wizard.steps._prompt", lambda *a, **kw: "myvalue")
+    monkeypatch.setattr("personal_db.services.wizard.steps._prompt", lambda *a, **kw: "myvalue")
     ctx = _ctx(tmp_root)
     step = EnvVarStep(type="env_var", name="MAYBE_KEY", prompt="opt", optional=True)
     r = handle_env_var(step, ctx)

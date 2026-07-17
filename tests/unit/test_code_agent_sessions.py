@@ -75,8 +75,8 @@ def test_load_codex_history_first_prompts_keeps_first(tmp_path):
 import shutil
 import sqlite3 as _sqlite3
 
-from personal_db.config import Config
-from personal_db.installer import install_template
+from personal_db.core.config import Config
+from personal_db.core.installer import install_template
 
 
 @pytest.fixture
@@ -116,7 +116,7 @@ def test_sync_populates_code_agent_sessions(cfg_with_code_agent, monkeypatch):
     (cfg.state_dir / "code_agent_hooks.jsonl").write_text("")
     monkeypatch.setenv("PERSONAL_DB_HOOKS_LOG", str(cfg.state_dir / "code_agent_hooks.jsonl"))
 
-    from personal_db.sync import sync_one
+    from personal_db.core.sync import sync_one
     sync_one(cfg, "code_agent_activity")
 
     con = _sqlite3.connect(cfg.db_path)
@@ -176,7 +176,7 @@ def test_claude_session_first_prompt_fallback_from_hook_events(cfg_with_code_age
         "",
     ]))
 
-    from personal_db.sync import sync_one
+    from personal_db.core.sync import sync_one
     sync_one(cfg, "code_agent_activity")
 
     con = _sqlite3.connect(cfg.db_path)
@@ -235,7 +235,7 @@ def test_codex_session_joins_to_intervals_for_viz(cfg_with_code_agent, monkeypat
     hooks_log.write_text("")
     monkeypatch.setenv("PERSONAL_DB_HOOKS_LOG", str(hooks_log))
 
-    from personal_db.sync import sync_one
+    from personal_db.core.sync import sync_one
     sync_one(cfg, "code_agent_activity")
 
     con = _sqlite3.connect(cfg.db_path)

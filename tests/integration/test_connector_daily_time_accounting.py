@@ -4,8 +4,8 @@ import sqlite3
 import subprocess
 import sys
 
-from personal_db.config import Config
-from personal_db.sync import sync_one
+from personal_db.core.config import Config
+from personal_db.core.sync import sync_one
 
 
 def _seed_source_tables(db_path):

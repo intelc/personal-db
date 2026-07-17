@@ -5,9 +5,9 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
-from personal_db.config import Config
-from personal_db.db import apply_tracker_schema, init_db
-from personal_db.tracker import Tracker
+from personal_db.core.config import Config
+from personal_db.core.db import apply_tracker_schema, init_db
+from personal_db.core.tracker import Tracker
 
 ROOT = Path(__file__).resolve().parents[2]
 NOTIFICATIONS_DIR = ROOT / "src" / "personal_db" / "templates" / "trackers" / "notifications"

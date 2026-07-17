@@ -1,11 +1,11 @@
 import yaml
 from fastapi.testclient import TestClient
 
-from personal_db.config import Config
-from personal_db.daemon.agent_terminal import build_cli_command
-from personal_db.daemon.http import build_app
-from personal_db.db import apply_tracker_schema, init_db
-from personal_db.installer import install_template
+from personal_db.core.config import Config
+from personal_db.services.daemon.agent_terminal import build_cli_command
+from personal_db.services.daemon.http import build_app
+from personal_db.core.db import apply_tracker_schema, init_db
+from personal_db.core.installer import install_template
 
 
 def _make_runnable(tmp_root, name="runnable"):

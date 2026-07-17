@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.4", "pyright>=1.1"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.4", "pyright>=1.1", "import-linter>=2.0"]
 
 [project.scripts]
 personal-db = "personal_db.cli.main:app"
@@ -31,11 +31,42 @@ personal-db = "personal_db.cli.main:app"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.importlinter]
+root_packages = ["personal_db"]
+
+[[tool.importlinter.contracts]]
+name = "Layered architecture: cli -> services -> extensions -> ui -> interfaces -> core"
+type = "layers"
+containers = ["personal_db"]
+layers = [
+  "cli",
+  "services",
+  # Extension-ish packages that still live at top level. enrichments sits below
+  # services (daemon/mcp still import enrichments.finance until Phase 1b/1c) and
+  # above context_providers/remote_sources, which it consumes. All three move or
+  # dissolve in later phases (1b/1c/1e).
+  "enrichments",
+  "context_providers",
+  "remote_sources",
+  "ui",
+  "interfaces",
+  "core",
+]
+ignore_imports = [
+  # removed in Phase 1b/1c: the generic enrichment queue still borrows
+  # EvidenceRef from context_providers.base; it moves to interfaces/.
+  "personal_db.core.enrichment_queue -> personal_db.context_providers.base",
+  # Backward-compat shim only: personal_db.ui.viz re-exports the service module
+  # for an in-flight test file we cannot edit. Internal code must import
+  # personal_db.services.ui.viz directly. Shim (and this ignore) drop later.
+  "personal_db.ui.viz -> personal_db.services.ui.viz",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/personal_db"]
 include = [
   "src/personal_db/templates/**/*",
-  "src/personal_db/mcp_server/prompts/*.md",
+  "src/personal_db/services/mcp_server/prompts/*.md",
   "src/personal_db/ui/templates/**/*",
   "src/personal_db/ui/static/**/*",
 ]

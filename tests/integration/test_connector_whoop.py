@@ -5,9 +5,9 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from personal_db.config import Config
-from personal_db.oauth import save_token
-from personal_db.sync import sync_one
+from personal_db.core.config import Config
+from personal_db.core.oauth import save_token
+from personal_db.core.sync import sync_one
 
 FIXTURES = Path("tests/fixtures/whoop")
 

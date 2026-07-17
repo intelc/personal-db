@@ -2,7 +2,7 @@ import sqlite3
 
 import pytest
 
-from personal_db.db import CORE_TABLES, connect, connection, init_db, transaction
+from personal_db.core.db import CORE_TABLES, connect, connection, init_db, transaction
 
 
 def test_init_db_creates_core_tables(tmp_root):

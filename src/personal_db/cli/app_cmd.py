@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from personal_db.apps import (
+from personal_db.core.apps import (
     apply_app_schema,
     discover_apps,
     install_app_template,
@@ -12,7 +12,7 @@ from personal_db.apps import (
     update_app_template,
 )
 from personal_db.cli.state import get_root
-from personal_db.config import Config
+from personal_db.core.config import Config
 
 
 def list_cmd() -> None:

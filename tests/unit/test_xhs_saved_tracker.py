@@ -4,9 +4,9 @@ import json
 import sqlite3
 from pathlib import Path
 
-from personal_db.config import Config
-from personal_db.installer import list_bundled
-from personal_db.manifest import load_manifest
+from personal_db.core.config import Config
+from personal_db.core.installer import list_bundled
+from personal_db.core.manifest import load_manifest
 from personal_db.templates.trackers.xhs_saved import ingest, visualizations
 
 

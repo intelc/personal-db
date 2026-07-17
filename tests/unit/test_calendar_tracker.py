@@ -4,9 +4,9 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
-from personal_db.config import Config
-from personal_db.db import apply_tracker_schema, init_db
-from personal_db.tracker import Tracker
+from personal_db.core.config import Config
+from personal_db.core.db import apply_tracker_schema, init_db
+from personal_db.core.tracker import Tracker
 
 ROOT = Path(__file__).resolve().parents[2]
 CALENDAR_DIR = ROOT / "src" / "personal_db" / "templates" / "trackers" / "calendar"
@@ -234,7 +234,7 @@ def test_all_day_events_do_not_absorb_day_activity(tmp_root, tmp_path, monkeypat
 
 
 def test_calendar_reality_app_views_render_with_rows(tmp_root, tmp_path, monkeypatch):
-    from personal_db.apps import AppContext, discover_apps
+    from personal_db.core.apps import AppContext, discover_apps
     from personal_db.templates.apps.calendar_reality import views
     from personal_db.templates.trackers.calendar import ingest
 

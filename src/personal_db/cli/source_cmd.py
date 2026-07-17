@@ -6,9 +6,9 @@ import sys
 import typer
 
 from personal_db.cli.state import get_root
-from personal_db.config import Config
+from personal_db.core.config import Config
 from personal_db.remote_sources.spark import SparkCommandError, SparkEmailSource
-from personal_db.sources import (
+from personal_db.core.sources import (
     discover_sources,
     install_source_template,
     list_bundled_sources,

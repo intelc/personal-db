@@ -23,8 +23,8 @@ import typer
 
 from personal_db.cli.init_cmd import run as run_init
 from personal_db.cli.state import get_root
-from personal_db.config import Config
-from personal_db.wizard.menu import run_menu
+from personal_db.core.config import Config
+from personal_db.services.wizard.menu import run_menu
 
 
 def run(
@@ -72,7 +72,7 @@ def _launch_browser_wizard(cfg: Config, port: int) -> None:
 
     import uvicorn
 
-    from personal_db.daemon.http import build_app
+    from personal_db.services.daemon.http import build_app
 
     try:
         uvicorn.run(build_app(cfg), host="127.0.0.1", port=port, log_level="warning")
@@ -96,7 +96,7 @@ def _finalize_terminal(cfg: Config) -> None:
         default=True,
     ).ask()
     if install_mcp:
-        from personal_db.wizard.mcp_setup import run_mcp_setup_menu
+        from personal_db.services.wizard.mcp_setup import run_mcp_setup_menu
 
         run_mcp_setup_menu(cfg)
 
@@ -140,7 +140,7 @@ def install_scheduler(cfg: Config) -> None:
         )
         return
     try:
-        from personal_db.daemon import install as di
+        from personal_db.services.daemon import install as di
 
         result = di.install(cfg.root)
         if result["migrated_old_scheduler"]:

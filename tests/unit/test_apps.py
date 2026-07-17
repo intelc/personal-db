@@ -5,7 +5,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from personal_db.apps import (
+from personal_db.core.apps import (
     AppManifestError,
     AppQueryError,
     discover_apps,
@@ -15,10 +15,10 @@ from personal_db.apps import (
     load_named_queries,
     update_app_template,
 )
-from personal_db.config import Config
+from personal_db.core.config import Config
 from personal_db.context_providers.base import EvidenceRef
-from personal_db.daemon.http import build_app
-from personal_db.db import apply_tracker_schema, connect, init_db
+from personal_db.services.daemon.http import build_app
+from personal_db.core.db import apply_tracker_schema, connect, init_db
 from personal_db.enrichments.core import EnrichmentRunRecord, record_enrichment_run
 from personal_db.enrichments.finance import RECEIPT_V1_ENRICHMENT
 

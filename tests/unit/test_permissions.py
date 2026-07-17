@@ -2,7 +2,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from personal_db.permissions import probe_sqlite_access, responsible_binary_path
+from personal_db.core.permissions import probe_sqlite_access, responsible_binary_path
 
 
 def test_probe_returns_ok_for_accessible_db(tmp_path):
@@ -38,7 +38,7 @@ def test_probe_uses_immutable_flag(tmp_path, monkeypatch):
         seen_uri.append(str(target))
         return real_connect(target, *a, **kw)
 
-    monkeypatch.setattr("personal_db.permissions.sqlite3.connect", fake_connect)
+    monkeypatch.setattr("personal_db.core.permissions.sqlite3.connect", fake_connect)
     r = probe_sqlite_access(p)
     assert r.granted is True
     assert any("immutable=1" in u and "mode=ro" in u for u in seen_uri)

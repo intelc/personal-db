@@ -1,8 +1,8 @@
 import yaml
 
-from personal_db.config import Config
-from personal_db.db import connect, init_db
-from personal_db.entities import resolve_person, sync_entities_from_yaml
+from personal_db.core.config import Config
+from personal_db.core.db import connect, init_db
+from personal_db.core.entities import resolve_person, sync_entities_from_yaml
 
 
 def write_people_yaml(tmp_root, data):

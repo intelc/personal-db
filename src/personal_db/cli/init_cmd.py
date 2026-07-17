@@ -2,7 +2,7 @@ import typer
 import yaml
 
 from personal_db.cli.state import get_root
-from personal_db.db import init_db
+from personal_db.core.db import init_db
 
 
 def run() -> None:

@@ -1,12 +1,12 @@
 import typer
 
 from personal_db.cli.state import get_root
-from personal_db.config import Config
-from personal_db.db import apply_tracker_schema, init_db
-from personal_db.installer import install_template, update_template
-from personal_db.manifest import load_manifest
-from personal_db.wizard.menu import run_menu
-from personal_db.wizard.runner import run_tracker
+from personal_db.core.config import Config
+from personal_db.core.db import apply_tracker_schema, init_db
+from personal_db.core.installer import install_template, update_template
+from personal_db.core.manifest import load_manifest
+from personal_db.services.wizard.menu import run_menu
+from personal_db.services.wizard.runner import run_tracker
 
 _SCAFFOLD_MANIFEST = """\
 name: {name}
@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS {name} (
 """
 
 _SCAFFOLD_INGEST = """\
-from personal_db.tracker import Tracker
+from personal_db.core.tracker import Tracker
 
 def backfill(t: Tracker, start: str | None, end: str | None) -> None:
     \"\"\"Historical import. Idempotent.\"\"\"

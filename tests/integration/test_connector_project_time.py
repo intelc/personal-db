@@ -4,9 +4,9 @@ import json
 import sqlite3
 from datetime import date
 
-from personal_db.config import Config
-from personal_db.installer import install_template
-from personal_db.sync import backfill_one
+from personal_db.core.config import Config
+from personal_db.core.installer import install_template
+from personal_db.core.sync import backfill_one
 
 
 def test_project_time_uses_code_agent_activity_sessions(tmp_path):

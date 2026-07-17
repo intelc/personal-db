@@ -4,8 +4,8 @@ import sys
 
 import yaml
 
-from personal_db.config import Config
-from personal_db.sync import sync_one
+from personal_db.core.config import Config
+from personal_db.core.sync import sync_one
 
 
 def _init_with_tracker(tmp_path, ingest_body: str):

@@ -2,9 +2,9 @@ import subprocess
 
 import pytest
 
-from personal_db.config import Config
+from personal_db.core.config import Config
 from personal_db.remote_sources.spark import SparkCommandError, SparkEmailSource
-from personal_db.sources import install_source_template
+from personal_db.core.sources import install_source_template
 
 FOLDERS_OUTPUT = """
 Unified

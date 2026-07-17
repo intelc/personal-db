@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from personal_db.config import Config
-from personal_db.db import connect
+from personal_db.core.config import Config
+from personal_db.core.db import connect
 
 @dataclass(frozen=True)
 class FinanceTransaction:

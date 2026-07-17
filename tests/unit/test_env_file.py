@@ -1,4 +1,4 @@
-from personal_db.wizard.env_file import read_env, upsert_env
+from personal_db.services.wizard.env_file import read_env, upsert_env
 
 
 def test_read_env_missing_file_returns_empty(tmp_path):

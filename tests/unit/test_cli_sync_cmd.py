@@ -4,7 +4,7 @@ import typer
 from typer.testing import CliRunner
 
 from personal_db.cli import sync_cmd
-from personal_db.daemon import client as dc
+from personal_db.services.daemon import client as dc
 
 
 def _app() -> typer.Typer:

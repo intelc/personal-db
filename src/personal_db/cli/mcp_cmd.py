@@ -12,9 +12,9 @@ from pathlib import Path
 import typer
 
 from personal_db.cli.state import get_root
-from personal_db.config import Config
-from personal_db.mcp_server.server import run as run_server
-from personal_db.wizard.mcp_setup import _TARGETS, run_mcp_setup_menu
+from personal_db.core.config import Config
+from personal_db.services.mcp_server.server import run as run_server
+from personal_db.services.wizard.mcp_setup import _TARGETS, run_mcp_setup_menu
 
 mcp_app = typer.Typer(
     no_args_is_help=False,

@@ -1,4 +1,4 @@
-"""Tests for personal_db.wizard.mcp_setup."""
+"""Tests for personal_db.services.wizard.mcp_setup."""
 
 from __future__ import annotations
 
@@ -7,17 +7,17 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from personal_db.wizard import mcp_setup
+from personal_db.services.wizard import mcp_setup
 
 
 def test_personal_db_path_uses_shutil_which():
-    with patch("personal_db.wizard.mcp_setup.shutil.which", return_value="/fake/personal-db"):
+    with patch("personal_db.services.wizard.mcp_setup.shutil.which", return_value="/fake/personal-db"):
         assert mcp_setup._personal_db_path() == "/fake/personal-db"
 
 
 def test_personal_db_path_raises_when_missing():
     with (
-        patch("personal_db.wizard.mcp_setup.shutil.which", return_value=None),
+        patch("personal_db.services.wizard.mcp_setup.shutil.which", return_value=None),
         pytest.raises(RuntimeError, match="not found"),
     ):
         mcp_setup._personal_db_path()
@@ -59,7 +59,7 @@ def test_upsert_rejects_invalid_existing_json(tmp_path):
 
 def test_install_claude_code_uses_subprocess(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        "personal_db.wizard.mcp_setup.shutil.which",
+        "personal_db.services.wizard.mcp_setup.shutil.which",
         lambda x: f"/fake/{x}",
     )
     calls = []
@@ -72,7 +72,7 @@ def test_install_claude_code_uses_subprocess(tmp_path, monkeypatch):
         m.stdout = ""
         return m
 
-    monkeypatch.setattr("personal_db.wizard.mcp_setup.subprocess.run", fake_run)
+    monkeypatch.setattr("personal_db.services.wizard.mcp_setup.subprocess.run", fake_run)
     ok, _ = mcp_setup._install_claude_code()
     assert ok
     # First call: remove (idempotent), second: add
@@ -82,7 +82,7 @@ def test_install_claude_code_uses_subprocess(tmp_path, monkeypatch):
 
 def test_install_claude_code_fails_when_claude_missing(monkeypatch):
     monkeypatch.setattr(
-        "personal_db.wizard.mcp_setup.shutil.which",
+        "personal_db.services.wizard.mcp_setup.shutil.which",
         lambda x: None if x == "claude" else "/fake/personal-db",
     )
     ok, msg = mcp_setup._install_claude_code()
@@ -92,7 +92,7 @@ def test_install_claude_code_fails_when_claude_missing(monkeypatch):
 
 def test_install_claude_code_fails_on_nonzero_returncode(monkeypatch):
     monkeypatch.setattr(
-        "personal_db.wizard.mcp_setup.shutil.which",
+        "personal_db.services.wizard.mcp_setup.shutil.which",
         lambda x: f"/fake/{x}",
     )
 
@@ -108,7 +108,7 @@ def test_install_claude_code_fails_on_nonzero_returncode(monkeypatch):
             m.stdout = ""
         return m
 
-    monkeypatch.setattr("personal_db.wizard.mcp_setup.subprocess.run", fake_run)
+    monkeypatch.setattr("personal_db.services.wizard.mcp_setup.subprocess.run", fake_run)
     ok, msg = mcp_setup._install_claude_code()
     assert not ok
     assert "claude mcp add failed" in msg
@@ -116,11 +116,11 @@ def test_install_claude_code_fails_on_nonzero_returncode(monkeypatch):
 
 def test_install_cursor_writes_correct_path(monkeypatch):
     monkeypatch.setattr(
-        "personal_db.wizard.mcp_setup.shutil.which",
+        "personal_db.services.wizard.mcp_setup.shutil.which",
         lambda x: "/fake/personal-db",
     )
     monkeypatch.setattr(
-        "personal_db.wizard.mcp_setup._upsert_json_mcp_server",
+        "personal_db.services.wizard.mcp_setup._upsert_json_mcp_server",
         lambda path, cmd, args: (True, f"wrote {path}"),
     )
     ok, _msg = mcp_setup._install_cursor()
@@ -129,11 +129,11 @@ def test_install_cursor_writes_correct_path(monkeypatch):
 
 def test_install_claude_desktop_writes_correct_path(monkeypatch):
     monkeypatch.setattr(
-        "personal_db.wizard.mcp_setup.shutil.which",
+        "personal_db.services.wizard.mcp_setup.shutil.which",
         lambda x: "/fake/personal-db",
     )
     monkeypatch.setattr(
-        "personal_db.wizard.mcp_setup._upsert_json_mcp_server",
+        "personal_db.services.wizard.mcp_setup._upsert_json_mcp_server",
         lambda path, cmd, args: (True, f"wrote {path}"),
     )
     ok, _msg = mcp_setup._install_claude_desktop()

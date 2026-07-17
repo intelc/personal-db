@@ -1,12 +1,12 @@
-"""Tests for personal_db.daemon._locks — centralized per-tracker lock dispatch."""
+"""Tests for personal_db.services.daemon._locks — centralized per-tracker lock dispatch."""
 
 from __future__ import annotations
 
 import yaml
 
-from personal_db.config import Config
-from personal_db.daemon._locks import sync_due_locked, sync_one_locked
-from personal_db.db import init_db
+from personal_db.core.config import Config
+from personal_db.services.daemon._locks import sync_due_locked, sync_one_locked
+from personal_db.core.db import init_db
 
 
 def _make_tracker(tmp_root, name="alpha", every="1h"):
@@ -65,7 +65,7 @@ def test_sync_due_locked_routes_through_sync_one_locked(tmp_root):
     the _locks module and confirming it is invoked."""
     from unittest.mock import patch
 
-    from personal_db.daemon import _locks
+    from personal_db.services.daemon import _locks
 
     cfg = _make_tracker(tmp_root, "beta")
     seen: list[str] = []

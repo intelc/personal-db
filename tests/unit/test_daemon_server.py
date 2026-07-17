@@ -2,8 +2,8 @@ import threading
 import time
 from unittest.mock import patch
 
-from personal_db.config import Config
-from personal_db.daemon import server as ds
+from personal_db.core.config import Config
+from personal_db.services.daemon import server as ds
 
 
 def test_start_periodic_sync_invokes_sync_due_repeatedly(tmp_root):
@@ -16,7 +16,7 @@ def test_start_periodic_sync_invokes_sync_due_repeatedly(tmp_root):
         return {}
 
     stop = threading.Event()
-    with patch("personal_db.daemon.server.sync_due", side_effect=fake_sync_due):
+    with patch("personal_db.services.daemon.server.sync_due", side_effect=fake_sync_due):
         thread = ds.start_periodic_sync(cfg, interval_seconds=0.05, stop_event=stop)
         time.sleep(0.18)  # enough for ~3 ticks
         stop.set()
@@ -39,8 +39,8 @@ def test_start_periodic_sync_swallows_errors_and_continues(tmp_root, caplog):
 
     stop = threading.Event()
     with (
-        caplog.at_level("ERROR", logger="personal_db.daemon"),
-        patch("personal_db.daemon.server.sync_due", side_effect=flaky),
+        caplog.at_level("ERROR", logger="personal_db.services.daemon"),
+        patch("personal_db.services.daemon.server.sync_due", side_effect=flaky),
     ):
         thread = ds.start_periodic_sync(cfg, interval_seconds=0.05, stop_event=stop)
         time.sleep(0.18)
@@ -63,7 +63,7 @@ def test_start_periodic_enrichments_invokes_runner_repeatedly(tmp_root):
 
     stop = threading.Event()
     with patch(
-        "personal_db.daemon.server.run_due_finance_receipt_jobs",
+        "personal_db.services.daemon.server.run_due_finance_receipt_jobs",
         side_effect=fake_run_due,
     ):
         thread = ds.start_periodic_enrichments(
@@ -97,9 +97,9 @@ def test_start_periodic_enrichments_swallows_errors_and_continues(tmp_root, capl
 
     stop = threading.Event()
     with (
-        caplog.at_level("ERROR", logger="personal_db.daemon"),
+        caplog.at_level("ERROR", logger="personal_db.services.daemon"),
         patch(
-            "personal_db.daemon.server.run_due_finance_receipt_jobs",
+            "personal_db.services.daemon.server.run_due_finance_receipt_jobs",
             side_effect=flaky,
         ),
     ):
@@ -128,7 +128,7 @@ def test_start_periodic_finance_receipt_enqueue_invokes_producer_repeatedly(tmp_
 
     stop = threading.Event()
     with patch(
-        "personal_db.daemon.server.enqueue_missing_receipt_enrichments",
+        "personal_db.services.daemon.server.enqueue_missing_receipt_enrichments",
         side_effect=fake_enqueue,
     ):
         thread = ds.start_periodic_finance_receipt_enqueue(
@@ -170,9 +170,9 @@ def test_start_periodic_finance_receipt_enqueue_swallows_errors_and_continues(
 
     stop = threading.Event()
     with (
-        caplog.at_level("ERROR", logger="personal_db.daemon"),
+        caplog.at_level("ERROR", logger="personal_db.services.daemon"),
         patch(
-            "personal_db.daemon.server.enqueue_missing_receipt_enrichments",
+            "personal_db.services.daemon.server.enqueue_missing_receipt_enrichments",
             side_effect=flaky,
         ),
     ):
@@ -223,7 +223,7 @@ def test_start_periodic_finance_receipt_v1_enqueue_invokes_producer_repeatedly(t
 
     stop = threading.Event()
     with patch(
-        "personal_db.daemon.server.enqueue_missing_receipt_v1_enrichments",
+        "personal_db.services.daemon.server.enqueue_missing_receipt_v1_enrichments",
         side_effect=fake_enqueue,
     ):
         thread = ds.start_periodic_finance_receipt_v1_enqueue(
@@ -281,9 +281,9 @@ def test_start_periodic_finance_receipt_v1_enqueue_swallows_errors_and_continues
 
     stop = threading.Event()
     with (
-        caplog.at_level("ERROR", logger="personal_db.daemon"),
+        caplog.at_level("ERROR", logger="personal_db.services.daemon"),
         patch(
-            "personal_db.daemon.server.enqueue_missing_receipt_v1_enrichments",
+            "personal_db.services.daemon.server.enqueue_missing_receipt_v1_enrichments",
             side_effect=flaky,
         ),
     ):
@@ -312,7 +312,7 @@ def test_start_periodic_finance_receipt_v1_worker_invokes_runner_repeatedly(tmp_
 
     stop = threading.Event()
     with patch(
-        "personal_db.daemon.server.run_due_finance_receipt_v1_jobs",
+        "personal_db.services.daemon.server.run_due_finance_receipt_v1_jobs",
         side_effect=fake_run_due,
     ):
         thread = ds.start_periodic_finance_receipt_v1_worker(
@@ -349,9 +349,9 @@ def test_start_periodic_finance_receipt_v1_worker_swallows_errors_and_continues(
 
     stop = threading.Event()
     with (
-        caplog.at_level("ERROR", logger="personal_db.daemon"),
+        caplog.at_level("ERROR", logger="personal_db.services.daemon"),
         patch(
-            "personal_db.daemon.server.run_due_finance_receipt_v1_jobs",
+            "personal_db.services.daemon.server.run_due_finance_receipt_v1_jobs",
             side_effect=flaky,
         ),
     ):
@@ -547,7 +547,7 @@ def test_run_starts_v1_enqueue_and_warns_for_deprecated_daemon_worker(
     monkeypatch.setattr(ds, "start_periodic_finance_receipt_v1_worker", fake_start_worker)
     monkeypatch.setattr(ds.uvicorn, "Server", FakeServer)
 
-    with caplog.at_level("WARNING", logger="personal_db.daemon"):
+    with caplog.at_level("WARNING", logger="personal_db.services.daemon"):
         ds.run(cfg, port=9876, interval_seconds=600)
 
     assert sync_calls == [(cfg, 600)]

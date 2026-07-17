@@ -4,8 +4,8 @@ import sys
 import typer
 
 from personal_db.cli.state import get_root
-from personal_db.config import Config
-from personal_db.mcp_server.tools import query as run_query
+from personal_db.core.config import Config
+from personal_db.services.mcp_server.tools import query as run_query
 
 
 def query(

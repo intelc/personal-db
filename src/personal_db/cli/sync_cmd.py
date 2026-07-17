@@ -1,6 +1,6 @@
 import typer
 
-from personal_db.daemon import client as dc
+from personal_db.services.daemon import client as dc
 
 _DAEMON_HINT = "personal-db daemon not running. Run `personal-db daemon install`"
 

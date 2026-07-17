@@ -6,8 +6,8 @@ import sys
 
 import pytest
 
-from personal_db.config import Config
-from personal_db.mcp_server.tools import log_life_context
+from personal_db.core.config import Config
+from personal_db.services.mcp_server.tools import log_life_context
 
 
 def _install(tmp_path):

@@ -1,11 +1,11 @@
-"""Tests for personal_db.backfill.start_async."""
+"""Tests for personal_db.services.backfill.start_async."""
 
 from __future__ import annotations
 
 import time
 
-from personal_db import backfill as backfill_mod
-from personal_db.config import Config
+from personal_db.services import backfill as backfill_mod
+from personal_db.core.config import Config
 
 
 def test_start_async_creates_log_file(tmp_path):

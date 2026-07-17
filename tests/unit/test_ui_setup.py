@@ -8,8 +8,8 @@ import sys
 import pytest
 from fastapi.testclient import TestClient
 
-from personal_db.config import Config
-from personal_db.daemon.http import build_app
+from personal_db.core.config import Config
+from personal_db.services.daemon.http import build_app
 
 
 @pytest.fixture(autouse=True)
@@ -169,7 +169,7 @@ def test_setup_mcp_install_unknown_404(tmp_path):
 def test_setup_mcp_install_redirects_with_flash(tmp_path, monkeypatch):
     """Mock the cursor target's auto-installer to return success; the route
     should redirect to /setup/finish?mcp=cursor&mcp_ok=1."""
-    from personal_db.wizard import mcp_setup
+    from personal_db.services.wizard import mcp_setup
 
     monkeypatch.setattr(
         mcp_setup._TARGETS["cursor"], "auto", lambda: (True, "wrote ~/.cursor/mcp.json")
@@ -215,7 +215,7 @@ def test_setup_oauth_redirects_to_provider_when_creds_set(tmp_path, monkeypatch)
     finally:
         # Always shut down the spawned localhost callback server so subsequent
         # tests don't run into "address already in use".
-        from personal_db.oauth import _shutdown_existing
+        from personal_db.core.oauth import _shutdown_existing
 
         _shutdown_existing("oura")
 

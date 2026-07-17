@@ -3,7 +3,7 @@ from unittest.mock import patch
 import pytest
 import requests
 
-from personal_db.daemon import client as dc
+from personal_db.services.daemon import client as dc
 
 
 def test_default_base_url_is_loopback_8765():

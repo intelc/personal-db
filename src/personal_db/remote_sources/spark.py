@@ -7,9 +7,9 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from personal_db.config import Config
+from personal_db.core.config import Config
 from personal_db.remote_sources.base import RemoteCallResult
-from personal_db.sources import SourceManifestError, get_source_definition
+from personal_db.core.sources import SourceManifestError, get_source_definition
 
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 

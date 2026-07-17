@@ -1,7 +1,7 @@
 import pytest
 
-from personal_db.config import Config
-from personal_db.installer import install_template, is_outdated, list_bundled, update_template
+from personal_db.core.config import Config
+from personal_db.core.installer import install_template, is_outdated, list_bundled, update_template
 
 
 def test_list_bundled_returns_known_templates():
@@ -23,7 +23,7 @@ def test_list_bundled_returns_known_templates():
 
 def test_granola_manifest_loads():
     from pathlib import Path
-    from personal_db.manifest import load_manifest
+    from personal_db.core.manifest import load_manifest
 
     here = Path(__file__).resolve().parents[2]
     m = load_manifest(here / "src/personal_db/templates/trackers/granola/manifest.yaml")

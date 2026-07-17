@@ -3,10 +3,10 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from personal_db.config import Config
-from personal_db.daemon.http import build_app
-from personal_db.db import apply_tracker_schema, connect, init_db
-from personal_db.tracker import Tracker
+from personal_db.core.config import Config
+from personal_db.services.daemon.http import build_app
+from personal_db.core.db import apply_tracker_schema, connect, init_db
+from personal_db.core.tracker import Tracker
 
 ROOT = Path(__file__).resolve().parents[2]
 FINANCE_DIR = ROOT / "src" / "personal_db" / "templates" / "trackers" / "finance"

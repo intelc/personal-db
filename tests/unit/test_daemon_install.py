@@ -1,6 +1,6 @@
 import pytest
 
-from personal_db.daemon import install as di
+from personal_db.services.daemon import install as di
 
 
 def test_build_plist_contains_label_keepalive_and_args(tmp_path):

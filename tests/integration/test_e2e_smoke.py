@@ -1,8 +1,8 @@
 import subprocess
 import sys
 
-from personal_db.config import Config
-from personal_db.sync import sync_one
+from personal_db.core.config import Config
+from personal_db.core.sync import sync_one
 
 
 def _run(*args, root=None):
@@ -30,7 +30,7 @@ def test_e2e_init_install_log_query(tmp_path):
     assert "habits" in r.stdout
 
     # Direct SQL via MCP query path
-    from personal_db.mcp_server.tools import get_series, list_trackers, query
+    from personal_db.services.mcp_server.tools import get_series, list_trackers, query
 
     cfg = Config(root=root)
     rows = query(cfg, "SELECT name, COUNT(*) AS n FROM habits GROUP BY name")
