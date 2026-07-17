@@ -8,6 +8,8 @@ from fastapi.testclient import TestClient
 
 from personal_db.core.config import Config
 from personal_db.services.daemon.http import build_app
+
+from tests._daemon_auth import auth_headers
 from personal_db.core.db import apply_tracker_schema, connect, init_db
 from personal_db.core.installer import install_template
 from personal_db.core.tracker import Tracker
@@ -156,7 +158,7 @@ def test_setup_page_renders_crypto_wallet_manager(tmp_root):
     init_db(cfg.db_path)
     install_template(cfg, "crypto_wallet")
     apply_tracker_schema(cfg.db_path, (CRYPTO_DIR / "schema.sql").read_text())
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     response = client.get("/setup/crypto_wallet")
 

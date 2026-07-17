@@ -11,6 +11,8 @@ from fastapi.testclient import TestClient
 from personal_db.core.config import Config
 from personal_db.services.daemon.http import build_app
 
+from tests._daemon_auth import auth_headers
+
 
 @pytest.fixture(autouse=True)
 def _no_scheduler(monkeypatch):
@@ -54,7 +56,7 @@ def test_setup_overview_lists_installed_and_bundled(tmp_path):
     cfg = _init(tmp_path)
     _install(cfg.root, "habits")
 
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/setup")
     assert r.status_code == 200
     # installed tracker shows configure link
@@ -67,7 +69,7 @@ def test_setup_overview_lists_installed_and_bundled(tmp_path):
 
 def test_setup_install_creates_tracker_dir(tmp_path):
     cfg = _init(tmp_path)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     # follow_redirects=False so we can assert the 303 → /setup/<name>
     r = client.post("/setup/install/habits", follow_redirects=False)
     assert r.status_code == 303
@@ -79,7 +81,7 @@ def test_setup_tracker_get_renders_form(tmp_path):
     cfg = _init(tmp_path)
     _install(cfg.root, "habits")
 
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/setup/habits")
     assert r.status_code == 200
     # 1 instructions step → ack checkbox with name _ack_0
@@ -89,7 +91,7 @@ def test_setup_tracker_get_renders_form(tmp_path):
 
 def test_setup_tracker_get_unknown_404(tmp_path):
     cfg = _init(tmp_path)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/setup/does_not_exist")
     assert r.status_code == 404
 
@@ -99,7 +101,7 @@ def test_setup_tracker_post_runs_steps_and_status(tmp_path):
     cfg = _init(tmp_path)
     _install(cfg.root, "habits")
 
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.post("/setup/habits", data={"_ack_0": "1"})
     assert r.status_code == 200
     assert "✓ DONE" in r.text
@@ -111,7 +113,7 @@ def test_setup_tracker_post_unacked_instruction_fails(tmp_path):
     cfg = _init(tmp_path)
     _install(cfg.root, "habits")
 
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.post("/setup/habits", data={})
     assert r.status_code == 200
     assert "FAILED" in r.text
@@ -123,7 +125,7 @@ def test_setup_tracker_post_persists_env_var(tmp_path):
     cfg = _init(tmp_path)
     _install(cfg.root, "github_commits")
 
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     # github_commits has a GITHUB_TOKEN env_var step. Submit with a fake value;
     # the test sync will fail (no real token), but we only care that the env
     # was written before the sync attempt.
@@ -141,7 +143,7 @@ def test_setup_tracker_post_persists_env_var(tmp_path):
 
 def test_setup_finish_get_renders(tmp_path):
     cfg = _init(tmp_path)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/setup/finish")
     assert r.status_code == 200
     assert "FINISH SETUP" in r.text
@@ -151,7 +153,7 @@ def test_setup_finish_get_renders(tmp_path):
 
 def test_setup_finish_lists_all_mcp_targets(tmp_path):
     cfg = _init(tmp_path)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/setup/finish")
     assert "claude_code" in r.text
     assert "claude_desktop" in r.text
@@ -160,7 +162,7 @@ def test_setup_finish_lists_all_mcp_targets(tmp_path):
 
 def test_setup_mcp_install_unknown_404(tmp_path):
     cfg = _init(tmp_path)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.post("/setup/mcp/install/not_a_target", follow_redirects=False)
     assert r.status_code == 404
 
@@ -174,7 +176,7 @@ def test_setup_mcp_install_redirects_with_flash(tmp_path, monkeypatch):
         mcp_setup._TARGETS["cursor"], "auto", lambda: (True, "wrote ~/.cursor/mcp.json")
     )
     cfg = _init(tmp_path)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.post("/setup/mcp/install/cursor", follow_redirects=False)
     assert r.status_code == 303
     assert r.headers["location"] == "/setup/finish?mcp=cursor&mcp_ok=1"
@@ -182,7 +184,7 @@ def test_setup_mcp_install_redirects_with_flash(tmp_path, monkeypatch):
 
 def test_setup_finish_renders_mcp_flash(tmp_path):
     cfg = _init(tmp_path)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/setup/finish?mcp=cursor&mcp_ok=1")
     assert "✓ installed for" in r.text
     assert "cursor" in r.text
@@ -197,7 +199,7 @@ def test_setup_oauth_redirects_to_provider_when_creds_set(tmp_path, monkeypatch)
     monkeypatch.setenv("OURA_CLIENT_ID", "fake_id")
     monkeypatch.setenv("OURA_CLIENT_SECRET", "fake_secret")
 
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     try:
         r = client.post(
             "/setup/oauth/oura",
@@ -227,7 +229,7 @@ def test_setup_oauth_without_creds_redirects_back_with_message(tmp_path, monkeyp
     monkeypatch.delenv("OURA_CLIENT_ID", raising=False)
     monkeypatch.delenv("OURA_CLIENT_SECRET", raising=False)
 
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.post(
         "/setup/oauth/oura",
         data={"step_index": "0"},
@@ -242,7 +244,7 @@ def test_setup_oauth_without_creds_redirects_back_with_message(tmp_path, monkeyp
 
 def test_setup_oauth_unknown_tracker_404(tmp_path):
     cfg = _init(tmp_path)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.post("/setup/oauth/no_such_tracker", data={"step_index": "0"})
     assert r.status_code == 404
 
@@ -256,7 +258,7 @@ def test_setup_tracker_get_renders_authorize_button_for_oauth(tmp_path, monkeypa
     monkeypatch.setenv("OURA_CLIENT_ID", "fake_id")
     monkeypatch.setenv("OURA_CLIENT_SECRET", "fake_secret")
 
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/setup/oura")
     assert r.status_code == 200
     assert 'formaction="/setup/oauth/oura"' in r.text
@@ -270,7 +272,7 @@ def test_setup_overview_marks_installed_with_icon(tmp_path):
     cfg = _init(tmp_path)
     _install(cfg.root, "habits")
 
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/setup")
     # Some indicator glyph is rendered for habits' status. Just confirm the
     # tracker appears with a row containing its summary text.
@@ -283,7 +285,7 @@ def test_install_hooks_step_renders_button(tmp_path):
     cfg = _init(tmp_path)
     _install(cfg.root, "code_agent_activity")
 
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/setup/code_agent_activity")
     assert r.status_code == 200
     assert "installHooks(this" in r.text
@@ -296,7 +298,7 @@ def test_verify_hooks_step_renders_badge(tmp_path):
     cfg = _init(tmp_path)
     _install(cfg.root, "code_agent_activity")
 
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/setup/code_agent_activity")
     assert r.status_code == 200
     assert "hook-status-badge" in r.text
@@ -308,7 +310,7 @@ def test_note_step_renders_body(tmp_path):
     cfg = _init(tmp_path)
     _install(cfg.root, "code_agent_activity")
 
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/setup/code_agent_activity")
     assert r.status_code == 200
     assert "Codex CLI requires no setup" in r.text
@@ -320,7 +322,7 @@ def test_tracker_action_step_renders_button_and_status(tmp_path):
     cfg = _init(tmp_path)
     _install(cfg.root, "plaid")
 
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/setup/plaid")
     assert r.status_code == 200
     assert "Connect institution" in r.text

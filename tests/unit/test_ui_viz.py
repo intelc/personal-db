@@ -9,6 +9,8 @@ from fastapi.testclient import TestClient
 
 from personal_db.core.config import Config
 from personal_db.services.daemon.http import build_app
+
+from tests._daemon_auth import auth_headers
 from personal_db.services.ui.viz import discover, list_trackers_with_viz, load_dashboard_slugs
 
 
@@ -79,7 +81,7 @@ def test_dashboard_config_filters_to_listed_slugs(tmp_path):
 
 def test_dashboard_route_renders_each_configured_viz(tmp_path):
     cfg = _setup(tmp_path, "daily_time_accounting", "life_context")
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/")
     assert r.status_code == 200
     # Nav bar should show installed trackers
@@ -93,7 +95,7 @@ def test_dashboard_route_renders_each_configured_viz(tmp_path):
 
 def test_life_context_form_exposes_backdated_note_fields(tmp_path):
     cfg = _setup(tmp_path, "life_context")
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/t/life_context")
 
     assert r.status_code == 200
@@ -105,7 +107,7 @@ def test_life_context_form_exposes_backdated_note_fields(tmp_path):
 
 def test_single_viz_page(tmp_path):
     cfg = _setup(tmp_path, "daily_time_accounting")
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/v/daily_time_accounting:today_stack")
     assert r.status_code == 200
     assert "TIME" in r.text  # title is "Today's Time" (apostrophe HTML-escaped)
@@ -115,14 +117,14 @@ def test_single_viz_page(tmp_path):
 
 def test_unknown_viz_returns_404(tmp_path):
     cfg = _setup(tmp_path)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/v/does_not:exist")
     assert r.status_code == 404
 
 
 def test_tracker_page_lists_all_its_viz(tmp_path):
     cfg = _setup(tmp_path, "daily_time_accounting")
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/t/daily_time_accounting")
     assert r.status_code == 200
     # Both daily_time viz appear on the tracker page
@@ -132,7 +134,7 @@ def test_tracker_page_lists_all_its_viz(tmp_path):
 
 def test_unknown_tracker_returns_404(tmp_path):
     cfg = _setup(tmp_path)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/t/nonexistent")
     assert r.status_code == 404
 
@@ -147,7 +149,7 @@ def test_broken_viz_does_not_kill_dashboard(tmp_path):
         "    return [{'slug': 'broken', 'name': 'Broken', 'description': '',\n"
         "             'render': lambda cfg: 1/0}]\n"
     )
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/")
     assert r.status_code == 200
     assert "error rendering" in r.text
@@ -155,7 +157,7 @@ def test_broken_viz_does_not_kill_dashboard(tmp_path):
 
 def test_refresh_button_renders_on_tracker_page(tmp_path):
     cfg = _setup(tmp_path, "daily_time_accounting")
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/t/daily_time_accounting")
     assert r.status_code == 200
     # Form posts to /sync/<tracker>; button has the visible label.
@@ -165,7 +167,7 @@ def test_refresh_button_renders_on_tracker_page(tmp_path):
 
 def test_setup_button_renders_on_tracker_and_viz_pages(tmp_path):
     cfg = _setup(tmp_path, "daily_time_accounting")
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     tracker = client.get("/t/daily_time_accounting")
     viz = client.get("/v/daily_time_accounting:today_stack")
@@ -180,7 +182,7 @@ def test_setup_button_renders_on_tracker_and_viz_pages(tmp_path):
 def test_refresh_button_skipped_for_builtin_viz(tmp_path):
     """The health viz lives under _builtin — no underlying tracker, no refresh button."""
     cfg = _setup(tmp_path, "daily_time_accounting")
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/v/_builtin:health")
     assert r.status_code == 200
     # Health is built-in; no sync to run.
@@ -190,7 +192,7 @@ def test_refresh_button_skipped_for_builtin_viz(tmp_path):
 
 def test_refresh_endpoint_runs_sync_and_redirects(tmp_path):
     cfg = _setup(tmp_path, "daily_time_accounting")
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     # Track that sync_one was called by checking the framework's last_run.json
     # gets updated after the POST.
     from datetime import UTC, datetime
@@ -214,7 +216,7 @@ def test_refresh_endpoint_runs_sync_and_redirects(tmp_path):
 def test_refresh_endpoint_swallows_sync_errors(tmp_path):
     """A failing sync (e.g. uninstalled tracker) should still redirect, not 500."""
     cfg = _setup(tmp_path)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.post("/sync/nonexistent_tracker", follow_redirects=False)
     assert r.status_code == 303  # not 500
 
@@ -259,7 +261,7 @@ def test_nav_overflow_renders_in_dashboard_html(tmp_path):
     page should include a 'more' dropdown with the overflow links."""
     from personal_db.core.installer import list_bundled
     cfg = _setup(tmp_path, *list_bundled())
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/")
     assert r.status_code == 200
     # The "more" summary appears
@@ -383,7 +385,7 @@ def test_tracker_page_works_for_tracker_without_explicit_viz(tmp_path):
     """A tracker without visualizations.py should still load /t/<name>."""
     cfg = _setup(tmp_path, "github_commits")
     _strip_viz_file(cfg, "github_commits")
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/t/github_commits")
     assert r.status_code == 200
     assert "RECENT" in r.text
@@ -399,7 +401,7 @@ def test_health_viz_links_tracker_names(tmp_path):
     (state / "last_run.json").write_text(
         f'{{"daily_time_accounting": "{datetime.now(UTC).isoformat()}"}}'
     )
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/v/_builtin:health")
     assert r.status_code == 200
     # Tracker name should be wrapped in a link to /t/<name>
@@ -548,7 +550,7 @@ def test_agcharts_gain_loss_area_defaults_to_zoom_window():
 
 def test_base_uses_vendored_ag_assets(tmp_path):
     cfg = _setup(tmp_path)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/")
 
     assert r.status_code == 200

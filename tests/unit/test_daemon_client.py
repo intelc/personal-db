@@ -62,3 +62,42 @@ def test_health_raises_daemon_error_on_5xx():
     with patch.object(dc.requests, "get", return_value=FakeResp()):
         with pytest.raises(dc.DaemonError):
             dc.health()
+
+
+def test_auth_headers_includes_bearer_token_from_root(tmp_path, monkeypatch):
+    from personal_db.core.config import Config
+    from personal_db.core.daemon_token import ensure_token
+
+    root = tmp_path / "personal_db"
+    root.mkdir()
+    token = ensure_token(Config(root=root))
+    monkeypatch.setenv("PERSONAL_DB_ROOT", str(root))
+
+    assert dc._auth_headers() == {"Authorization": f"Bearer {token}"}
+
+
+def test_auth_headers_empty_when_no_token_on_disk(tmp_path, monkeypatch):
+    monkeypatch.setenv("PERSONAL_DB_ROOT", str(tmp_path / "nope"))
+    assert dc._auth_headers() == {}
+
+
+def test_post_attaches_auth_headers(monkeypatch):
+    monkeypatch.setattr(dc, "_auth_headers", lambda: {"Authorization": "Bearer abc"})
+    captured = {}
+
+    class FakeResp:
+        status_code = 200
+
+        def json(self):
+            return {"ok": True}
+
+        def raise_for_status(self):
+            return None
+
+    def fake_post(url, params=None, headers=None, timeout=None):
+        captured["headers"] = headers
+        return FakeResp()
+
+    with patch.object(dc.requests, "post", side_effect=fake_post):
+        dc.sync_one("imessage")
+    assert captured["headers"] == {"Authorization": "Bearer abc"}

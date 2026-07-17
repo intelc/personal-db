@@ -162,7 +162,8 @@ class PersonalDBApp(rumps.App):
         threading.Thread(target=run, daemon=True).start()
 
     def _open_dashboard(self, _) -> None:
-        webbrowser.open(f"http://127.0.0.1:{self.port}/")
+        base = f"http://127.0.0.1:{self.port}"
+        webbrowser.open(dc.bootstrap_url(self.cfg, base=base, path="/"))
 
     @rumps.timer(60)
     def _periodic(self, _) -> None:

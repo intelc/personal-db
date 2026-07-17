@@ -8,6 +8,8 @@ from personal_db.core.db import apply_tracker_schema, connect, init_db
 from personal_db.core.tracker import Tracker
 from personal_db.services.daemon.http import build_app
 
+from tests._daemon_auth import auth_headers
+
 ROOT = Path(__file__).resolve().parents[2]
 FINANCE_DIR = ROOT / "src" / "personal_db" / "templates" / "trackers" / "finance"
 FINANCE_APP_DIR = ROOT / "src" / "personal_db" / "templates" / "apps" / "finance"
@@ -170,7 +172,7 @@ def test_subscriptions_app_renders(tmp_root):
     _seed_db(cfg)
     ingest.sync(Tracker("subscriptions", cfg, manifest=None))
 
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/a/subscriptions")
     assert r.status_code == 200
     assert "Subscriptions Overview" in r.text
@@ -188,7 +190,7 @@ def test_subscriptions_app_can_mark_false_positive_in_finance_state(tmp_root):
     subscription_id = con.execute("SELECT subscription_id FROM subscription_entities").fetchone()[0]
     con.close()
 
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.post(
         "/api/apps/subscriptions/actions/mark_not_subscription",
         data={

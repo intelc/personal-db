@@ -4,6 +4,8 @@ from fastapi.testclient import TestClient
 from personal_db.core.config import Config
 from personal_db.services.daemon.agent_terminal import build_cli_command
 from personal_db.services.daemon.http import build_app
+
+from tests._daemon_auth import auth_headers
 from personal_db.core.db import apply_tracker_schema, init_db
 from personal_db.core.installer import install_template
 
@@ -42,7 +44,7 @@ def _make_runnable(tmp_root, name="runnable"):
 
 def test_health_returns_ok(tmp_root):
     cfg = _make_runnable(tmp_root)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/api/health")
     assert r.status_code == 200
     assert r.json()["status"] == "ok"
@@ -50,7 +52,7 @@ def test_health_returns_ok(tmp_root):
 
 def test_rejects_untrusted_host_header(tmp_root):
     cfg = _make_runnable(tmp_root)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/api/health", headers={"host": "attacker.example:8765"})
     assert r.status_code == 400
     assert "host" in r.json()["detail"].lower()
@@ -58,7 +60,7 @@ def test_rejects_untrusted_host_header(tmp_root):
 
 def test_sync_one_route(tmp_root):
     cfg = _make_runnable(tmp_root)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.post("/api/sync/runnable")
     assert r.status_code == 200
     body = r.json()
@@ -68,21 +70,21 @@ def test_sync_one_route(tmp_root):
 
 def test_sync_one_rejects_cross_origin_write(tmp_root):
     cfg = _make_runnable(tmp_root)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.post("/api/sync/runnable", headers={"origin": "http://attacker.example"})
     assert r.status_code == 403
 
 
 def test_sync_one_unknown_tracker_404(tmp_root):
     cfg = _make_runnable(tmp_root)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.post("/api/sync/nope")
     assert r.status_code == 404
 
 
 def test_sync_one_invalid_name_400(tmp_root):
     cfg = _make_runnable(tmp_root)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.post("/api/sync/..%2Fescape")
     # FastAPI may decode the path; either rejection (400) or 404 is acceptable
     # — what matters is we don't 500 or actually run anything.
@@ -91,7 +93,7 @@ def test_sync_one_invalid_name_400(tmp_root):
 
 def test_sync_due_route(tmp_root):
     cfg = _make_runnable(tmp_root)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.post("/api/sync_due")
     assert r.status_code == 200
     assert r.json()["results"]["runnable"] == "ok"
@@ -99,7 +101,7 @@ def test_sync_due_route(tmp_root):
 
 def test_backfill_route(tmp_root):
     cfg = _make_runnable(tmp_root)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.post("/api/backfill/runnable", params={"from": "2026-04-01", "to": "2026-04-02"})
     assert r.status_code == 200
     assert r.json()["ok"] is True
@@ -107,7 +109,7 @@ def test_backfill_route(tmp_root):
 
 def test_agent_context_dashboard_route(tmp_root):
     cfg = _make_runnable(tmp_root)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/api/agent/context", params={"path": "/"})
     assert r.status_code == 200
     body = r.json()
@@ -119,7 +121,7 @@ def test_agent_context_dashboard_route(tmp_root):
 
 def test_agent_context_tracker_route(tmp_root):
     cfg = _make_runnable(tmp_root)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/api/agent/context", params={"path": "/t/runnable"})
     assert r.status_code == 200
     body = r.json()
@@ -130,7 +132,7 @@ def test_agent_context_tracker_route(tmp_root):
 def test_agent_session_lifecycle_uses_configured_cli(tmp_root, monkeypatch):
     monkeypatch.setenv("PERSONAL_DB_CLAUDE_COMMAND", "true")
     cfg = _make_runnable(tmp_root)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     created = client.post(
         "/api/agent/sessions",
@@ -162,7 +164,7 @@ def test_agent_cli_commands_use_default_permission_modes(monkeypatch):
 def test_sync_one_plaintext_invalid_name_400(tmp_root):
     """Direct exercise of _validate_name's 400 path with a name that won't be intercepted by URL routing."""
     cfg = _make_runnable(tmp_root)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.post("/api/sync/has-dash")
     assert r.status_code == 400
     assert "invalid tracker name" in r.json()["detail"].lower()
@@ -173,7 +175,7 @@ def test_log_life_context_route_accepts_past_date(tmp_root):
     init_db(cfg.db_path)
     dest = install_template(cfg, "life_context")
     apply_tracker_schema(cfg.db_path, (dest / "schema.sql").read_text())
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     r = client.post(
         "/log_life_context",

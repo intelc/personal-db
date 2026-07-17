@@ -18,6 +18,8 @@ from personal_db.core.config import Config
 from personal_db.services.daemon.http import build_app
 from personal_db.core.installer import install_template
 
+from tests._daemon_auth import auth_headers
+
 
 @pytest.fixture
 def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Config, TestClient]:
@@ -69,7 +71,7 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Config, TestCl
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex_home"))
 
     app = build_app(cfg)
-    return cfg, TestClient(app)
+    return cfg, TestClient(app, headers=auth_headers(cfg))
 
 
 def test_sync_via_daemon_endpoint(env) -> None:

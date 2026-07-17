@@ -35,10 +35,14 @@ from personal_db.core.apps import (
     load_app_view,
 )
 from personal_db.core.config import Config
+from personal_db.core.daemon_token import ensure_token
 from personal_db.core.log_event import log_life_context
+from personal_db.services.daemon import auth as _auth
 from personal_db.services.daemon.agent_terminal import AgentTerminalManager
+from personal_db.services.daemon.otc import OtcStore
 from personal_db.services.daemon.routes.agent import register_agent_routes
 from personal_db.services.daemon.routes.actions import register_action_routes
+from personal_db.services.daemon.routes.auth import register_auth_routes
 from personal_db.services.daemon.routes.common import validate_name as _validate_name
 from personal_db.services.daemon.routes.setup import register_setup_routes
 from personal_db.services.daemon.routes.sync import register_sync_routes
@@ -152,15 +156,36 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
     agent_terminals = AgentTerminalManager(cfg)
     app.mount("/static", StaticFiles(directory=str(_HERE / "static")), name="static")
 
+    # Ensures the token exists before the app starts accepting requests —
+    # every route but GET /api/health (plus the narrow /auth bootstrap
+    # exceptions in services.daemon.auth.EXEMPT_ROUTES) requires it.
+    daemon_token = ensure_token(cfg)
+    otc_store = OtcStore()
+
     @app.middleware("http")
     async def _daemon_request_guard(request: Request, call_next):
         try:
             _verify_daemon_host(request, port=port)
+            if not _auth.is_exempt(request.method, request.url.path):
+                if not _auth.is_authenticated(request, daemon_token):
+                    if _auth.wants_html(request):
+                        next_q = urllib.parse.quote(
+                            request.url.path + (f"?{request.url.query}" if request.url.query else "")
+                        )
+                        return RedirectResponse(url=f"/auth?next={next_q}", status_code=303)
+                    raise HTTPException(status_code=401, detail="missing or invalid daemon token")
             if request.method.upper() in _WRITE_METHODS:
                 _verify_same_origin_write(request)
         except HTTPException as exc:
             return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
         return await call_next(request)
+
+    register_auth_routes(
+        app,
+        token=daemon_token,
+        otc_store=otc_store,
+        verify_same_origin_write=_verify_same_origin_write,
+    )
 
     def _registry():
         # Re-discover on every request so edits to a tracker's visualizations.py
@@ -184,6 +209,7 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
         app_registry=_app_registry,
         validate_name=_validate_name,
         verify_same_origin_write=_verify_same_origin_write,
+        daemon_token=daemon_token,
     )
 
     def _render_app_page(app_name: str, page_slug: str | None = None) -> tuple[dict[str, Any], str]:

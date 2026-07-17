@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, Request, WebSocket
 
 from personal_db.core.apps import load_named_queries
 from personal_db.core.config import Config
+from personal_db.services.daemon import auth as _auth
 from personal_db.services.daemon.agent_terminal import AgentTerminalManager, attach_terminal_websocket
 from personal_db.core.manifest import load_manifest
 from personal_db.services.ui.viz import load_dashboard_slugs
@@ -23,6 +24,7 @@ def register_agent_routes(
     app_registry: Callable[[], dict[str, Any]],
     validate_name: Callable[[str], None],
     verify_same_origin_write: Callable[[Request], None],
+    daemon_token: str,
 ) -> None:
     @app.get("/api/agent/context")
     async def api_agent_context(path: str = "/") -> dict[str, Any]:
@@ -210,6 +212,11 @@ def register_agent_routes(
 
     @app.websocket("/api/agent/sessions/{session_id}/terminal")
     async def api_agent_terminal_ws(websocket: WebSocket, session_id: str) -> None:
+        if not _auth.is_authenticated(websocket, daemon_token):
+            # Reject before accept() so the client sees a clean handshake
+            # failure rather than an open-then-closed socket.
+            await websocket.close(code=4401)
+            return
         session = agent_terminals.get(session_id)
         if session is None:
             await websocket.close(code=4404)

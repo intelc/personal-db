@@ -22,6 +22,8 @@ from personal_db.enrichments.finance import RECEIPT_V1_ENRICHMENT
 from personal_db.interfaces.email_context import EvidenceRef
 from personal_db.services.daemon.http import build_app
 
+from tests._daemon_auth import auth_headers
+
 FINANCE_SCHEMA = (
     Path(__file__).resolve().parents[2]
     / "src"
@@ -156,7 +158,7 @@ def test_app_route_renders_custom_app_and_named_query(tmp_root):
         "    return {'count': len(rows), 'params': params, 'rows': rows}\n"
     )
 
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     index = client.get("/a")
     assert index.status_code == 200
     assert "Sample App" in index.text
@@ -220,7 +222,7 @@ def test_app_route_applies_schema_before_render(tmp_root):
         "    ]))\n"
     )
 
-    r = TestClient(build_app(cfg)).get("/a/schema_app")
+    r = TestClient(build_app(cfg), headers=auth_headers(cfg)).get("/a/schema_app")
     assert r.status_code == 200
     assert "Schema Seed" in r.text
 
@@ -241,7 +243,7 @@ def test_app_route_returns_500_when_render_fails(tmp_root):
     )
     (app_dir / "views.py").write_text("def render_home(ctx):\n    raise RuntimeError('boom')\n")
 
-    r = TestClient(build_app(cfg)).get("/a/broken")
+    r = TestClient(build_app(cfg), headers=auth_headers(cfg)).get("/a/broken")
     assert r.status_code == 500
     assert "error rendering app page" in r.text
 
@@ -249,7 +251,7 @@ def test_app_route_returns_500_when_render_fails(tmp_root):
 def test_bundled_finance_route_renders_without_finance_tables(tmp_root):
     cfg = Config(root=tmp_root)
     init_db(cfg.db_path)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/a/finance")
     assert r.status_code == 200
     assert "Finance Overview" in r.text
@@ -287,7 +289,7 @@ def test_finance_receipts_page_shows_latest_and_queues_rerun(tmp_root):
             confidence=0.6,
         ),
     )
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     page = client.get("/a/finance/receipts")
     assert page.status_code == 200
@@ -325,7 +327,7 @@ def test_finance_receipts_page_shows_latest_and_queues_rerun(tmp_root):
 def test_finance_review_actions_write_app_state(tmp_root):
     cfg = Config(root=tmp_root)
     init_db(cfg.db_path)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     marked = client.post(
         "/api/apps/finance/actions/mark_reviewed",
@@ -368,7 +370,7 @@ def test_finance_review_actions_write_app_state(tmp_root):
 def test_undeclared_app_action_returns_404(tmp_root):
     cfg = Config(root=tmp_root)
     init_db(cfg.db_path)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.post("/api/apps/finance/actions/not_declared", json={})
     assert r.status_code == 404
 
@@ -376,7 +378,7 @@ def test_undeclared_app_action_returns_404(tmp_root):
 def test_app_action_rejects_cross_origin_browser_writes(tmp_root):
     cfg = Config(root=tmp_root)
     init_db(cfg.db_path)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     rejected = client.post(
         "/api/apps/finance/actions/set_transaction_category",
@@ -396,7 +398,7 @@ def test_app_action_rejects_cross_origin_browser_writes(tmp_root):
 def test_finance_category_actions_write_canonical_finance_state(tmp_root):
     cfg = Config(root=tmp_root)
     init_db(cfg.db_path)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     set_category = client.post(
         "/api/apps/finance/actions/set_transaction_category",
@@ -1006,7 +1008,7 @@ def _seed_finance_app_db(cfg: Config) -> None:
 def test_bundled_finance_pages_render_with_synthetic_data(tmp_root):
     cfg = Config(root=tmp_root)
     _seed_finance_app_db(cfg)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     overview = client.get("/a/finance")
     assert overview.status_code == 200
@@ -1130,7 +1132,7 @@ def test_bundled_finance_pages_render_with_synthetic_data(tmp_root):
 def test_finance_category_form_action_redirects_back(tmp_root):
     cfg = Config(root=tmp_root)
     _seed_finance_app_db(cfg)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     marked = client.post(
         "/api/apps/finance/actions/set_transaction_category",
@@ -1155,7 +1157,7 @@ def test_finance_category_form_action_redirects_back(tmp_root):
 def test_finance_categorize_model_reflects_inline_edits(tmp_root):
     cfg = Config(root=tmp_root)
     _seed_finance_app_db(cfg)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     marked = client.post(
         "/api/apps/finance/actions/set_transaction_category",
@@ -1193,7 +1195,7 @@ def test_finance_categorize_model_reflects_inline_edits(tmp_root):
 def test_finance_burn_inline_classification_updates_overview(tmp_root):
     cfg = Config(root=tmp_root)
     _seed_finance_app_db(cfg)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     marked = client.post(
         "/api/apps/finance/actions/set_burn_classification",
@@ -1260,7 +1262,7 @@ def test_finance_burn_inline_classification_updates_overview(tmp_root):
 def test_finance_burn_merchant_rules_replace_legacy_bucket_rules(tmp_root):
     cfg = Config(root=tmp_root)
     _seed_finance_app_db(cfg)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     assert client.get("/a/finance").status_code == 200
     con = connect(cfg.db_path)
     try:
@@ -1343,7 +1345,7 @@ def test_finance_burn_bucket_metadata_migrates_legacy_table(tmp_root):
     finally:
         con.close()
 
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     overview = client.get("/a/finance")
     assert overview.status_code == 200
     assert "🏠 Rent" in overview.text
@@ -1421,7 +1423,7 @@ def _seed_places_app_db(cfg: Config) -> None:
 def test_bundled_places_route_renders_without_location_tables(tmp_root):
     cfg = Config(root=tmp_root)
     init_db(cfg.db_path)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     overview = client.get("/a/places")
     assert overview.status_code == 200
@@ -1437,7 +1439,7 @@ def test_bundled_places_pages_render_with_synthetic_data(tmp_root, frozen_dateti
     frozen_datetime(2026, 6, 5)
     cfg = Config(root=tmp_root)
     _seed_places_app_db(cfg)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     overview = client.get("/a/places")
     assert overview.status_code == 200
@@ -1497,7 +1499,7 @@ def test_places_pages_render_with_raw_points_before_geocoding(tmp_root, frozen_d
     finally:
         con.close()
 
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     overview = client.get("/a/places")
     assert overview.status_code == 200
     assert "(unlabeled)" in overview.text
@@ -1556,7 +1558,7 @@ def test_places_pages_render_with_installed_location_tracker_schema(tmp_root, fr
     finally:
         con.close()
 
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     overview = client.get("/a/places")
     assert overview.status_code == 200
     assert "Home Address" in overview.text
@@ -1574,7 +1576,7 @@ def test_places_pages_render_with_installed_location_tracker_schema(tmp_root, fr
 def test_places_privacy_actions_write_app_state(tmp_root):
     cfg = Config(root=tmp_root)
     _seed_places_app_db(cfg)
-    client = TestClient(build_app(cfg))
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     settings = client.post(
         "/api/apps/places/actions/set_privacy",

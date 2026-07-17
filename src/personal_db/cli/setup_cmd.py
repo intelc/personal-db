@@ -60,15 +60,20 @@ def run(
 
 
 def _launch_browser_wizard(cfg: Config, port: int) -> None:
-    url = f"http://127.0.0.1:{port}/setup"
-    typer.echo(f"Starting wizard at {url}")
+    base = f"http://127.0.0.1:{port}"
+    typer.echo(f"Starting wizard at {base}/setup")
     typer.echo(
         "When you click 'Finish setup' in the browser we'll wire up the daemon "
         "and offer to install the MCP server into an agent."
     )
     typer.echo("Press Ctrl+C in this terminal when you're done to stop the server.")
 
-    threading.Timer(1.2, lambda: webbrowser.open(url)).start()
+    def _open() -> None:
+        from personal_db.services.daemon.client import bootstrap_url
+
+        webbrowser.open(bootstrap_url(cfg, base=base, path="/setup"))
+
+    threading.Timer(1.2, _open).start()
 
     import uvicorn
 
@@ -80,7 +85,7 @@ def _launch_browser_wizard(cfg: Config, port: int) -> None:
         if e.errno in (48, 98) or "address already in use" in str(e).lower():
             typer.echo(
                 f"\nPort {port} is already in use — the dashboard may already be running.\n"
-                f"Open {url} in your browser to continue setup."
+                f"Open {base}/setup in your browser to continue setup."
             )
             return
         raise

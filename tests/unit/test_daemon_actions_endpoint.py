@@ -8,6 +8,8 @@ from fastapi.testclient import TestClient
 from personal_db.core.config import Config
 from personal_db.services.daemon.http import build_app
 
+from tests._daemon_auth import auth_headers
+
 
 @pytest.fixture
 def client(tmp_path: Path) -> TestClient:
@@ -34,7 +36,7 @@ def client(tmp_path: Path) -> TestClient:
     )
 
     app = build_app(cfg)
-    return TestClient(app)
+    return TestClient(app, headers=auth_headers(cfg))
 
 
 def test_calls_tracker_action(client: TestClient) -> None:
@@ -94,7 +96,7 @@ def test_actions_module_import_error_500(tmp_path: Path) -> None:
     (tracker_dir / "actions.py").write_text("raise ImportError('top-level fail')\n")
 
     app = build_app(cfg)
-    client = TestClient(app)
+    client = TestClient(app, headers=auth_headers(cfg))
     r = client.post("/api/trackers/broken/actions/anything")
     assert r.status_code == 500
     assert "top-level fail" in r.json()["detail"]
