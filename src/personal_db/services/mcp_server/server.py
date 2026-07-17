@@ -411,21 +411,6 @@ def build_server(cfg: Config) -> Server:
                 inputSchema={"type": "object", "properties": {}},
             ),
             Tool(
-                name="worker_status",
-                description="Return structured status for the enrichment worker LaunchAgent.",
-                inputSchema={"type": "object", "properties": {}},
-            ),
-            Tool(
-                name="worker_log_tail",
-                description="Return the tail of the enrichment worker log.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "lines": {"type": "integer"},
-                    },
-                },
-            ),
-            Tool(
                 name="read_tracker_file",
                 description=(
                     "Read a text file under <root>/trackers/. Path is relative to the "
@@ -707,14 +692,6 @@ def build_server(cfg: Config) -> Server:
             )
         elif name == "enrichment_queue_summary":
             result = await asyncio.to_thread(T.enrichment_queue_summary, cfg)
-        elif name == "worker_status":
-            result = await asyncio.to_thread(T.worker_status, cfg)
-        elif name == "worker_log_tail":
-            result = await asyncio.to_thread(
-                T.worker_log_tail,
-                cfg,
-                arguments.get("lines", 50),
-            )
         elif name == "read_tracker_file":
             result = T.read_tracker_file(cfg, arguments["path"])
         elif name == "write_tracker_file":

@@ -19,7 +19,6 @@ from personal_db.cli import (
     sync_cmd,
     tracker_cmd,
     ui_cmd,
-    worker_cmd,
 )
 from personal_db.cli.state import _state, get_root
 
@@ -78,16 +77,6 @@ daemon_app.command("status")(daemon_cmd.status)
 daemon_app.command("restart")(daemon_cmd.restart)
 daemon_app.command("run")(daemon_cmd.run)
 app.add_typer(daemon_app, name="daemon")
-
-worker_app = typer.Typer(no_args_is_help=True, help="Long-running enrichment workers")
-worker_app.command("enrich")(worker_cmd.enrich)
-worker_app.command("install")(worker_cmd.install)
-worker_app.command("uninstall")(worker_cmd.uninstall)
-worker_app.command("status")(worker_cmd.status)
-worker_app.command("info")(worker_cmd.info)
-worker_app.command("log")(worker_cmd.log)
-worker_app.command("restart")(worker_cmd.restart)
-app.add_typer(worker_app, name="worker")
 
 app.add_typer(code_agent_hook_cmd.app, name="code-agent-hook-write")
 

@@ -18,10 +18,9 @@ def _no_scheduler(monkeypatch):
 
     The plist lives at ~/Library/LaunchAgents/com.personal_db.daemon.plist
     regardless of cfg.root, so tests would otherwise clobber the user's real
-    daemon install. PERSONAL_DB_NO_SCHEDULER=1 is accepted as a deprecated alias
-    by _install_daemon_safe, keeping this fixture working without change.
+    daemon install.
     """
-    monkeypatch.setenv("PERSONAL_DB_NO_SCHEDULER", "1")
+    monkeypatch.setenv("PERSONAL_DB_NO_DAEMON", "1")
 
 
 def _init(tmp_path):

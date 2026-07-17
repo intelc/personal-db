@@ -44,10 +44,6 @@ FINANCE_RECEIPT_V1_SCOPE_ENV = "PERSONAL_DB_FINANCE_RECEIPT_V1_SCOPE"
 FINANCE_RECEIPT_V1_WORKER_INTERVAL_ENV = "PERSONAL_DB_FINANCE_RECEIPT_V1_WORKER_INTERVAL_SECONDS"
 FINANCE_RECEIPT_V1_BATCH_SIZE_ENV = "PERSONAL_DB_FINANCE_RECEIPT_V1_BATCH_SIZE"
 FINANCE_RECEIPT_V1_LEASE_SECONDS_ENV = "PERSONAL_DB_FINANCE_RECEIPT_V1_LEASE_SECONDS"
-V1_WORKER_DEPRECATED_MESSAGE = (
-    f"{FINANCE_RECEIPT_V1_WORKER_ENABLED_ENV} is ignored by the daemon. "
-    "Use `personal-db worker install --kind finance-receipt-v1` to run v1 enrichments."
-)
 
 
 def start_periodic_sync(
@@ -241,8 +237,6 @@ def run(cfg: Config, port: int = 8765, interval_seconds: float = 600) -> None:
             stale_after_days=_env_optional_int(FINANCE_RECEIPT_V1_STALE_AFTER_DAYS_ENV),
             scope=_env_optional_str(FINANCE_RECEIPT_V1_SCOPE_ENV),
         )
-    if finance_receipt_v1_worker_enabled_from_env():
-        log.warning(V1_WORKER_DEPRECATED_MESSAGE)
     if enrichments_enabled_from_env():
         start_periodic_enrichments(
             cfg,

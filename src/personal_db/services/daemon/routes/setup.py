@@ -24,10 +24,7 @@ from personal_db.services.wizard.mcp_setup import _TARGETS as _MCP_TARGETS
 
 def _install_daemon_safe(cfg: Config) -> str:
     """Install the launchd daemon plist and return a one-line status."""
-    if (
-        os.environ.get("PERSONAL_DB_NO_DAEMON") == "1"
-        or os.environ.get("PERSONAL_DB_NO_SCHEDULER") == "1"
-    ):
+    if os.environ.get("PERSONAL_DB_NO_DAEMON") == "1":
         return "✓ daemon skipped (PERSONAL_DB_NO_DAEMON=1)"
     if sys.platform != "darwin":
         return f"⚠ daemon is macOS-only (detected {sys.platform}); periodic sync skipped"

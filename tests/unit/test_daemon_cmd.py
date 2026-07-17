@@ -20,7 +20,7 @@ def test_install_calls_install(monkeypatch, tmp_path):
 
     def fake_install(root):
         called["root"] = root
-        return {"plist": root / "p.plist", "migrated_old_scheduler": False}
+        return {"plist": root / "p.plist"}
 
     monkeypatch.setattr(di, "install", fake_install)
     monkeypatch.setattr("personal_db.cli.daemon_cmd.get_root", lambda: tmp_path)
@@ -28,22 +28,6 @@ def test_install_calls_install(monkeypatch, tmp_path):
     r = runner.invoke(_build_app(), ["install"])
     assert r.exit_code == 0
     assert called["root"] == tmp_path
-    assert "installed" in r.stdout.lower()
-
-
-def test_install_prints_migration_note(monkeypatch, tmp_path):
-    """When install() reports a migration, the CLI should print a note before the
-    installed: line."""
-
-    def fake_install(root):
-        return {"plist": root / "p.plist", "migrated_old_scheduler": True}
-
-    monkeypatch.setattr(di, "install", fake_install)
-    monkeypatch.setattr("personal_db.cli.daemon_cmd.get_root", lambda: tmp_path)
-    runner = CliRunner()
-    r = runner.invoke(_build_app(), ["install"])
-    assert r.exit_code == 0
-    assert "scheduler.plist" in r.stdout
     assert "installed" in r.stdout.lower()
 
 

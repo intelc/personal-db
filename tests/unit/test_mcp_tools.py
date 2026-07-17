@@ -30,8 +30,6 @@ from personal_db.services.mcp_server.tools import (
     spark_email_folders,
     sync_due_tool,
     sync_tool,
-    worker_log_tail,
-    worker_status,
 )
 from personal_db.core.sources import install_source_template
 
@@ -462,28 +460,6 @@ def test_enrichment_queue_summary_wraps_result(tmp_root, monkeypatch):
 
     assert out["ok"] is True
     assert out["by_enrichment"]["x"]["statuses"]["pending"] == 1
-
-
-def test_worker_status_and_log_tail_wrap_results(tmp_root, monkeypatch):
-    cfg = Config(root=tmp_root)
-
-    monkeypatch.setattr(
-        "personal_db.services.mcp_server.tools.worker_install.info",
-        lambda root: {"installed": True, "loaded": True, "label": "worker"},
-    )
-    monkeypatch.setattr(
-        "personal_db.services.mcp_server.tools.worker_install.log_tail",
-        lambda root, *, lines=50: {"exists": True, "lines": ["hello"], "lines_arg": lines},
-    )
-
-    status = worker_status(cfg)
-    log = worker_log_tail(cfg, lines=3)
-
-    assert status["ok"] is True
-    assert status["loaded"] is True
-    assert log["ok"] is True
-    assert log["lines"] == ["hello"]
-    assert log["lines_arg"] == 3
 
 
 def _make_runnable_tracker(tmp_root, name="runnable"):

@@ -10,13 +10,8 @@ from personal_db.services.daemon import install as di
 
 
 def install() -> None:
-    """Install the launchd plist for the daemon and load it.
-
-    Auto-migrates the old `com.personal_db.scheduler.plist` if present.
-    """
+    """Install the launchd plist for the daemon and load it."""
     result = di.install(get_root())
-    if result["migrated_old_scheduler"]:
-        typer.echo("note: removed old com.personal_db.scheduler.plist")
     typer.echo(f"installed: {result['plist']}")
 
 
@@ -35,8 +30,6 @@ def restart() -> None:
     """Reinstall the plist (unload + load). Equivalent to `uninstall && install`."""
     di.uninstall()
     result = di.install(get_root())
-    if result["migrated_old_scheduler"]:
-        typer.echo("note: removed old com.personal_db.scheduler.plist")
     typer.echo(f"restarted: {result['plist']}")
 
 

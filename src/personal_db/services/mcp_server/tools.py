@@ -41,7 +41,6 @@ from personal_db.remote_sources.spark import (
     SparkSourceConfigError,
 )
 from personal_db.core.sources import discover_sources
-from personal_db.worker import install as worker_install
 
 # Cap file writes to keep the tool from being a foot-gun. Real tracker files
 # are well under 100 KB; 1 MiB leaves plenty of headroom.
@@ -518,20 +517,6 @@ def finance_receipt_latest(
 def enrichment_queue_summary(cfg: Config) -> dict[str, Any]:
     try:
         return {"ok": True, **get_enrichment_queue_summary(cfg)}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
-
-def worker_status(cfg: Config) -> dict[str, Any]:
-    try:
-        return {"ok": True, **worker_install.info(cfg.root)}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
-
-def worker_log_tail(cfg: Config, lines: int = 50) -> dict[str, Any]:
-    try:
-        return {"ok": True, **worker_install.log_tail(cfg.root, lines=lines)}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 

@@ -483,7 +483,7 @@ def test_run_starts_finance_receipt_enqueue_loop_when_env_enabled(tmp_root, monk
     assert enqueue_calls == [(cfg, 123.5, 44, 6, 31, "Inbox")]
 
 
-def test_run_starts_v1_enqueue_and_warns_for_deprecated_daemon_worker(
+def test_run_starts_v1_enqueue_and_does_not_start_v1_worker(
     tmp_root,
     monkeypatch,
     caplog,
@@ -552,5 +552,5 @@ def test_run_starts_v1_enqueue_and_warns_for_deprecated_daemon_worker(
 
     assert sync_calls == [(cfg, 600)]
     assert enqueue_calls == [(cfg, 123.5, 12, 6, 2, 17, 31, "Inbox")]
+    # run() never invokes the v1 worker loop directly — it's queue-driven now.
     assert worker_calls == []
-    assert any(ds.V1_WORKER_DEPRECATED_MESSAGE in rec.message for rec in caplog.records)

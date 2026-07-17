@@ -89,7 +89,7 @@ def _launch_browser_wizard(cfg: Config, port: int) -> None:
 def _finalize_terminal(cfg: Config) -> None:
     """Post-wizard: scheduler, MCP, optional dashboard launch."""
     typer.echo("\n──────── finalize ────────")
-    install_scheduler(cfg)
+    install_daemon(cfg)
 
     install_mcp = questionary.confirm(
         "Install personal_db MCP server into an agent (Claude Code / Desktop / Cursor)?",
@@ -123,15 +123,15 @@ def _finalize_terminal(cfg: Config) -> None:
     typer.echo("  personal-db daemon status     # check periodic sync")
 
 
-def install_scheduler(cfg: Config) -> None:
+def install_daemon(cfg: Config) -> None:
     """Install the launchd job. macOS-only — prints a notice on other platforms.
 
-    Honors PERSONAL_DB_NO_SCHEDULER=1 so tests, demo recordings, and users who
+    Honors PERSONAL_DB_NO_DAEMON=1 so tests, demo recordings, and users who
     don't want a background process can opt out cleanly. The launchd plist
     location is global (~/Library/LaunchAgents/...), so writing it from a test
     or demo would clobber the real install — the env var prevents that.
     """
-    if os.environ.get("PERSONAL_DB_NO_DAEMON") == "1" or os.environ.get("PERSONAL_DB_NO_SCHEDULER") == "1":
+    if os.environ.get("PERSONAL_DB_NO_DAEMON") == "1":
         typer.echo("✓ daemon skipped (PERSONAL_DB_NO_DAEMON=1)")
         return
     if sys.platform != "darwin":
@@ -143,8 +143,6 @@ def install_scheduler(cfg: Config) -> None:
         from personal_db.services.daemon import install as di
 
         result = di.install(cfg.root)
-        if result["migrated_old_scheduler"]:
-            typer.echo("note: removed old com.personal_db.scheduler.plist")
         typer.echo(f"✓ daemon installed → {result['plist']} (sync every 10 min)")
     except Exception as e:  # noqa: BLE001
         typer.echo(f"⚠ daemon install failed: {e}")

@@ -6,7 +6,6 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 LABEL = "com.personal_db.daemon"
-OLD_LABEL = "com.personal_db.scheduler"
 
 # Module-level so tests can monkeypatch.
 _LAUNCHAGENTS_DIR = Path("~/Library/LaunchAgents").expanduser()
@@ -14,10 +13,6 @@ _LAUNCHAGENTS_DIR = Path("~/Library/LaunchAgents").expanduser()
 
 def plist_path() -> Path:
     return _LAUNCHAGENTS_DIR / f"{LABEL}.plist"
-
-
-def _old_plist_path() -> Path:
-    return _LAUNCHAGENTS_DIR / f"{OLD_LABEL}.plist"
 
 
 def build_plist(pdb_path: str, root: Path, log_path: Path) -> str:
@@ -45,23 +40,11 @@ def build_plist(pdb_path: str, root: Path, log_path: Path) -> str:
 """
 
 
-def _migrate_old_plist() -> bool:
-    """Unload + remove the old scheduler plist if present. Returns True if a migration happened."""
-    old = _old_plist_path()
-    if not old.exists():
-        return False
-    subprocess.run(["launchctl", "unload", str(old)], capture_output=True)
-    old.unlink()
-    return True
-
-
 def install(root: Path) -> dict:
     """Install the launchd daemon plist and load it.
 
-    Returns a dict with keys:
-      - ``plist``: :class:`~pathlib.Path` to the installed plist file.
-      - ``migrated_old_scheduler``: ``True`` if the old
-        ``com.personal_db.scheduler.plist`` was removed during this call.
+    Returns a dict with key ``plist``: :class:`~pathlib.Path` to the installed
+    plist file.
     """
     pdb_path = shutil.which("personal-db")
     if pdb_path is None:
@@ -72,8 +55,6 @@ def install(root: Path) -> dict:
     log_path = root / "state" / "daemon.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
-    migrated = _migrate_old_plist()
-
     p = plist_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(build_plist(pdb_path, root, log_path))
@@ -82,14 +63,8 @@ def install(root: Path) -> dict:
     try:
         subprocess.run(["launchctl", "load", str(p)], check=True)
     except subprocess.CalledProcessError as exc:
-        msg = f"launchctl failed to load the daemon plist ({p}): {exc}"
-        if migrated:
-            msg += (
-                " Note: the old com.personal_db.scheduler.plist was already removed."
-                " Re-run `personal-db daemon install` after resolving the issue."
-            )
-        raise RuntimeError(msg) from exc
-    return {"plist": p, "migrated_old_scheduler": migrated}
+        raise RuntimeError(f"launchctl failed to load the daemon plist ({p}): {exc}") from exc
+    return {"plist": p}
 
 
 def uninstall() -> None:
