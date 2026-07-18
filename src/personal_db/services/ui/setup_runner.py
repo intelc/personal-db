@@ -10,10 +10,12 @@ steps as "needs terminal" and keeps moving.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from importlib import resources
 from pathlib import Path
 
@@ -31,12 +33,15 @@ from personal_db.core.manifest import (
     Manifest,
     NoteStep,
     OAuthStep,
+    PlatformName,
     TrackerActionStep,
     VerifyHooksStep,
+    humanize_tracker_name,
     load_manifest,
 )
 from personal_db.core.permissions import probe_sqlite_access
 from personal_db.core.sync import sync_one
+from personal_db.services.ui.builtin_viz import humanize_age
 from personal_db.services.wizard.env_file import read_env, upsert_env
 from personal_db.services.wizard.runner import RunResult
 from personal_db.services.wizard.status import compute_icon, read_status, write_status
@@ -49,6 +54,17 @@ class TrackerOverview:
     installed: bool
     icon: str  # — ✓ ! ✗ +  (matches terminal wizard glyphs)
     summary: str
+    # Additive fields for the human-friendly overview cards (setup.html).
+    # `title` falls back to the mechanical `humanize_tracker_name(name)`;
+    # `platform`/`permission` mirror the manifest fields verbatim (raw
+    # values -- the template applies platform_label()/permission_label()).
+    title: str = ""
+    platform: list[PlatformName] | None = None
+    permission: str = "none"
+    # Populated only for installed trackers -- see `_status_chip`.
+    status_label: str | None = None
+    status_class: str | None = None  # "ok" | "warn"
+    last_sync_age: str | None = None  # e.g. "38m ago"
 
 
 @dataclass
@@ -85,12 +101,22 @@ _FDA_SETTINGS_URL = "x-apple.systempreferences:com.apple.preference.security?Pri
 def list_overview(cfg: Config) -> list[TrackerOverview]:
     """All trackers — installed first (with status), then bundled-but-not-installed."""
     installed = _installed_trackers(cfg)
+    last_runs = _read_last_runs(cfg)
+    now = datetime.now(timezone.utc)
     out: list[TrackerOverview] = []
     for name in installed:
         try:
             manifest = load_manifest(cfg.trackers_dir / name / "manifest.yaml")
             icon = compute_icon(cfg, name)
             summary = _summary_for_icon(icon, read_status(cfg).get(name))
+            status_label, status_class = _status_chip(icon)
+            last_sync_age = None
+            ts = last_runs.get(name)
+            if ts:
+                try:
+                    last_sync_age = humanize_age(now - datetime.fromisoformat(ts))
+                except ValueError:
+                    last_sync_age = None
             out.append(
                 TrackerOverview(
                     name=name,
@@ -98,6 +124,12 @@ def list_overview(cfg: Config) -> list[TrackerOverview]:
                     installed=True,
                     icon=icon,
                     summary=summary,
+                    title=manifest.display_title(),
+                    platform=manifest.platform,
+                    permission=manifest.permission_type,
+                    status_label=status_label,
+                    status_class=status_class,
+                    last_sync_age=last_sync_age,
                 )
             )
         except Exception as e:
@@ -108,19 +140,23 @@ def list_overview(cfg: Config) -> list[TrackerOverview]:
                     installed=True,
                     icon="⚠",
                     summary="see logs",
+                    title=humanize_tracker_name(name),
                 )
             )
     for name in list_bundled():
         if name in installed:
             continue
-        description = _bundled_description(name)
+        data = _bundled_manifest_data(name)
         out.append(
             TrackerOverview(
                 name=name,
-                description=description,
+                description=data.get("description", ""),
                 installed=False,
                 icon="+",
                 summary="not installed",
+                title=data.get("title") or humanize_tracker_name(name),
+                platform=data.get("platform"),
+                permission=data.get("permission_type", "none"),
             )
         )
     return out
@@ -401,13 +437,40 @@ def _installed_trackers(cfg: Config) -> list[str]:
     )
 
 
-def _bundled_description(name: str) -> str:
+def _bundled_manifest_data(name: str) -> dict:
+    """Raw (unvalidated) manifest.yaml dict for a bundled-but-not-installed
+    tracker -- used for the overview cards' title/platform/permission/
+    description, which don't need full `Manifest` validation."""
     pkg = resources.files("personal_db.templates.trackers")
     try:
         text = pkg.joinpath(name, "manifest.yaml").read_text()
-        return (yaml.safe_load(text) or {}).get("description", "")
+        return yaml.safe_load(text) or {}
     except (yaml.YAMLError, OSError):
-        return ""
+        return {}
+
+
+def _read_last_runs(cfg: Config) -> dict[str, str]:
+    p = cfg.state_dir / "last_run.json"
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text())
+    except json.JSONDecodeError:
+        return {}
+
+
+def _status_chip(icon: str) -> tuple[str | None, str | None]:
+    """Overview-card status chip for an installed tracker's wizard icon.
+
+    '—' (no setup needed) and '✓' (configured, last test passed) both read
+    as ready to use. '✗' (prerequisites missing / never test-synced) and '!'
+    (configured but last test sync failed) both need the user's attention.
+    """
+    if icon in ("—", "✓"):
+        return "● Ready", "ok"
+    if icon in ("✗", "!"):
+        return "Needs setup", "warn"
+    return None, None
 
 
 def _summary_for_icon(icon: str, status: dict | None) -> str:

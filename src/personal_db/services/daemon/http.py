@@ -46,7 +46,13 @@ from personal_db.core.apps import (
 from personal_db.core.config import Config
 from personal_db.core.daemon_token import ensure_token
 from personal_db.core.log_event import log_life_context
-from personal_db.core.manifest import ManifestError, humanize_tracker_name, load_manifest
+from personal_db.core.manifest import (
+    ManifestError,
+    humanize_tracker_name,
+    load_manifest,
+    permission_label,
+    platform_label,
+)
 from personal_db.services.daemon import auth as _auth
 from personal_db.services.daemon.agent_terminal import AgentTerminalManager
 from personal_db.services.daemon.otc import OtcStore
@@ -157,6 +163,12 @@ def _tracker_title(cfg: Config, tracker: str) -> str:
 def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
     app = FastAPI(title="personal_db", openapi_url=None, docs_url=None, redoc_url=None)
     templates = Jinja2Templates(directory=str(_HERE / "templates"))
+    # Small, pure display-label helpers exposed to every template (setup.html's
+    # tracker cards, setup_tracker.html's header badges) so they don't need a
+    # context var threaded through every route just to render a platform/
+    # permission badge.
+    templates.env.globals["platform_label"] = platform_label
+    templates.env.globals["permission_label"] = permission_label
     agent_terminals = AgentTerminalManager(cfg)
     app.mount("/static", StaticFiles(directory=str(_HERE / "static")), name="static")
 

@@ -160,9 +160,10 @@ def test_refresh_button_renders_on_tracker_page(tmp_path):
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/t/daily_time_accounting")
     assert r.status_code == 200
-    # Form posts to /sync/<tracker>; button has the visible label.
+    # Form posts to /sync/<tracker>; button has the visible label. (pdb-sync.js
+    # progressively enhances the submit to fetch /api/v1/sync/<tracker> instead.)
     assert 'action="/sync/daily_time_accounting"' in r.text
-    assert "↻ refresh" in r.text
+    assert ">Sync</button>" in r.text
 
 
 def test_setup_button_renders_on_tracker_and_viz_pages(tmp_path):
@@ -380,8 +381,11 @@ def test_health_viz_links_tracker_names(tmp_path):
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/v/_builtin:health")
     assert r.status_code == 200
-    # Tracker name should be wrapped in a link to /t/<name>
-    assert '<a href="/t/daily_time_accounting">daily_time_accounting</a>' in r.text
+    # Human title links to /t/<name>; the raw slug stays as a tooltip
+    assert (
+        '<a href="/t/daily_time_accounting" title="daily_time_accounting">'
+        "Daily Time Accounting</a>" in r.text
+    )
 
 
 def test_render_today_stack_returns_html(tmp_path):
@@ -533,10 +537,12 @@ def test_base_uses_vendored_ag_assets(tmp_path):
     assert "/static/vendor/ag-grid-community/35.3.0/ag-grid-community.min.js" in r.text
     assert "/static/vendor/ag-charts-community/13.3.0/ag-charts-community.min.js" in r.text
     assert "/static/pdb-grid.js?v=6" in r.text
+    assert "/static/pdb-chart.js?v=13" in r.text
     assert "/static/style.css?v=app-shell-1" in r.text
     assert "/static/pdb-app-state.js?v=2" in r.text
     assert "/static/apps/finance-burn-rate.js?v=4" in r.text
     assert "/static/apps/finance-categorize.js?v=1" in r.text
     assert "/static/apps/finance-rules.js?v=1" in r.text
     assert "/static/pdb-finance.js?v=9" in r.text
+    assert "/static/pdb-sync.js?v=1" in r.text
     assert "cdn.jsdelivr.net" not in r.text

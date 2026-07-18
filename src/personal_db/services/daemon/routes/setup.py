@@ -187,6 +187,7 @@ def register_setup_routes(
             context={
                 "active": "setup",
                 "tracker_name": name,
+                "tracker_title": manifest.display_title(),
                 "manifest": manifest,
                 "steps": list_step_views(cfg, manifest),
                 "step_results": None,
@@ -211,6 +212,7 @@ def register_setup_routes(
             context={
                 "active": "setup",
                 "tracker_name": name,
+                "tracker_title": manifest.display_title(),
                 "manifest": manifest,
                 "steps": list_step_views(cfg, manifest),
                 "step_results": results,
