@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# Relocatable personal-db CLI wrapper.
+#
+# Ships inside the signed app bundle at Contents/Resources/cli/personal-db
+# (wired in via shell/src-tauri/tauri.conf.json's `bundle.resources` --
+# "../../packaging/cli": "cli", the same pattern used for the frozen
+# `python/` payload) and gets exposed on PATH via the
+# /usr/local/bin/personal-db symlink the tray's "Install Command Line
+# Tool..." menu item creates (see shell/src-tauri/src/cli_install.rs). This
+# script has to work identically whether it's invoked:
+#   1. directly at Contents/Resources/cli/personal-db, or
+#   2. via that /usr/local/bin symlink (a *relative* readlink target would
+#      break case 2, since $0 would then resolve relative to
+#      /usr/local/bin, not this script's own directory).
+#
+# So the first order of business is resolving our own real path by hand
+# (there's no `readlink -f` on macOS's BSD readlink), then walking up from
+# Resources/cli to Resources to find the embedded interpreter that
+# packaging/freeze-daemon.sh + bundle.resources placed at Resources/python.
+#
+# IMPORTANT: this deliberately does NOT exec the console script pip/uv
+# generates at Resources/python/bin/personal-db. Verified with `head -1
+# packaging/build/payload/python/bin/personal-db` -- it's actually:
+#
+#   #!/bin/sh
+#   '''exec' '/abs/build-time/path/to/payload/python/bin/python3' "$0" "$@"
+#   ' '''
+#   ...
+#   from personal_db.cli.main import app
+#
+# The `#!/bin/sh` line itself is harmless, but the embedded `'''exec' '<path>'
+# ...` re-exec trick (used because POSIX shebangs can't reliably carry
+# arbitrary interpreter args) bakes in the *build-time absolute path* to
+# python3 -- a path that no longer exists once python/ is relocated into
+# Contents/Resources/python inside the shipped .app, or even just into a
+# different checkout's packaging/build/. Invoking python3 directly with `-c`
+# instead has no baked-in path and does exactly what that console script's
+# body (and python/__main__.py) do: `from personal_db.cli.main import app;
+# app()`.
+set -euo pipefail
+
+resolve_self() {
+  local target="$0"
+  # Walk symlinks by hand -- handles being reached via the
+  # /usr/local/bin/personal-db symlink (or a relative symlink anywhere else
+  # someone might point at this file).
+  while [[ -L "$target" ]]; do
+    local link
+    link="$(readlink "$target")"
+    if [[ "$link" == /* ]]; then
+      target="$link"
+    else
+      target="$(cd "$(dirname "$target")" && pwd)/$link"
+    fi
+  done
+  echo "$target"
+}
+
+SELF="$(resolve_self)"
+CLI_DIR="$(cd "$(dirname "$SELF")" && pwd)"
+RESOURCES="$(cd "$CLI_DIR/.." && pwd)"
+PYTHON_BIN="$RESOURCES/python/bin/python3"
+
+if [[ ! -x "$PYTHON_BIN" ]]; then
+  echo "personal-db: embedded python not found at $PYTHON_BIN" >&2
+  echo "  (expected a Resources/python payload as a sibling of Resources/cli --" >&2
+  echo "   run packaging/freeze-daemon.sh and rebuild the bundle)" >&2
+  exit 1
+fi
+
+# No env rewriting here: PERSONAL_DB_ROOT, PERSONAL_DB_DAEMON_URL, etc. all
+# pass through untouched via plain inheritance.
+exec "$PYTHON_BIN" -c "from personal_db.cli.main import app; app()" "$@"
