@@ -19,6 +19,7 @@ def test_load_config_with_explicit_root(tmp_root):
     assert cfg.entities_dir == tmp_root / "entities"
     assert cfg.notes_dir == tmp_root / "notes"
     assert cfg.state_dir == tmp_root / "state"
+    assert cfg.lib_dir == tmp_root / "lib"
 
 
 def test_load_config_missing_file_returns_defaults(tmp_path):

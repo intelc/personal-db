@@ -50,6 +50,15 @@ class Config:
         return self.root / "state"
 
     @property
+    def lib_dir(self) -> Path:
+        """`<root>/lib` — the sys.path extension point for pack-declared
+        `python_deps` (see core/runtime_env.py::activate_lib_dir and
+        core/pack_deps.py). The signed app bundle's embedded Python is
+        sealed, so third-party trackers/apps that need a dependency the
+        bundle doesn't ship get it installed here instead."""
+        return self.root / "lib"
+
+    @property
     def user_name_tokens(self) -> tuple[str, ...]:
         """User-configured merchant-token exclusions: config.yaml `user.name_tokens`.
 

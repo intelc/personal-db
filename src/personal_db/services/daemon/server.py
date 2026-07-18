@@ -12,6 +12,7 @@ from personal_db.core.background_jobs import DeclaredBackgroundJob, discover_bac
 from personal_db.core.config import Config
 from personal_db.core.entrypoints import load_entrypoint
 from personal_db.core.intervals import parse_every
+from personal_db.core.runtime_env import activate_lib_dir
 from personal_db.services.daemon._locks import sync_due_locked as sync_due
 from personal_db.services.daemon.http import build_app
 
@@ -119,6 +120,11 @@ def start_declared_background_jobs(
 
 def run(cfg: Config, port: int = 8765, interval_seconds: float = 600) -> None:
     """Run the daemon: start the periodic loop + declared jobs, then serve HTTP."""
+    # The daemon holds the macOS Full Disk Access grant and runs every
+    # tracker sync, so it's the one process that must see <root>/lib on
+    # sys.path (see core/runtime_env.py for why this can't just live in the
+    # sealed bundle's site-packages).
+    activate_lib_dir(cfg)
     start_periodic_sync(cfg, interval_seconds=interval_seconds)
     start_declared_background_jobs(cfg)
     app = build_app(cfg, port=port)

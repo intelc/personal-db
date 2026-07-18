@@ -10,6 +10,7 @@ from mcp.types import GetPromptResult, Prompt, PromptMessage, TextContent, Tool
 from personal_db.core.config import Config
 from personal_db.core.entrypoints import load_entrypoint
 from personal_db.core.mcp_registry import DeclaredMcpTool, discover_mcp_tools
+from personal_db.core.runtime_env import activate_lib_dir
 from personal_db.services.mcp_server import prompts as P
 from personal_db.services.mcp_server import tools as T
 
@@ -502,6 +503,10 @@ def build_server(cfg: Config) -> Server:
 
 
 async def run(cfg: Config) -> None:
+    # Declared MCP tools (core/mcp_registry.py) are entrypoints resolved from
+    # trackers/apps/sources, same as sync — they need <root>/lib on sys.path
+    # for the same sealed-bundle reason (see core/runtime_env.py).
+    activate_lib_dir(cfg)
     server = build_server(cfg)
     async with stdio_server() as (read_stream, write_stream):
         await server.run(read_stream, write_stream, server.create_initialization_options())

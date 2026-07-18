@@ -190,6 +190,7 @@ def test_run_starts_sync_and_declared_jobs(tmp_root, monkeypatch):
     cfg = Config(root=tmp_root)
     sync_calls = []
     job_calls = []
+    activate_calls = []
 
     class FakeServer:
         def __init__(self, config):
@@ -207,8 +208,13 @@ def test_run_starts_sync_and_declared_jobs(tmp_root, monkeypatch):
     monkeypatch.setattr(ds, "start_periodic_sync", fake_start_sync)
     monkeypatch.setattr(ds, "start_declared_background_jobs", fake_start_jobs)
     monkeypatch.setattr(ds.uvicorn, "Server", FakeServer)
+    monkeypatch.setattr(ds, "activate_lib_dir", lambda c: activate_calls.append(c))
 
     ds.run(cfg, port=9876, interval_seconds=600)
 
     assert sync_calls == [(cfg, 600)]
     assert job_calls == [cfg]
+    assert activate_calls == [cfg], (
+        "daemon run() must call activate_lib_dir so <root>/lib (pack python_deps) "
+        "is importable before syncs/jobs start"
+    )

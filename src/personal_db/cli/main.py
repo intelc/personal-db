@@ -6,8 +6,8 @@ from dotenv import load_dotenv
 from personal_db.cli import (
     app_cmd,
     code_agent_hook_cmd,
-    contract_cmd,
     context_cmd,
+    contract_cmd,
     daemon_cmd,
     enrich_cmd,
     init_cmd,
@@ -24,6 +24,8 @@ from personal_db.cli import (
 )
 from personal_db.cli._deprecated import leaf_alias, legacy_group_note
 from personal_db.cli.state import _state, get_root
+from personal_db.core.config import Config
+from personal_db.core.runtime_env import activate_lib_dir
 
 app = typer.Typer(no_args_is_help=True, help="Personal data layer CLI")
 # Developer/plumbing commands live here so top-level --help stays focused on
@@ -44,6 +46,10 @@ def _global(root: str = typer.Option(None, "--root", help="Override data root"))
     if root:
         _state["root"] = Path(root).expanduser()
     _load_root_env(get_root())
+    # Sealed signed bundle: a pack's declared python_deps can only ever be
+    # installed under <root>/lib, never into the bundle's own site-packages.
+    # Make that directory importable for every CLI invocation.
+    activate_lib_dir(Config(root=get_root()))
 
 
 # --- Top level: what a non-developer user needs -----------------------------
