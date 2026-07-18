@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -40,13 +41,28 @@ def build_plist(pdb_path: str, root: Path, log_path: Path) -> str:
 """
 
 
+def _resolve_cli_binary() -> str | None:
+    """Path to the personal-db executable the daemon plist should invoke.
+
+    Prefer the binary that is running THIS process (sys.argv[0]): the user who
+    runs `<venv>/bin/personal-db daemon install` expects the daemon to run that
+    same install, not whatever stale copy happens to shadow it on PATH (e.g. an
+    old `uv tool install` shim in ~/.local/bin). Fall back to PATH lookup only
+    when argv[0] isn't a personal-db entry point (e.g. invoked via `python -m`).
+    """
+    argv0 = Path(sys.argv[0]).resolve()
+    if argv0.name == "personal-db" and argv0.is_file():
+        return str(argv0)
+    return shutil.which("personal-db")
+
+
 def install(root: Path) -> dict:
     """Install the launchd daemon plist and load it.
 
     Returns a dict with key ``plist``: :class:`~pathlib.Path` to the installed
     plist file.
     """
-    pdb_path = shutil.which("personal-db")
+    pdb_path = _resolve_cli_binary()
     if pdb_path is None:
         raise RuntimeError(
             "personal-db not found on PATH. "
