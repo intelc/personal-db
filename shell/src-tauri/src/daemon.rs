@@ -10,16 +10,41 @@
 
 use std::env;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use serde::Deserialize;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_notification::NotificationExt;
+use tauri_plugin_shell::process::{CommandChild, CommandEvent};
+use tauri_plugin_shell::ShellExt;
 
 const DEFAULT_BASE_URL: &str = "http://127.0.0.1:8765";
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(5);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
 const WINDOW_LABEL: &str = "main";
+/// Name passed to `app.shell().sidecar(..)` -- must match the *basename* of
+/// `bundle.externalBin`'s entry in tauri.conf.json (the target-triple suffix
+/// is resolved by Tauri itself, and the full relative path is only needed
+/// in tauri.conf.json / capabilities/default.json's `shell:allow-execute`
+/// permission, not here).
+const SIDECAR_NAME: &str = "personal-db-daemon";
+/// How long to wait for a just-spawned sidecar to answer `/api/v1/health`
+/// before giving up and falling back to the guidance page. Cold-starting a
+/// frozen CPython + importing every tracker's deps is slower than a plain
+/// process spawn but should still land well under this on any machine that
+/// can run the app at all.
+const SIDECAR_START_TIMEOUT: Duration = Duration::from_secs(20);
+const SIDECAR_POLL_INTERVAL: Duration = Duration::from_millis(500);
+
+/// Holds the sidecar daemon this app spawned (if any), so the `CommandChild`
+/// isn't silently dropped (that wouldn't kill the process -- Tauri's
+/// `CommandChild` mirrors `std::process::Child` in not killing on drop --
+/// but holding it keeps the option open for a future explicit shutdown, and
+/// its presence is what stops `try_start_sidecar` from spawning a second
+/// daemon on top of one that's still coming up).
+#[derive(Default)]
+pub struct SidecarState(pub Mutex<Option<CommandChild>>);
 
 #[derive(Debug, Deserialize)]
 struct OtcResponse {
@@ -42,6 +67,16 @@ fn root_dir() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("personal_db")
+}
+
+/// Extracts the port `base_url()` resolved to (default 8765, or whatever
+/// `PERSONAL_DB_DAEMON_URL` specifies) so a spawned sidecar binds the same
+/// port the rest of this client will then poll/talk to.
+fn daemon_port(base: &str) -> u16 {
+    url::Url::parse(base)
+        .ok()
+        .and_then(|u| u.port_or_known_default())
+        .unwrap_or(8765)
 }
 
 fn token_path() -> PathBuf {
@@ -141,15 +176,116 @@ fn show_daemon_down(app: &AppHandle, base: &str, reason: &str) -> Result<(), Str
     Ok(())
 }
 
+/// Attempts to spawn the frozen daemon payload (`packaging/freeze-daemon.sh`,
+/// wired in as `bundle.externalBin` in tauri.conf.json) when nothing answers
+/// health at `base` yet. Returns `true` once the spawned daemon becomes
+/// healthy, `false` if there's no sidecar for this build (e.g. a `tauri dev`
+/// run without the payload at the expected relative path -- not an error,
+/// just "nothing to spawn"), if it's already been spawned once this session,
+/// or if it never became healthy within `SIDECAR_START_TIMEOUT`. Callers
+/// treat `false` the same as "daemon down" and fall back to the guidance
+/// page.
+async fn try_start_sidecar(app: &AppHandle, base: &str) -> bool {
+    let state = app.state::<SidecarState>();
+    {
+        let guard = state.0.lock().unwrap();
+        if guard.is_some() {
+            // Already spawned once this session -- if it's still starting
+            // up (or died), stacking a second daemon on the same port would
+            // just fail to bind; let the caller show the guidance page
+            // (whose Retry button re-runs this whole flow) instead.
+            return false;
+        }
+    }
+
+    let sidecar = match app.shell().sidecar(SIDECAR_NAME) {
+        Ok(cmd) => cmd,
+        Err(e) => {
+            eprintln!("no sidecar configured for this build, not spawning one: {e}");
+            return false;
+        }
+    };
+
+    let port = daemon_port(base);
+    let root = root_dir();
+    eprintln!(
+        "daemon unreachable at {base}; spawning sidecar (root={}, port={port})",
+        root.display()
+    );
+
+    let sidecar = sidecar
+        .env("PERSONAL_DB_ROOT", root.to_string_lossy().to_string())
+        .args(["dev", "daemon", "run", "--port", &port.to_string()]);
+
+    let child = match sidecar.spawn() {
+        Ok((mut rx, child)) => {
+            // Drain stdout/stderr in the background: without a reader the
+            // sidecar's pipes fill up and it blocks on write(); this also
+            // surfaces a first-run spawn failure in the app's own stderr
+            // (Console.app / a piped log) instead of it vanishing silently.
+            tauri::async_runtime::spawn(async move {
+                while let Some(event) = rx.recv().await {
+                    match event {
+                        CommandEvent::Stdout(line) => {
+                            eprint!("[daemon] {}", String::from_utf8_lossy(&line))
+                        }
+                        CommandEvent::Stderr(line) => {
+                            eprint!("[daemon] {}", String::from_utf8_lossy(&line))
+                        }
+                        CommandEvent::Error(e) => eprintln!("[daemon] spawn error: {e}"),
+                        CommandEvent::Terminated(payload) => {
+                            eprintln!("[daemon] exited: {:?}", payload.code)
+                        }
+                        _ => {}
+                    }
+                }
+            });
+            child
+        }
+        Err(e) => {
+            eprintln!("failed to spawn sidecar: {e}");
+            return false;
+        }
+    };
+
+    *state.0.lock().unwrap() = Some(child);
+
+    let attempts = (SIDECAR_START_TIMEOUT.as_millis() / SIDECAR_POLL_INTERVAL.as_millis()) as u32;
+    for _ in 0..attempts {
+        if check_health(base).await.is_ok() {
+            return true;
+        }
+        tokio::time::sleep(SIDECAR_POLL_INTERVAL).await;
+    }
+    eprintln!("sidecar spawned but never became healthy within {SIDECAR_START_TIMEOUT:?}");
+    false
+}
+
 /// The full bootstrap flow described in the Phase 4 plan: locate the root,
 /// read the token, check daemon health, and either navigate to the
 /// authenticated dashboard (via the OTC bootstrap URL) or show the bundled
 /// "daemon not running" guidance page. Invoked on first launch and from the
 /// tray's "Open Dashboard"/"Status" items, and from the fallback page's
 /// Retry button (via the `open_dashboard` Tauri command).
+///
+/// If the initial health check fails, this now also tries to spawn the
+/// bundled sidecar daemon (see `try_start_sidecar`) before falling back to
+/// the guidance page -- a signed release build should self-heal a
+/// not-yet-running daemon instead of only ever telling the user how to
+/// start it themselves.
 pub async fn open_dashboard(app: &AppHandle) -> Result<(), String> {
     let base = base_url();
-    match check_health(&base).await {
+    let health = match check_health(&base).await {
+        Ok(()) => Ok(()),
+        Err(reason) => {
+            if try_start_sidecar(app, &base).await {
+                Ok(())
+            } else {
+                Err(reason)
+            }
+        }
+    };
+    match health {
         Ok(()) => {
             let target = match read_token() {
                 Some(token) => match mint_otc(&base, &token).await {

@@ -97,17 +97,30 @@ exactly the pain the signed pipeline in `packaging/` exists to fix.
   runtime entitlements. See `packaging/sign-and-notarize.sh` and
   `packaging/README.md` for the documented (but untested — no cert available
   in the environment that built this) pipeline that fixes this.
-- **No sidecar daemon.** This app does not embed or launch a frozen Python
-  daemon; it only *connects* to one that's already running via
-  `personal-db daemon install` (or `personal-db dev daemon run` in the
-  foreground). `packaging/freeze-daemon.sh` produces the standalone daemon
-  payload that a *future* iteration of this app would ship as a
-  `tauri.conf.json` `bundle.externalBin` sidecar
-  (`personal-db-daemon-aarch64-apple-darwin`) — wiring that in is not part of
-  this milestone. Practically, this app still targets whatever Python
-  interpreter runs the daemon for FDA purposes, exactly like the old rumps
-  menu bar; the signed app + frozen sidecar is what gets FDA prompting a
-  stable, app-scoped identity instead.
+- **Sidecar daemon is wired in.** `tauri.conf.json`'s `bundle.externalBin`
+  points at `packaging/build/payload/personal-db-daemon` (Tauri resolves the
+  `-aarch64-apple-darwin`-suffixed file itself) and `bundle.resources` ships
+  the frozen `python/` tree alongside it (`packaging/freeze-daemon.sh`
+  produces both). `daemon.rs::try_start_sidecar` spawns it via
+  `tauri-plugin-shell` when the initial health check fails and this build
+  actually has a sidecar configured (dev builds run without the payload at
+  the expected relative path just skip this and fall straight to the
+  guidance page, same as before). Root is `$PERSONAL_DB_ROOT` (else
+  `~/personal_db`); port comes from `$PERSONAL_DB_DAEMON_URL` (else the
+  default 8765). The launcher script itself
+  (`packaging/build/payload/personal-db-daemon-*`) looks for its embedded
+  `python/` first as a sibling directory, then falls back to
+  `../Resources/python` — the latter is what a real signed `.app` needs,
+  since `bundle.externalBin` lands the launcher in `Contents/MacOS/` while
+  `bundle.resources` lands `python/` in `Contents/Resources/` (siblings
+  under `Contents/`, not siblings of each other). Verified end-to-end via
+  `tauri dev` with `PERSONAL_DB_DAEMON_URL` pointed at a free port and
+  `PERSONAL_DB_ROOT` at a scratch dir: the sidecar spawned, bound the
+  scratch port, and wrote `db.sqlite`/`state/` under the scratch root.
+  For FDA purposes this app still targets whatever Python interpreter runs
+  the daemon (the embedded one, once spawned this way) — the signed app +
+  frozen sidecar is what gets FDA prompting a stable, app-scoped identity
+  instead of an ambient homebrew/pyenv Python.
 - **"Start at Login" is `tauri-plugin-autostart`**, a LaunchAgent-plist-based
   mechanism that works fine unsigned. The SMAppService-based replacement
   (`packaging/smappservice/`) is reference code only for now — not wired

@@ -172,12 +172,27 @@ uv pip install --python "$EMBEDDED_PYTHON" "${WHEEL}[finance,xhs]"
 LAUNCHER="$PAYLOAD_DIR/personal-db-daemon-${TARGET_TRIPLE}"
 cat > "$LAUNCHER" <<'LAUNCHER_EOF'
 #!/usr/bin/env bash
-# Relocatable launcher: assumes `python/` is a sibling directory (that's how
-# packaging/freeze-daemon.sh lays out payload/, and how a future Tauri
-# `bundle.resources` entry would place it inside Contents/Resources/).
+# Relocatable launcher: looks for the embedded `python/` interpreter in
+# either of the two layouts this launcher actually ships in:
+#   1. sibling directory -- packaging/build/payload/ (this script's own
+#      layout, and how freeze-daemon.sh's own --verify step runs it).
+#   2. shell/src-tauri/tauri.conf.json's `bundle.externalBin` copies this
+#      launcher into Contents/MacOS/ (the Tauri sidecar convention) while
+#      `bundle.resources` copies the `python/` tree into Contents/Resources/
+#      -- siblings under Contents/, but not siblings of each other, so the
+#      lookup falls back to `../Resources/python` relative to this script.
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec "$DIR/python/bin/python3" -m personal_db "$@"
+if [[ -x "$DIR/python/bin/python3" ]]; then
+  PYTHON_BIN="$DIR/python/bin/python3"
+elif [[ -x "$DIR/../Resources/python/bin/python3" ]]; then
+  PYTHON_BIN="$(cd "$DIR/../Resources/python/bin" && pwd)/python3"
+else
+  echo "personal-db-daemon launcher: no embedded python found (looked in" >&2
+  echo "  $DIR/python and $DIR/../Resources/python)" >&2
+  exit 1
+fi
+exec "$PYTHON_BIN" -m personal_db "$@"
 LAUNCHER_EOF
 chmod +x "$LAUNCHER"
 log "launcher: $LAUNCHER"

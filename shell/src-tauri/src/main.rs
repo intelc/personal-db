@@ -49,6 +49,11 @@ fn main() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        // Lets daemon.rs spawn the frozen daemon payload (bundle.externalBin
+        // in tauri.conf.json) as a sidecar when nothing answers health --
+        // see daemon.rs::try_start_sidecar.
+        .plugin(tauri_plugin_shell::init())
+        .manage(daemon::SidecarState::default())
         .invoke_handler(tauri::generate_handler![open_dashboard])
         .setup(|app| {
             // No dock icon / app switcher entry -- this is a menu-bar-only

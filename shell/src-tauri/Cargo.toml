@@ -13,6 +13,10 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-notification = "2"
 tauri-plugin-autostart = "2"
+# Used to spawn the frozen daemon payload (packaging/freeze-daemon.sh) as a
+# sidecar when the bundled app can't reach an already-running daemon -- see
+# daemon.rs::maybe_start_sidecar.
+tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # default-tls (Security.framework on macOS) avoids needing an OpenSSL
@@ -20,6 +24,10 @@ serde_json = "1"
 reqwest = { version = "0.12", features = ["json"] }
 url = "2"
 dirs = "6"
+# Explicit (rather than relying on it transitively via tauri/reqwest) so
+# daemon.rs can poll the just-spawned sidecar's health with
+# `tokio::time::sleep` without blocking the async executor thread.
+tokio = { version = "1", features = ["time"] }
 
 [features]
 # `custom-protocol` is required by tauri-build's generate_context! wiring

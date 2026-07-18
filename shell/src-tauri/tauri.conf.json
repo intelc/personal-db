@@ -23,6 +23,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "externalBin": ["../../packaging/build/payload/personal-db-daemon"],
+    "resources": {
+      "../../packaging/build/payload/python": "python"
+    },
     "macOS": {
       "minimumSystemVersion": "11.0"
     }

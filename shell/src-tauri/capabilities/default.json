@@ -15,6 +15,16 @@
     "autostart:default",
     "autostart:allow-enable",
     "autostart:allow-disable",
-    "autostart:allow-is-enabled"
+    "autostart:allow-is-enabled",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "../../packaging/build/payload/personal-db-daemon",
+          "sidecar": true,
+          "args": true
+        }
+      ]
+    }
   ]
 }
