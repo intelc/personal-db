@@ -256,7 +256,13 @@ exists, not a side detail:
    `KEYCHAIN_PROFILE` set so notarize+staple actually run (see below).
 6. `packaging/build-dmg.sh` with `IDENTITY` set — after stapling, so the
    DMG wraps the stapled .app.
-7. Smoke-test on a **second Mac** (or fresh VM) per the Phase 4 plan's
+7. Notarize + staple the DMG itself (the app's staple covers the copied
+   .app, but a stapled DMG is the clean download experience):
+   `xcrun notarytool submit <dmg> --keychain-profile personal-db-notary --wait`
+   then `xcrun stapler staple <dmg>`. Verify with
+   `spctl -a -vv -t open --context context:primary-signature <dmg>` →
+   `accepted, source=Notarized Developer ID`.
+8. Smoke-test on a **second Mac** (or fresh VM) per the Phase 4 plan's
    verification criteria: FDA prompt names PersonalDB.app, `spctl -a -vv`
    and `codesign --verify --deep --strict` pass, and — the real test of
    signing stability — updating from a previous signed build preserves the
