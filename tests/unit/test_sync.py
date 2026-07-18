@@ -322,6 +322,59 @@ def test_backfill_one_import_error_gets_deps_hint_when_python_deps_declared(tmp_
         backfill_one(cfg, "needs_dep_b", start=None, end=None)
 
 
+def _make_tracker_with_tcc_denial(cfg: Config, name: str, *, permission_type: str) -> Path:
+    d = cfg.trackers_dir / name
+    d.mkdir(parents=True)
+    (d / "manifest.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": name,
+                "description": "test",
+                "permission_type": permission_type,
+                "time_column": "ts",
+                "schema": {
+                    "tables": {name: {"columns": {"ts": {"type": "TEXT", "semantic": "ts"}}}}
+                },
+            }
+        )
+    )
+    (d / "schema.sql").write_text(f"CREATE TABLE IF NOT EXISTS {name} (ts TEXT);")
+    # sqlite raises exactly this text when macOS TCC blocks the open().
+    (d / "ingest.py").write_text(
+        "import sqlite3\n"
+        "def sync(t):\n"
+        "    raise sqlite3.OperationalError('unable to open database file')\n"
+        "def backfill(t, start, end):\n"
+        "    raise sqlite3.OperationalError('unable to open database file')\n"
+    )
+    mark_valid(cfg, name)
+    return d
+
+
+def test_sync_one_tcc_denial_gets_fda_hint_for_fda_tracker(tmp_root):
+    import sqlite3
+
+    cfg = Config(root=tmp_root)
+    init_db(cfg.db_path)
+    _make_tracker_with_tcc_denial(cfg, "fda_denied", permission_type="full_disk_access")
+    with pytest.raises(sqlite3.OperationalError, match="Full Disk Access"):
+        sync_one(cfg, "fda_denied")
+
+
+def test_sync_one_tcc_denial_no_fda_hint_for_non_fda_tracker(tmp_root):
+    """A non-FDA tracker hitting the same sqlite error keeps the plain message:
+    for an api_key tracker "unable to open database file" is a real bug, and
+    Full Disk Access guidance would send the user down the wrong path."""
+    import sqlite3
+
+    cfg = Config(root=tmp_root)
+    init_db(cfg.db_path)
+    _make_tracker_with_tcc_denial(cfg, "not_fda", permission_type="none")
+    with pytest.raises(sqlite3.OperationalError) as exc_info:
+        sync_one(cfg, "not_fda")
+    assert "Full Disk Access" not in str(exc_info.value)
+
+
 def test_sync_one_import_error_has_no_hint_without_declared_deps(tmp_root):
     """Keep the message plain (no hint) for a tracker that never declared
     python_deps -- the hint would just be noise/misleading there."""

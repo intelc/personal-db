@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+import sqlite3
 import sys
 import traceback
 from datetime import UTC, datetime
@@ -152,6 +153,36 @@ def _reraise_with_deps_hint(err: Exception, name: str, manifest) -> None:
     raise type(err)(f"{err} ({hint})") from err
 
 
+# sqlite/OS error strings that indicate a macOS TCC (privacy) denial rather
+# than a genuinely missing file. Seen from sqlite3 as OperationalError text.
+_TCC_DENIAL_MARKERS = (
+    "unable to open database file",
+    "authorization denied",
+    "operation not permitted",
+)
+
+
+def _reraise_with_fda_hint(err: Exception, name: str, manifest) -> None:
+    """Re-raise `err` with Full Disk Access guidance when it looks like a TCC
+    denial on an FDA tracker. Without this, a stranger's very first imessage
+    sync fails with a bare "unable to open database file" -- the single worst
+    message we could show at the exact moment onboarding matters most.
+    """
+    if manifest.permission_type != "full_disk_access":
+        raise err
+    text = str(err).lower()
+    if not any(marker in text for marker in _TCC_DENIAL_MARKERS):
+        raise err
+    hint = (
+        f"'{name}' needs Full Disk Access. Grant it in System Settings -> "
+        "Privacy & Security -> Full Disk Access to whichever process runs "
+        "your syncs (PersonalDB.app for the menu-bar app; your Python "
+        f"interpreter for CLI installs), then retry. "
+        f"`personal-db tracker setup {name}` walks through this with a check."
+    )
+    raise type(err)(f"{err} -- {hint}") from err
+
+
 def _register_oauth_adapters(tracker_dir: Path, manifest) -> None:
     """Register every OAuthStep.adapter declared in the manifest. Idempotent."""
     for step in manifest.setup_steps:
@@ -179,6 +210,8 @@ def sync_one(cfg: Config, name: str) -> None:
         mod.sync(Tracker(name=name, cfg=cfg, manifest=manifest))
     except (ImportError, ModuleNotFoundError) as e:
         _reraise_with_deps_hint(e, name, manifest)
+    except (sqlite3.OperationalError, PermissionError) as e:
+        _reraise_with_fda_hint(e, name, manifest)
     _run_transforms(cfg, name, mod, tracker_dir)
     _write_last_run(cfg, name, datetime.now(UTC).isoformat())
     _store_horizon(cfg, name, manifest)
@@ -198,6 +231,8 @@ def backfill_one(cfg: Config, name: str, start: str | None, end: str | None) -> 
         mod.backfill(Tracker(name=name, cfg=cfg, manifest=manifest), start, end)
     except (ImportError, ModuleNotFoundError) as e:
         _reraise_with_deps_hint(e, name, manifest)
+    except (sqlite3.OperationalError, PermissionError) as e:
+        _reraise_with_fda_hint(e, name, manifest)
     _run_transforms(cfg, name, mod, tracker_dir)
     _store_horizon(cfg, name, manifest)
 
