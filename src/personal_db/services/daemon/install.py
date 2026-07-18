@@ -29,7 +29,7 @@ def build_plist(pdb_path: str, root: Path, log_path: Path) -> str:
   <array>
     <string>{pdb}</string>
     <string>--root</string><string>{r}</string>
-    <string>daemon</string><string>run</string>
+    <string>dev</string><string>daemon</string><string>run</string>
   </array>
   <key>KeepAlive</key><true/>
   <key>RunAtLoad</key><true/>

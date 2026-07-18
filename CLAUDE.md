@@ -36,6 +36,8 @@ This pattern is what fixed the omi `structured.title` / `structured.category` pa
 
 `personal-db sync <tracker>` and the MCP `sync` tool both delegate to a long-running daemon at `http://127.0.0.1:8765`. The daemon is launchd-managed (`com.personal_db.daemon`) and holds the macOS Full Disk Access grant via the Python interpreter, so sync works regardless of which process triggered it.
 
+Every daemon HTTP route except `GET /api/health` requires a token (`Authorization: Bearer <token>`, `X-PDB-Token`, or the `pdb_session` browser cookie); the CLI and MCP client (`services/daemon/client.py`) read it automatically from `<root>/state/daemon.token`, so this only matters if you're `curl`-ing routes directly.
+
 ```bash
 # install (auto-migrates from the old scheduler plist)
 personal-db daemon install
@@ -43,11 +45,16 @@ personal-db daemon install
 # check status
 personal-db daemon status
 
-# manually run in foreground (debugging)
-personal-db daemon run --port 8766
+# manually run in foreground (debugging) -- developer plumbing, lives under `dev`
+personal-db dev daemon run --port 8766
+
+# one-screen overview: daemon up?, trackers + last-sync ages, FDA, MCP targets
+personal-db status
 ```
 
 If sync prints `personal-db daemon not running`, the fix is `personal-db daemon install`.
+
+Developer-only commands (`query`, `enrich`, `source`, `context`, `permission`, `code-agent-hook-write`, `mcp refresh`, `daemon run`, `tracker new`) live under `personal-db dev <cmd>` — run `personal-db dev --help` to see them. The old top-level names still work (hidden from `--help`, print a one-line pointer to the new location) so muscle memory/scripts don't break.
 
 ## Useful one-liners
 

@@ -58,7 +58,7 @@ You'll be asked which mode you want:
 
 After you finish configuring trackers, finalize steps run automatically:
 
-1. **Daemon** — installs a launchd agent (`~/Library/LaunchAgents/com.personal_db.daemon.plist`) that keeps a long-running `personal-db daemon run` process alive. The daemon is the single writer-of-record: it serves the local HTTP API + dashboard, and an in-process scheduler thread runs `sync_due` (and any declared per-tracker/app background jobs) on their own cadences — there's no separate scheduler process anymore. If a command ever prints `personal-db daemon not running`, the fix is `personal-db daemon install`.
+1. **Daemon** — installs a launchd agent (`~/Library/LaunchAgents/com.personal_db.daemon.plist`) that keeps a long-running `personal-db dev daemon run` process alive. The daemon is the single writer-of-record: it serves the local HTTP API + dashboard (every route but health requires a token, see below), and an in-process scheduler thread runs `sync_due` (and any declared per-tracker/app background jobs) on their own cadences — there's no separate scheduler process anymore. If a command ever prints `personal-db daemon not running`, the fix is `personal-db daemon install`; `personal-db status` gives a one-screen readout of daemon/tracker/FDA/MCP state.
 2. **MCP server** — auto-installs `personal_db` into the agents you choose (Claude Code, Claude Desktop, Cursor). Behind the scenes this calls `claude mcp add` (Code), or merges into `~/Library/Application Support/Claude/claude_desktop_config.json` (Desktop), or `~/.cursor/mcp.json` (Cursor).
 3. **Dashboard** (optional) — offers to launch the menu bar + dashboard via `personal-db ui`. Default is skip; agents read your data over MCP regardless of the dashboard being open.
 
@@ -87,7 +87,7 @@ personal-db app available
 
 The dashboard is read **and** write, not just a viewer: bundled apps like `finance` (categorize transactions, manage recurring/burn-rate buckets), `places` (label frequent locations, manage privacy settings), `subscriptions`, `attention`, and `calendar_reality` all expose actions alongside their views — every write still goes through the daemon, which is the single writer-of-record for `db.sqlite`. `personal-db app list|available|install|reinstall` manages which apps are installed, the same way `personal-db tracker ...` manages trackers. Agents read the same data over MCP whether or not the dashboard is open.
 
-An experimental in-browser agent terminal also lives in the daemon (spawn a `claude`/`codex` session from the dashboard); it will become off-by-default and config-gated once the in-progress security-hardening phase (daemon auth token, mandatory tracker validation) lands.
+An experimental in-browser agent terminal also lives in the daemon (spawn a `claude`/`codex` session from the dashboard). It's off by default — set `agent_terminal.enabled: true` in `config.yaml` to turn it on, and `agent_terminal.auto_approve: true` if you also want it to spawn with the CLI's permission-bypass flag rather than its normal interactive approval prompts. The daemon's HTTP API (including the agent terminal) requires a token — `GET /api/health` is the only exception — which the CLI/MCP client read automatically from `<root>/state/daemon.token`; a browser session authenticates via the `/auth` page or a one-time-code bootstrap from a launcher that already holds the token (see `services/daemon/routes/auth.py`). Trackers must also pass validation (`personal-db tracker validate <name>`, automatic for bundled templates) before `sync`/`backfill` will run them.
 
 ![dashboard](docs/demos/screenshots/dashboard.png)
 
@@ -126,7 +126,7 @@ In Claude Code:
 `personal-db` ships with a starter set of trackers (GitHub, Whoop, Screen Time, iMessage, …), but the most useful data is usually idiosyncratic to you. Three ways to add a new one:
 
 1. **Ask Claude.** Once MCP is wired up, ask Claude to use the `create_tracker` prompt — it walks through the design Q&A and writes all four files. Fastest path.
-2. **`personal-db tracker new <name>`** scaffolds a stub at `~/personal_db/trackers/<name>/`.
+2. **`personal-db dev tracker new <name>`** scaffolds a stub at `~/personal_db/trackers/<name>/`.
 3. **Copy a bundled tracker** under `src/personal_db/templates/trackers/` and adapt.
 
 A tracker is just four files: `manifest.yaml`, `schema.sql`, `ingest.py`, and an optional `visualizations.py`. Full guide with a worked example: **[docs/creating-trackers.md](docs/creating-trackers.md)**.
