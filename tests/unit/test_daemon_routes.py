@@ -1,3 +1,4 @@
+import pytest
 import yaml
 from fastapi.testclient import TestClient
 
@@ -186,6 +187,7 @@ def test_sync_one_plaintext_invalid_name_400(tmp_root):
     assert "invalid tracker name" in r.json()["detail"].lower()
 
 
+@pytest.mark.darwin_only  # installs the darwin-gated life_context tracker
 def test_log_life_context_route_accepts_past_date(tmp_root):
     cfg = Config(root=tmp_root)
     init_db(cfg.db_path)

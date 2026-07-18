@@ -73,4 +73,9 @@ jobs:
         # trackers/sources must refuse cleanly here (PlatformUnsupportedError),
         # not import-error the whole suite. Integration tests are excluded --
         # several assume macOS-only fixtures (FDA paths, Library dirs).
-        run: .venv/bin/pytest tests/unit -q -m "not live"
+        # `darwin_only` marks tests/modules whose *subject* is a darwin-gated
+        # tracker or macOS-only machinery (launchd, code_agent_activity,
+        # imessage/chrome_history/xhs installs, etc.) -- those can't pass on
+        # this runner regardless of code correctness, so they're deselected
+        # here rather than left to fail on a platform they don't target.
+        run: .venv/bin/pytest tests/unit -q -m "not live and not darwin_only"

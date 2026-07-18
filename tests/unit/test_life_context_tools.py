@@ -2,9 +2,15 @@
 (templates/trackers/life_context/tools.py) via the same loader the MCP
 server uses."""
 
+import pytest
+
 from personal_db.core.config import Config
 from personal_db.core.entrypoints import load_entrypoint
 from personal_db.core.installer import install_template
+
+# life_context declares `platform: [darwin]`; this test installs it, so it
+# can't run on non-macOS CI runners.
+pytestmark = pytest.mark.darwin_only
 
 
 def test_log_life_context_tool_delegates_to_core_helper(tmp_root, monkeypatch):

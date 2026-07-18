@@ -10,7 +10,6 @@ from fastapi.testclient import TestClient
 
 from personal_db.core.config import Config
 from personal_db.services.daemon.http import build_app
-
 from tests._daemon_auth import auth_headers
 
 
@@ -279,6 +278,7 @@ def test_setup_overview_marks_installed_with_icon(tmp_path):
     assert "needs setup" in r.text or "configured" in r.text or "no setup needed" in r.text
 
 
+@pytest.mark.darwin_only  # installs the darwin-gated code_agent_activity tracker
 def test_install_hooks_step_renders_button(tmp_path):
     """Render a manifest with an install_hooks step; assert the button and
     onclick handler are present in the rendered HTML."""
@@ -293,6 +293,7 @@ def test_install_hooks_step_renders_button(tmp_path):
     assert "action-output" in r.text
 
 
+@pytest.mark.darwin_only  # installs the darwin-gated code_agent_activity tracker
 def test_verify_hooks_step_renders_badge(tmp_path):
     """Render a manifest with a verify_hooks step; assert the status badge is present."""
     cfg = _init(tmp_path)
@@ -305,6 +306,7 @@ def test_verify_hooks_step_renders_badge(tmp_path):
     assert 'data-step-type="verify_hooks"' in r.text
 
 
+@pytest.mark.darwin_only  # installs the darwin-gated code_agent_activity tracker
 def test_note_step_renders_body(tmp_path):
     """Render a manifest with a note step; assert the note body text is present."""
     cfg = _init(tmp_path)

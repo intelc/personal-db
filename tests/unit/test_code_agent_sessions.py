@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SESSIONS_PY = REPO_ROOT / "src/personal_db/templates/trackers/code_agent_activity/sessions.py"
 FIXTURES = REPO_ROOT / "tests/fixtures/code_agent_activity"
@@ -94,6 +93,7 @@ def cfg_with_code_agent(tmp_path):
     return cfg
 
 
+@pytest.mark.darwin_only  # cfg_with_code_agent installs the darwin-gated code_agent_activity tracker
 def test_sync_populates_code_agent_sessions(cfg_with_code_agent, monkeypatch):
     cfg = cfg_with_code_agent
 
@@ -134,6 +134,7 @@ def test_sync_populates_code_agent_sessions(cfg_with_code_agent, monkeypatch):
     )
 
 
+@pytest.mark.darwin_only  # cfg_with_code_agent installs the darwin-gated code_agent_activity tracker
 def test_claude_session_first_prompt_fallback_from_hook_events(cfg_with_code_agent, monkeypatch):
     """Session present in code_agent_events but no JSONL: first_user_prompt
     populated from earliest user_prompt_submit event."""
@@ -190,6 +191,7 @@ def test_claude_session_first_prompt_fallback_from_hook_events(cfg_with_code_age
     assert row[1] == "fix the leaky abstraction"
 
 
+@pytest.mark.darwin_only  # cfg_with_code_agent installs the darwin-gated code_agent_activity tracker
 def test_codex_session_joins_to_intervals_for_viz(cfg_with_code_agent, monkeypatch):
     """Regression: code_agent_sessions.agent must match code_agent_events.agent
     for Codex (both 'codex_cli'), so the viz JOIN works."""

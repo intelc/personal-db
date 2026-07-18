@@ -183,6 +183,12 @@ def test_install_template_allows_supported_platform(tmp_root, monkeypatch):
 
 def test_update_template_refuses_unsupported_platform(tmp_root, monkeypatch):
     cfg = Config(root=tmp_root)
+    # The initial install must succeed regardless of the OS this test runs on
+    # (it fails outright on a real Linux CI runner otherwise, since
+    # sys.platform is already "linux" before any monkeypatching happens);
+    # pin it to a supported platform first, then switch to "linux" for the
+    # actual assertion under test.
+    monkeypatch.setattr(sys, "platform", "darwin")
     install_template(cfg, "imessage")
     monkeypatch.setattr(sys, "platform", "linux")
     with pytest.raises(PlatformUnsupportedError, match="imessage requires macOS"):

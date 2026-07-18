@@ -9,6 +9,10 @@ import pytest
 from personal_db.core.config import Config
 from personal_db.core.log_event import log_life_context
 
+# life_context declares `platform: [darwin]`; every test here installs it,
+# so the whole module can't run on non-macOS CI runners.
+pytestmark = pytest.mark.darwin_only
+
 
 def _install(tmp_path):
     root = tmp_path / "personal_db"

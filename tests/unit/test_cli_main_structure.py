@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from typer.main import get_command
 from typer.testing import CliRunner
 
 from personal_db.cli.main import app
@@ -61,49 +62,40 @@ def _run(root: Path, *args: str):
     return runner.invoke(app, ["--root", str(root), *args])
 
 
-def _listed_commands(help_text: str) -> set[str]:
-    """Pull command names out of a Typer/Click --help panel's Commands section."""
-    names = set()
-    in_commands = False
-    for line in help_text.splitlines():
-        if "Commands" in line and line.strip().startswith(("╭", "-", "─")):
-            in_commands = True
-            continue
-        if not in_commands:
-            continue
-        content = line.strip().strip("│").strip()
-        if not content or content.startswith("╰") or set(content) <= {"─"}:
-            break
-        first = content.split()[0] if content.split() else ""
-        # Continuation lines of a wrapped help description have extra
-        # indentation after the box char in the *original* line (Typer
-        # left-aligns command names right after "│ "); only trust lines
-        # where the third character is non-blank as a real entry.
-        if line.startswith("│ ") and len(line) > 2 and line[2] != " ":
-            names.add(first)
-    return names
+def _visible_command_names(group) -> set[str]:
+    """Names of a Click/Typer group's direct subcommands that aren't hidden.
+
+    This mirrors what `--help` renders in its Commands panel, but reads the
+    command tree directly (`typer.main.get_command(app)` -> Click `Group` ->
+    `.commands`) instead of parsing Rich-rendered `--help` text. Rendering
+    differs across terminal widths/no-TTY environments (e.g. CI runners), but
+    the underlying Click command tree -- and each command's `hidden` flag --
+    does not.
+    """
+    return {name for name, cmd in group.commands.items() if not cmd.hidden}
 
 
-def test_top_level_help_shows_exactly_the_user_meaningful_set(tmp_path):
-    result = _run(tmp_path, "--help")
-    assert result.exit_code == 0
-    shown = _listed_commands(result.output)
+def _hidden_command_names(group) -> set[str]:
+    return {name for name, cmd in group.commands.items() if cmd.hidden}
+
+
+def test_top_level_help_shows_exactly_the_user_meaningful_set():
+    group = get_command(app)
+    shown = _visible_command_names(group)
     assert shown == _TOP_LEVEL_VISIBLE
-    for hidden in _TOP_LEVEL_HIDDEN:
-        assert hidden not in shown
+    assert _hidden_command_names(group) == _TOP_LEVEL_HIDDEN
 
 
-def test_dev_help_shows_the_plumbing(tmp_path):
-    result = _run(tmp_path, "dev", "--help")
-    assert result.exit_code == 0
-    shown = _listed_commands(result.output)
-    assert shown == _DEV_VISIBLE
+def test_dev_help_shows_the_plumbing():
+    group = get_command(app)
+    dev_group = group.commands["dev"]
+    assert _visible_command_names(dev_group) == _DEV_VISIBLE
 
 
-def test_tracker_help_hides_new(tmp_path):
-    result = _run(tmp_path, "tracker", "--help")
-    assert result.exit_code == 0
-    shown = _listed_commands(result.output)
+def test_tracker_help_hides_new():
+    group = get_command(app)
+    tracker_group = group.commands["tracker"]
+    shown = _visible_command_names(tracker_group)
     assert "new" not in shown
     assert {"list", "install", "reinstall", "setup", "validate"} <= shown
 

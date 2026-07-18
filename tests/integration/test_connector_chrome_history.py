@@ -44,16 +44,21 @@ def _build_fake_chrome_history(path: Path):
         "INSERT INTO urls(id, url, title, visit_count) VALUES (?, ?, ?, ?)",
         (2, "https://www.youtube.com/watch?v=abc", "Some Video - YouTube", 1),
     )
+    # NOTE: the trailing numeric literals here are embedded directly in SQL
+    # text (not Python values bound via `?` placeholders), so they must be
+    # plain digits without `_` separators -- SQLite only accepts digit
+    # separators in numeric literals since 3.46, and older sqlite3 builds
+    # (e.g. some CI runners) raise `unrecognized token` on `30_000_000`.
     con.execute(
-        "INSERT INTO visits VALUES (1, 1, ?, 0, 0, 0, 30_000_000)",  # 30 sec dwell
+        "INSERT INTO visits VALUES (1, 1, ?, 0, 0, 0, 30000000)",  # 30 sec dwell
         (base_micros,),
     )
     con.execute(
-        "INSERT INTO visits VALUES (2, 1, ?, 0, 0, 0, 60_000_000)",  # 60 sec
+        "INSERT INTO visits VALUES (2, 1, ?, 0, 0, 0, 60000000)",  # 60 sec
         (base_micros + 1_800_000_000,),  # +30 min
     )
     con.execute(
-        "INSERT INTO visits VALUES (3, 2, ?, 0, 0, 0, 600_000_000)",  # 10 min
+        "INSERT INTO visits VALUES (3, 2, ?, 0, 0, 0, 600000000)",  # 10 min
         (base_micros + 3_600_000_000,),  # +1 hr
     )
     con.commit()

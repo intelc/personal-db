@@ -7,8 +7,13 @@ from pathlib import Path
 import pytest
 
 from personal_db.core.config import Config
-from personal_db.core.tracker import Tracker
 from personal_db.core.installer import install_template
+from personal_db.core.tracker import Tracker
+
+# code_agent_activity declares `platform: [darwin]`; every test here installs
+# it via the `cfg` fixture, so the whole module can't run on non-macOS CI
+# runners.
+pytestmark = pytest.mark.darwin_only
 
 
 @pytest.fixture
@@ -48,8 +53,8 @@ def test_sync_ingests_claude_hooks(cfg: Config, monkeypatch: pytest.MonkeyPatch)
         )
     )
 
-    from personal_db.templates.trackers.code_agent_activity import ingest
     from personal_db.core.manifest import load_manifest
+    from personal_db.templates.trackers.code_agent_activity import ingest
 
     manifest = load_manifest(cfg.trackers_dir / "code_agent_activity" / "manifest.yaml")
     t = Tracker(name="code_agent_activity", cfg=cfg, manifest=manifest)
@@ -75,8 +80,8 @@ def test_sync_is_idempotent(cfg: Config, monkeypatch: pytest.MonkeyPatch) -> Non
         json.dumps({"hook_event_name": "SessionStart", "session_id": "s1", "received_at": "2026-05-09T10:00:00.000+00:00"}) + "\n"
     )
 
-    from personal_db.templates.trackers.code_agent_activity import ingest
     from personal_db.core.manifest import load_manifest
+    from personal_db.templates.trackers.code_agent_activity import ingest
 
     manifest = load_manifest(cfg.trackers_dir / "code_agent_activity" / "manifest.yaml")
     t = Tracker(name="code_agent_activity", cfg=cfg, manifest=manifest)
@@ -100,8 +105,8 @@ def test_sync_handles_malformed_line(cfg: Config, monkeypatch: pytest.MonkeyPatc
         + "\n"
     )
 
-    from personal_db.templates.trackers.code_agent_activity import ingest
     from personal_db.core.manifest import load_manifest
+    from personal_db.templates.trackers.code_agent_activity import ingest
 
     manifest = load_manifest(cfg.trackers_dir / "code_agent_activity" / "manifest.yaml")
     t = Tracker(name="code_agent_activity", cfg=cfg, manifest=manifest)
@@ -121,8 +126,8 @@ def test_sync_resumes_from_cursor(cfg: Config, monkeypatch: pytest.MonkeyPatch) 
         json.dumps({"hook_event_name": "SessionStart", "session_id": "s1", "received_at": "2026-05-09T10:00:00.000+00:00"}) + "\n"
     )
 
-    from personal_db.templates.trackers.code_agent_activity import ingest
     from personal_db.core.manifest import load_manifest
+    from personal_db.templates.trackers.code_agent_activity import ingest
 
     manifest = load_manifest(cfg.trackers_dir / "code_agent_activity" / "manifest.yaml")
     t = Tracker(name="code_agent_activity", cfg=cfg, manifest=manifest)
@@ -161,8 +166,8 @@ def test_sync_dedupes_codex_multi_session_meta(cfg: Config, monkeypatch: pytest.
     )
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex_home"))
 
-    from personal_db.templates.trackers.code_agent_activity import ingest
     from personal_db.core.manifest import load_manifest
+    from personal_db.templates.trackers.code_agent_activity import ingest
     manifest = load_manifest(cfg.trackers_dir / "code_agent_activity" / "manifest.yaml")
     t = Tracker(name="code_agent_activity", cfg=cfg, manifest=manifest)
     ingest.sync(t)

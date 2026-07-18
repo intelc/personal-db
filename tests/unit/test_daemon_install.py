@@ -26,6 +26,13 @@ def test_install_writes_and_loads_plist(tmp_path, monkeypatch):
     new_plist = fake_la / "com.personal_db.daemon.plist"
 
     monkeypatch.setattr(di, "_LAUNCHAGENTS_DIR", fake_la)
+    # _resolve_cli_binary() falls back to shutil.which("personal-db") when
+    # argv[0] isn't a personal-db entry point (true for the pytest runner
+    # process). CI runners don't have the venv's bin/ on PATH, so without this
+    # the test fails before touching any of the plist-writing behavior it's
+    # meant to exercise. Pin the resolved binary path instead of depending on
+    # the test runner's PATH.
+    monkeypatch.setattr(di.shutil, "which", lambda _name: "/usr/local/bin/personal-db")
 
     calls: list[list[str]] = []
     def fake_run(cmd, **kw):
@@ -84,6 +91,9 @@ def test_install_raises_runtime_error_on_launchctl_load_failure(tmp_path, monkey
     fake_la = tmp_path / "LaunchAgents"
     fake_la.mkdir()
     monkeypatch.setattr(di, "_LAUNCHAGENTS_DIR", fake_la)
+    # See test_install_writes_and_loads_plist: pin the resolved binary so this
+    # test exercises launchctl-failure handling, not the runner's PATH.
+    monkeypatch.setattr(di.shutil, "which", lambda _name: "/usr/local/bin/personal-db")
 
     def fake_run(cmd, **kw):
         # Raise CalledProcessError only on the "load" call.

@@ -4,14 +4,14 @@ import sqlite3
 import subprocess
 import sys
 
+import pytest
 import yaml
 from fastapi.testclient import TestClient
 
 from personal_db.core.config import Config
 from personal_db.services.daemon.http import build_app
-
-from tests._daemon_auth import auth_headers
 from personal_db.services.ui.viz import discover, list_trackers_with_viz, load_dashboard_slugs
+from tests._daemon_auth import auth_headers
 
 
 def _setup(tmp_path, *trackers):
@@ -38,6 +38,7 @@ def test_discover_finds_builtin_viz(tmp_path):
     assert reg["_builtin:health"].name
 
 
+@pytest.mark.darwin_only  # installs the darwin-gated life_context tracker
 def test_discover_finds_tracker_viz_after_install(tmp_path):
     cfg = _setup(tmp_path, "daily_time_accounting", "life_context")
     reg = discover(cfg)
@@ -46,6 +47,7 @@ def test_discover_finds_tracker_viz_after_install(tmp_path):
     assert "life_context:recent_with_log" in reg
 
 
+@pytest.mark.darwin_only  # installs the darwin-gated life_context tracker
 def test_list_trackers_with_viz_excludes_builtin(tmp_path):
     cfg = _setup(tmp_path, "daily_time_accounting", "life_context")
     reg = discover(cfg)
@@ -63,6 +65,7 @@ def test_dashboard_default_includes_all_slugs(tmp_path):
     assert set(slugs) == set(reg.keys())
 
 
+@pytest.mark.darwin_only  # installs the darwin-gated life_context tracker
 def test_dashboard_config_filters_to_listed_slugs(tmp_path):
     cfg = _setup(tmp_path, "daily_time_accounting", "life_context")
     config_dir = cfg.root / ".config"
@@ -79,6 +82,7 @@ def test_dashboard_config_filters_to_listed_slugs(tmp_path):
     assert slugs == ["daily_time_accounting:today_stack", "_builtin:health"]
 
 
+@pytest.mark.darwin_only  # installs the darwin-gated life_context tracker
 def test_dashboard_route_renders_each_configured_viz(tmp_path):
     cfg = _setup(tmp_path, "daily_time_accounting", "life_context")
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
@@ -93,6 +97,7 @@ def test_dashboard_route_renders_each_configured_viz(tmp_path):
     assert "TRACKER HEALTH" in r.text
 
 
+@pytest.mark.darwin_only  # installs the darwin-gated life_context tracker
 def test_life_context_form_exposes_backdated_note_fields(tmp_path):
     cfg = _setup(tmp_path, "life_context")
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
@@ -256,6 +261,7 @@ def test_nav_split_active_already_visible_unchanged():
     assert overflow == ["g", "h"]
 
 
+@pytest.mark.darwin_only  # installs every bundled tracker, including darwin-gated ones
 def test_nav_overflow_renders_in_dashboard_html(tmp_path):
     """End-to-end: install enough trackers to exceed the limit; the rendered
     page should include a 'more' dropdown with the overflow links."""
@@ -270,6 +276,7 @@ def test_nav_overflow_renders_in_dashboard_html(tmp_path):
     assert "nav-more-menu" in r.text
 
 
+@pytest.mark.darwin_only  # installs every bundled tracker, including darwin-gated ones
 def test_every_bundled_tracker_viz_renders_without_error(tmp_path):
     """Smoke test: install every bundled tracker, then render every declared viz.
 
