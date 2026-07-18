@@ -7,7 +7,7 @@ import inspect
 from collections.abc import Callable
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
 from personal_db.core.action_log import log_action_result, log_action_start
@@ -24,14 +24,14 @@ from personal_db.core.entrypoints import load_module_from_file
 
 
 def register_action_routes(
-    app: FastAPI,
+    router: APIRouter,
     cfg: Config,
     *,
     app_registry: Callable[[], dict[str, AppDefinition]],
     validate_name: Callable[[str], None],
     verify_same_origin_write: Callable[[Request], None],
 ) -> None:
-    @app.post("/api/trackers/{name}/actions/{action}")
+    @router.post("/trackers/{name}/actions/{action}")
     async def tracker_action(name: str, action: str, request: Request) -> dict[str, Any]:
         validate_name(name)
         validate_name(action)
@@ -84,7 +84,7 @@ def register_action_routes(
         log_action_result(cfg, log_id, "ok")
         return result
 
-    @app.get("/api/apps/{name}/queries/{query_name}")
+    @router.get("/apps/{name}/queries/{query_name}")
     async def app_query(name: str, query_name: str, request: Request) -> dict[str, Any]:
         validate_name(name)
         validate_name(query_name)
@@ -103,7 +103,7 @@ def register_action_routes(
             raise HTTPException(status_code=500, detail=str(exc)) from exc
         return {"app": name, "query": query_name, "params": params, "rows": rows}
 
-    @app.get("/api/apps/{name}/models/{model}")
+    @router.get("/apps/{name}/models/{model}")
     async def app_model(name: str, model: str, request: Request) -> Any:
         validate_name(name)
         validate_name(model)
@@ -144,7 +144,7 @@ def register_action_routes(
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    @app.post("/api/apps/{name}/actions/{action}")
+    @router.post("/apps/{name}/actions/{action}")
     async def app_action(name: str, action: str, request: Request) -> dict[str, Any]:
         validate_name(name)
         validate_name(action)

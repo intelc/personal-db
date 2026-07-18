@@ -3,18 +3,40 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time as _time
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
 from personal_db.core.config import Config
+from personal_db.core.db import connection
 from personal_db.services.daemon._locks import backfill_locked, sync_due_locked, sync_one_locked
 from personal_db.services.daemon.routes.common import validate_name
 from personal_db.core.sync import sync_one
 
+_APP_VERSION_FALLBACK = "0.0.0-dev"
 
-def register_sync_routes(app: FastAPI, cfg: Config, *, started_at: float) -> None:
+
+def _app_version() -> str:
+    try:
+        return _pkg_version("personal_db")
+    except PackageNotFoundError:
+        return _APP_VERSION_FALLBACK
+
+
+def _db_user_version(cfg: Config) -> int:
+    if not cfg.db_path.exists():
+        return 0
+    with connection(cfg.db_path, read_only=True) as con:
+        (version,) = con.execute("PRAGMA user_version").fetchone()
+    return version
+
+
+def register_sync_routes(
+    app: FastAPI, router: APIRouter, cfg: Config, *, started_at: float
+) -> None:
     @app.post("/sync/{tracker}")
     async def post_sync(request: Request, tracker: str):
         """Refresh a single tracker, then redirect back to the submitting page."""
@@ -23,7 +45,7 @@ def register_sync_routes(app: FastAPI, cfg: Config, *, started_at: float) -> Non
         referer = request.headers.get("referer") or f"/t/{tracker}"
         return RedirectResponse(url=referer, status_code=303)
 
-    @app.get("/api/health")
+    @router.get("/health")
     async def api_health() -> dict[str, Any]:
         from personal_db.core.installer import list_bundled
 
@@ -39,9 +61,12 @@ def register_sync_routes(app: FastAPI, cfg: Config, *, started_at: float) -> Non
             "uptime_seconds": int(_time.time() - started_at),
             "trackers": installed,
             "bundled_available": list_bundled(),
+            "app_version": _app_version(),
+            "api_version": 1,
+            "db_user_version": _db_user_version(cfg),
         }
 
-    @app.post("/api/sync/{tracker}")
+    @router.post("/sync/{tracker}")
     async def api_sync_one(tracker: str) -> dict[str, Any]:
         validate_name(tracker)
         if not (cfg.trackers_dir / tracker).is_dir():
@@ -52,12 +77,12 @@ def register_sync_routes(app: FastAPI, cfg: Config, *, started_at: float) -> Non
             raise HTTPException(status_code=500, detail=f"sync failed: {e}") from e
         return {"ok": True, "tracker": tracker}
 
-    @app.post("/api/sync_due")
+    @router.post("/sync_due")
     async def api_sync_due() -> dict[str, Any]:
         results = await asyncio.to_thread(sync_due_locked, cfg)
         return {"results": results}
 
-    @app.post("/api/backfill/{tracker}")
+    @router.post("/backfill/{tracker}")
     async def api_backfill(tracker: str, request: Request) -> dict[str, Any]:
         validate_name(tracker)
         if not (cfg.trackers_dir / tracker).is_dir():

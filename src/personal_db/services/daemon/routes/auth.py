@@ -9,7 +9,7 @@ has no way to authenticate itself directly. Two paths in:
    validates it (constant-time compare) and sets the `pdb_session` cookie.
 2. **Launcher-assisted**: something that already holds the token file (the
    CLI `ui` command, the menubar, the setup wizard's finish step) calls
-   `POST /api/auth/otc` (itself token-authenticated) to mint a single-use,
+   `POST /api/v1/auth/otc` (itself token-authenticated) to mint a single-use,
    30-second one-time code, then opens the browser at
    `/auth/bootstrap?otc=<code>`. That handler redeems the code and sets the
    same cookie. The OTC's short TTL and immediate invalidation-on-use make a
@@ -26,7 +26,7 @@ import html
 import urllib.parse
 from typing import Any
 
-from fastapi import FastAPI, Form, Request
+from fastapi import APIRouter, FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from personal_db.services.daemon.auth import COOKIE_NAME, token_matches
@@ -81,6 +81,7 @@ def _auth_page_html(*, next_: str, msg: str = "") -> str:
 
 def register_auth_routes(
     app: FastAPI,
+    router: APIRouter,
     *,
     token: str,
     otc_store: OtcStore,
@@ -127,7 +128,7 @@ def register_auth_routes(
         )
         return response
 
-    @app.post("/api/auth/otc")
+    @router.post("/auth/otc")
     async def api_auth_otc() -> dict[str, Any]:
         code = otc_store.issue()
         return {"otc": code, "expires_in": otc_store.ttl_seconds}

@@ -192,7 +192,7 @@ def test_subscriptions_app_can_mark_false_positive_in_finance_state(tmp_root):
 
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.post(
-        "/api/apps/subscriptions/actions/mark_not_subscription",
+        "/api/v1/apps/subscriptions/actions/mark_not_subscription",
         data={
             "subscription_id": subscription_id,
             "merchant": "OpenAI",

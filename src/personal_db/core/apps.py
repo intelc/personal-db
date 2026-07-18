@@ -108,15 +108,15 @@ class AppContext:
 
     def query_url(self, name: str) -> str:
         _validate_identifier(name, "query")
-        return f"/api/apps/{self.manifest.name}/queries/{name}"
+        return f"/api/v1/apps/{self.manifest.name}/queries/{name}"
 
     def model_url(self, name: str) -> str:
         _validate_identifier(name, "model")
-        return f"/api/apps/{self.manifest.name}/models/{name}"
+        return f"/api/v1/apps/{self.manifest.name}/models/{name}"
 
     def action_url(self, name: str) -> str:
         _validate_identifier(name, "action")
-        return f"/api/apps/{self.manifest.name}/actions/{name}"
+        return f"/api/v1/apps/{self.manifest.name}/actions/{name}"
 
     def require_write_tables(self, *tables: str) -> None:
         """Assert that an app action is allowed to write the named tables."""

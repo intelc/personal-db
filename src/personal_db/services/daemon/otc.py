@@ -5,7 +5,7 @@ browser-mode server) can authenticate over HTTP directly, but a freshly
 opened browser tab has no way to attach an `Authorization` header. Rather
 than putting the long-lived token in a URL (logged in shell history, browser
 history, proxy logs...), a launcher exchanges the token for a single-use,
-30-second-lived OTC via `POST /api/auth/otc`, then opens the browser at
+30-second-lived OTC via `POST /api/v1/auth/otc`, then opens the browser at
 `/auth/bootstrap?otc=<code>`. Immediate invalidation on redemption (success
 or failure) plus the short TTL means a leaked URL is worthless almost
 immediately.

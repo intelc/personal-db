@@ -167,23 +167,23 @@ def test_app_route_renders_custom_app_and_named_query(tmp_root):
     assert home.status_code == 200
     assert "Sample Home" in home.text
     assert "Hello App" in home.text
-    assert 'data-query-url="/api/apps/sample/queries/sample_rows"' in home.text
-    assert 'data-model-url="/api/apps/sample/models/summary"' in home.text
+    assert 'data-query-url="/api/v1/apps/sample/queries/sample_rows"' in home.text
+    assert 'data-model-url="/api/v1/apps/sample/models/summary"' in home.text
 
-    api = client.get("/api/apps/sample/queries/sample_rows")
+    api = client.get("/api/v1/apps/sample/queries/sample_rows")
     assert api.status_code == 200
     assert api.json()["rows"] == [{"id": "one", "label": "Hello App"}]
     assert api.json()["query"] == "sample_rows"
 
-    missing_api = client.get("/api/apps/sample/queries/missing")
+    missing_api = client.get("/api/v1/apps/sample/queries/missing")
     assert missing_api.status_code == 404
 
-    model = client.get("/api/apps/sample/models/summary?scope=all")
+    model = client.get("/api/v1/apps/sample/models/summary?scope=all")
     assert model.status_code == 200
     assert model.json()["count"] == 1
     assert model.json()["params"] == {"scope": "all"}
 
-    undeclared_model = client.get("/api/apps/sample/models/not_declared")
+    undeclared_model = client.get("/api/v1/apps/sample/models/not_declared")
     assert undeclared_model.status_code == 404
 
     details = client.get("/a/sample/details")
@@ -300,7 +300,7 @@ def test_finance_receipts_page_shows_latest_and_queues_rerun(tmp_root):
     assert "rerun_receipt_enrichment" in page.text
 
     rerun = client.post(
-        "/api/apps/finance/actions/rerun_receipt_enrichment",
+        "/api/v1/apps/finance/actions/rerun_receipt_enrichment",
         data={"finance_transaction_id": "transport-1"},
         headers={"referer": "/a/finance/receipts"},
         follow_redirects=False,
@@ -330,7 +330,7 @@ def test_finance_review_actions_write_app_state(tmp_root):
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     marked = client.post(
-        "/api/apps/finance/actions/mark_reviewed",
+        "/api/v1/apps/finance/actions/mark_reviewed",
         json={
             "review_key": "txn-parent-draw-1",
             "kind": "parent_draw",
@@ -355,7 +355,7 @@ def test_finance_review_actions_write_app_state(tmp_root):
     assert row == ("parent_draw", "ignored", "handled elsewhere")
 
     cleared = client.post(
-        "/api/apps/finance/actions/clear_review",
+        "/api/v1/apps/finance/actions/clear_review",
         json={"review_key": "txn-parent-draw-1"},
     )
     assert cleared.status_code == 200
@@ -371,7 +371,7 @@ def test_undeclared_app_action_returns_404(tmp_root):
     cfg = Config(root=tmp_root)
     init_db(cfg.db_path)
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
-    r = client.post("/api/apps/finance/actions/not_declared", json={})
+    r = client.post("/api/v1/apps/finance/actions/not_declared", json={})
     assert r.status_code == 404
 
 
@@ -381,14 +381,14 @@ def test_app_action_rejects_cross_origin_browser_writes(tmp_root):
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     rejected = client.post(
-        "/api/apps/finance/actions/set_transaction_category",
+        "/api/v1/apps/finance/actions/set_transaction_category",
         json={"finance_transaction_id": "txn-food-1", "category": "Dining"},
         headers={"origin": "https://evil.example"},
     )
     assert rejected.status_code == 403
 
     accepted = client.post(
-        "/api/apps/finance/actions/set_transaction_category",
+        "/api/v1/apps/finance/actions/set_transaction_category",
         json={"finance_transaction_id": "txn-food-1", "category": "Dining"},
         headers={"origin": "http://testserver"},
     )
@@ -401,7 +401,7 @@ def test_finance_category_actions_write_canonical_finance_state(tmp_root):
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     set_category = client.post(
-        "/api/apps/finance/actions/set_transaction_category",
+        "/api/v1/apps/finance/actions/set_transaction_category",
         json={
             "finance_transaction_id": "txn-food-1",
             "category": "Dining",
@@ -433,7 +433,7 @@ def test_finance_category_actions_write_canonical_finance_state(tmp_root):
     assert preset == ("Dining",)
 
     cleared = client.post(
-        "/api/apps/finance/actions/clear_transaction_category",
+        "/api/v1/apps/finance/actions/clear_transaction_category",
         json={"finance_transaction_id": "txn-food-1"},
     )
     assert cleared.status_code == 200
@@ -1031,7 +1031,7 @@ def test_bundled_finance_pages_render_with_synthetic_data(tmp_root):
     assert "🗑️ Wasted" in overview.text
     assert "data-burn-rate" in overview.text
     assert 'data-pdb-island="finance-burn-rate"' in overview.text
-    assert 'data-burn-rate-state-url="/api/apps/finance/models/burn_rate"' in overview.text
+    assert 'data-burn-rate-state-url="/api/v1/apps/finance/models/burn_rate"' in overview.text
     assert 'class="burn-rate-card" data-burn-bucket="rent"' in overview.text
     assert 'class="burn-rate-card" data-burn-bucket="food"' in overview.text
     assert 'class="burn-rate-card" data-burn-bucket="health"' in overview.text
@@ -1091,7 +1091,7 @@ def test_bundled_finance_pages_render_with_synthetic_data(tmp_root):
     assert "Pharmacy" in review.text
     assert "Recurring Candidates" in review.text
     assert 'data-pdb-island="finance-categorize"' in review.text
-    assert 'data-categorize-state-url="/api/apps/finance/models/categorize"' in review.text
+    assert 'data-categorize-state-url="/api/v1/apps/finance/models/categorize"' in review.text
     assert "Needs review" in review.text
     assert "reviewed" in review.text
     assert "ignore" in review.text
@@ -1135,7 +1135,7 @@ def test_finance_category_form_action_redirects_back(tmp_root):
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     marked = client.post(
-        "/api/apps/finance/actions/set_transaction_category",
+        "/api/v1/apps/finance/actions/set_transaction_category",
         data={
             "finance_transaction_id": "sub-1",
             "category": "Pet Projects",
@@ -1160,7 +1160,7 @@ def test_finance_categorize_model_reflects_inline_edits(tmp_root):
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     marked = client.post(
-        "/api/apps/finance/actions/set_transaction_category",
+        "/api/v1/apps/finance/actions/set_transaction_category",
         json={
             "finance_transaction_id": "sub-1",
             "category": "Pet Projects",
@@ -1169,7 +1169,7 @@ def test_finance_categorize_model_reflects_inline_edits(tmp_root):
     assert marked.status_code == 200
 
     reviewed = client.post(
-        "/api/apps/finance/actions/mark_reviewed",
+        "/api/v1/apps/finance/actions/mark_reviewed",
         json={
             "review_key": "parent-draw-1",
             "kind": "parent_draw",
@@ -1178,7 +1178,7 @@ def test_finance_categorize_model_reflects_inline_edits(tmp_root):
     )
     assert reviewed.status_code == 200
 
-    state = client.get("/api/apps/finance/models/categorize")
+    state = client.get("/api/v1/apps/finance/models/categorize")
     assert state.status_code == 200
     body = state.json()
     assert body["actions"]["set_category"].endswith("/set_transaction_category")
@@ -1198,7 +1198,7 @@ def test_finance_burn_inline_classification_updates_overview(tmp_root):
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     marked = client.post(
-        "/api/apps/finance/actions/set_burn_classification",
+        "/api/v1/apps/finance/actions/set_burn_classification",
         data={
             "finance_transaction_id": "other-1",
             "merchant": "Amazon",
@@ -1217,7 +1217,7 @@ def test_finance_burn_inline_classification_updates_overview(tmp_root):
     assert "transaction override" in overview.text
 
     rule = client.post(
-        "/api/apps/finance/actions/set_burn_classification",
+        "/api/v1/apps/finance/actions/set_burn_classification",
         json={
             "merchant": "Amazon",
             "source_category": "GENERAL_MERCHANDISE_ONLINE_MARKETPLACES",
@@ -1230,7 +1230,7 @@ def test_finance_burn_inline_classification_updates_overview(tmp_root):
     assert rule.json()["burn_rate"]["bucket_counts"]["subscriptions"] >= 1
 
     bucket = client.post(
-        "/api/apps/finance/actions/create_burn_bucket",
+        "/api/v1/apps/finance/actions/create_burn_bucket",
         data={"label": "Pet Projects", "emoji": "💡"},
         headers={"referer": "/a/finance/overview"},
         follow_redirects=False,
@@ -1245,7 +1245,7 @@ def test_finance_burn_inline_classification_updates_overview(tmp_root):
     assert '<option value=\\"pet_projects\\">💡 Pet Projects<\\/option>' in overview.text
 
     colored_bucket = client.post(
-        "/api/apps/finance/actions/set_burn_bucket_color",
+        "/api/v1/apps/finance/actions/set_burn_bucket_color",
         json={"bucket": "pet_projects", "label": "Pet Projects", "color": "blue"},
     )
     assert colored_bucket.status_code == 200
@@ -1284,7 +1284,7 @@ def test_finance_burn_merchant_rules_replace_legacy_bucket_rules(tmp_root):
         con.close()
 
     rule = client.post(
-        "/api/apps/finance/actions/set_burn_classification",
+        "/api/v1/apps/finance/actions/set_burn_classification",
         json={
             "merchant": "Amazon",
             "source_category": "GENERAL_MERCHANDISE_ONLINE_MARKETPLACES",
@@ -1579,14 +1579,14 @@ def test_places_privacy_actions_write_app_state(tmp_root):
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     settings = client.post(
-        "/api/apps/places/actions/set_privacy",
+        "/api/v1/apps/places/actions/set_privacy",
         json={"blur_precision_m": "1000", "default_days": "14", "hide_coordinates": "1"},
     )
     assert settings.status_code == 200
     assert settings.json()["settings"]["default_days"] == "14"
 
     alias = client.post(
-        "/api/apps/places/actions/set_place_alias",
+        "/api/v1/apps/places/actions/set_place_alias",
         json={"place_name": "Home Address", "alias": "Home", "hidden": "1"},
     )
     assert alias.status_code == 200
@@ -1599,7 +1599,7 @@ def test_places_privacy_actions_write_app_state(tmp_root):
     assert "Home Address" not in overview.text
 
     cleared = client.post(
-        "/api/apps/places/actions/clear_place_alias",
+        "/api/v1/apps/places/actions/clear_place_alias",
         json={"place_name": "Home Address"},
     )
     assert cleared.status_code == 200

@@ -19,6 +19,10 @@ TOKEN_HEADER = "X-PDB-Token"
 # websocket) requires a valid token.
 EXEMPT_ROUTES: frozenset[tuple[str, str]] = frozenset(
     {
+        ("GET", "/api/v1/health"),
+        # Legacy path — remove after next release (see http.py's `/api/{rest}`
+        # 308 redirect). Exempting it too keeps the redirect itself reachable
+        # without a token, matching the exemption on its target.
         ("GET", "/api/health"),
         ("GET", "/auth"),
         ("POST", "/auth/session"),

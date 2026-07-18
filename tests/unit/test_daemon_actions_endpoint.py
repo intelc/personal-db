@@ -42,7 +42,7 @@ def client(tmp_path: Path) -> TestClient:
 
 
 def test_calls_tracker_action(client: TestClient) -> None:
-    r = client.post("/api/trackers/stub/actions/hello")
+    r = client.post("/api/v1/trackers/stub/actions/hello")
     assert r.status_code == 200
     body = r.json()
     assert body["ok"] is True
@@ -51,14 +51,14 @@ def test_calls_tracker_action(client: TestClient) -> None:
 
 def test_tracker_action_rejects_cross_origin_write(client: TestClient) -> None:
     r = client.post(
-        "/api/trackers/stub/actions/hello",
+        "/api/v1/trackers/stub/actions/hello",
         headers={"origin": "http://attacker.example"},
     )
     assert r.status_code == 403
 
 
 def test_calls_tracker_action_with_json_payload(client: TestClient) -> None:
-    r = client.post("/api/trackers/stub/actions/echo", json={"x": 1})
+    r = client.post("/api/v1/trackers/stub/actions/echo", json={"x": 1})
     assert r.status_code == 200
     body = r.json()
     assert body["ok"] is True
@@ -66,23 +66,23 @@ def test_calls_tracker_action_with_json_payload(client: TestClient) -> None:
 
 
 def test_calls_sync_action_in_worker_thread(client: TestClient) -> None:
-    r = client.post("/api/trackers/stub/actions/nested_asyncio")
+    r = client.post("/api/v1/trackers/stub/actions/nested_asyncio")
     assert r.status_code == 200
     assert r.json()["message"] == "threaded"
 
 
 def test_unknown_tracker_404(client: TestClient) -> None:
-    r = client.post("/api/trackers/no_such_tracker/actions/hello")
+    r = client.post("/api/v1/trackers/no_such_tracker/actions/hello")
     assert r.status_code == 404
 
 
 def test_unknown_action_404(client: TestClient) -> None:
-    r = client.post("/api/trackers/stub/actions/nope")
+    r = client.post("/api/v1/trackers/stub/actions/nope")
     assert r.status_code == 404
 
 
 def test_handler_exception_500_with_message(client: TestClient) -> None:
-    r = client.post("/api/trackers/stub/actions/boom")
+    r = client.post("/api/v1/trackers/stub/actions/boom")
     assert r.status_code == 500
     assert "intentional" in r.json()["detail"]
 
@@ -99,14 +99,14 @@ def test_actions_module_import_error_500(tmp_path: Path) -> None:
 
     app = build_app(cfg)
     client = TestClient(app, headers=auth_headers(cfg))
-    r = client.post("/api/trackers/broken/actions/anything")
+    r = client.post("/api/v1/trackers/broken/actions/anything")
     assert r.status_code == 500
     assert "top-level fail" in r.json()["detail"]
 
 
 def test_path_traversal_rejected(client: TestClient) -> None:
     """Validate that names with .. or other invalid chars are rejected with 400."""
-    r = client.post("/api/trackers/..%2Fevil/actions/hello")
+    r = client.post("/api/v1/trackers/..%2Fevil/actions/hello")
     # FastAPI/Starlette URL-decodes `..` and passes it through; _validate_name catches it.
     assert r.status_code in (400, 404)
 
@@ -130,9 +130,9 @@ def test_tracker_action_writes_audit_log_row(tmp_path: Path) -> None:
     app = build_app(cfg)
     client = TestClient(app, headers=auth_headers(cfg))
 
-    ok = client.post("/api/trackers/stub/actions/hello")
+    ok = client.post("/api/v1/trackers/stub/actions/hello")
     assert ok.status_code == 200
-    failed = client.post("/api/trackers/stub/actions/boom")
+    failed = client.post("/api/v1/trackers/stub/actions/boom")
     assert failed.status_code == 500
 
     con = sqlite3.connect(cfg.db_path)
@@ -172,7 +172,7 @@ def test_app_action_writes_audit_log_row(tmp_path: Path) -> None:
 
     app = build_app(cfg)
     client = TestClient(app, headers=auth_headers(cfg))
-    r = client.post("/api/apps/stub_app/actions/ping", json={})
+    r = client.post("/api/v1/apps/stub_app/actions/ping", json={})
     assert r.status_code == 200
     assert r.json()["ok"] is True
 

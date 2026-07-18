@@ -13,6 +13,15 @@ Routes:
   POST /setup/mcp/install/<tgt>   → install MCP into one target, redirect to finish
   POST /sync/<tracker>            → manual refresh button on viz pages
   POST /log_life_context          → form target for the life_context diary entry
+
+All programmatic endpoints live under the versioned `/api/v1/...` prefix
+(built as one `APIRouter`, see `_api_router` below); the routes above are
+browser-facing HTML/form surfaces and are not versioned. Bare `/api/<rest>`
+paths (pre-versioning) still resolve via a 308 redirect to `/api/v1/<rest>`
+for one transition cycle — see `_legacy_api_redirect` — remove after next
+release. The one exception is the agent-terminal websocket
+(`/api/v1/agent/sessions/{id}/terminal`): websockets can't be redirected, so
+it only exists at the new path.
 """
 
 from __future__ import annotations
@@ -22,7 +31,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi import APIRouter, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -55,6 +64,9 @@ _NAV_VISIBLE_LIMIT = 6
 _DAEMON_START_TS: float = _time.time()
 _WRITE_METHODS = {"POST", "DELETE"}
 _ALLOWED_DAEMON_HOSTS = {"127.0.0.1", "localhost", "::1"}
+# remove after next release: methods the legacy /api/{rest} -> /api/v1/{rest}
+# redirect covers. Every current /api/... route uses one of these.
+_LEGACY_API_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"]
 
 
 def _matches_request_origin(value: str, request: Request) -> bool:
@@ -156,8 +168,15 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
     agent_terminals = AgentTerminalManager(cfg)
     app.mount("/static", StaticFiles(directory=str(_HERE / "static")), name="static")
 
+    # Every programmatic (non-browser-HTML) route is versioned under
+    # /api/v1/... via this one router, mounted onto `app` at the end of this
+    # function (after every register_*_routes call below has added its
+    # routes to it). Mounting last doesn't matter for these routes'
+    # resolution — only the legacy-redirect catch-all cares about ordering.
+    api_router = APIRouter(prefix="/api/v1")
+
     # Ensures the token exists before the app starts accepting requests —
-    # every route but GET /api/health (plus the narrow /auth bootstrap
+    # every route but GET /api/v1/health (plus the narrow /auth bootstrap
     # exceptions in services.daemon.auth.EXEMPT_ROUTES) requires it.
     daemon_token = ensure_token(cfg)
     otc_store = OtcStore()
@@ -182,6 +201,7 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
 
     register_auth_routes(
         app,
+        api_router,
         token=daemon_token,
         otc_store=otc_store,
         verify_same_origin_write=_verify_same_origin_write,
@@ -202,7 +222,7 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
         return discover_apps(cfg)
 
     register_agent_routes(
-        app,
+        api_router,
         cfg,
         agent_terminals=agent_terminals,
         registry=_registry,
@@ -251,9 +271,9 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
             "html": html,
         }, html
 
-    register_sync_routes(app, cfg, started_at=_DAEMON_START_TS)
+    register_sync_routes(app, api_router, cfg, started_at=_DAEMON_START_TS)
     register_action_routes(
-        app,
+        api_router,
         cfg,
         app_registry=_app_registry,
         validate_name=_validate_name,
@@ -394,5 +414,28 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
         )
         referer = request.headers.get("referer") or "/t/life_context"
         return RedirectResponse(url=referer, status_code=303)
+
+    # Mount every /api/v1/... route registered above. Must happen before the
+    # legacy-redirect catch-all below is added: Starlette matches routes in
+    # registration order, so a concrete /api/v1/<x> route (added here) wins
+    # over the broader /api/{rest:path} pattern (added next) for the same
+    # request, and only genuinely-unmatched /api/... paths fall through to it.
+    app.include_router(api_router)
+
+    @app.api_route("/api/{rest:path}", methods=_LEGACY_API_METHODS)
+    async def _legacy_api_redirect(rest: str, request: Request):
+        # remove after next release: transitional 308 for pre-versioning
+        # clients still hitting bare /api/<rest> paths. Method-preserving so
+        # a POST/DELETE here still 308s to the same method on /api/v1/<rest>
+        # (per RFC 7538, unlike 301/302/303). The agent-terminal websocket is
+        # the one route this can't cover — see the module docstring.
+        if rest == "v1" or rest.startswith("v1/"):
+            # An /api/v1/... path that didn't match a real v1 route above is
+            # genuinely unknown -- redirecting it to itself would loop.
+            raise HTTPException(status_code=404, detail=f"not found: /api/{rest}")
+        target = f"/api/v1/{rest}"
+        if request.url.query:
+            target = f"{target}?{request.url.query}"
+        return RedirectResponse(url=target, status_code=308)
 
     return app

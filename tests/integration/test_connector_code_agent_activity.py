@@ -1,7 +1,7 @@
 """End-to-end integration tests for the code_agent_activity tracker.
 
 Pattern: install tracker into a tmp root, drop synthetic JSONL inputs,
-trigger sync via the daemon HTTP path (POST /api/sync/code_agent_activity),
+trigger sync via the daemon HTTP path (POST /api/v1/sync/code_agent_activity),
 assert rows land in db.sqlite.
 """
 
@@ -78,7 +78,7 @@ def test_sync_via_daemon_endpoint(env) -> None:
     """All three synthetic sessions (alpha, beta from Claude; codex-1 from Codex)
     should land in code_agent_events after a single sync call."""
     cfg, client = env
-    r = client.post("/api/sync/code_agent_activity")
+    r = client.post("/api/v1/sync/code_agent_activity")
     assert r.status_code == 200, r.text
 
     con = sqlite3.connect(cfg.db_path)
@@ -97,7 +97,7 @@ def test_concurrent_sessions_have_separate_intervals(env) -> None:
     """Concurrent Claude Code sessions alpha and beta each get their own
     interval rows in code_agent_intervals."""
     cfg, client = env
-    r = client.post("/api/sync/code_agent_activity")
+    r = client.post("/api/v1/sync/code_agent_activity")
     assert r.status_code == 200, r.text
 
     con = sqlite3.connect(cfg.db_path)
@@ -118,7 +118,7 @@ def test_concurrent_sessions_have_separate_intervals(env) -> None:
 
 
 def test_install_hooks_action_via_daemon(env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """POST /api/trackers/code_agent_activity/actions/install_hooks should write
+    """POST /api/v1/trackers/code_agent_activity/actions/install_hooks should write
     a settings.json with Claude Code hook entries.
 
     The daemon loads actions.py via importlib.util from the *installed* tracker
@@ -131,7 +131,7 @@ def test_install_hooks_action_via_daemon(env, tmp_path: Path, monkeypatch: pytes
     fake_home.mkdir()
     monkeypatch.setenv("HOME", str(fake_home))
 
-    r = client.post("/api/trackers/code_agent_activity/actions/install_hooks")
+    r = client.post("/api/v1/trackers/code_agent_activity/actions/install_hooks")
     assert r.status_code == 200, r.text
     assert r.json()["ok"] is True
 

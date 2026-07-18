@@ -1,6 +1,6 @@
 """User-initiated actions for the code_agent_activity tracker.
 
-Exposed handlers (called via the daemon's POST /api/trackers/{name}/actions/{action}
+Exposed handlers (called via the daemon's POST /api/v1/trackers/{name}/actions/{action}
 in upcoming Task 8):
 
   install_hooks(cfg)   — write our hooks block into ~/.claude/settings.json

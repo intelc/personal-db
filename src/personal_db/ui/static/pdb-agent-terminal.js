@@ -149,7 +149,7 @@
     const path = `${window.location.pathname}${window.location.search}`;
     let backend = {};
     try {
-      backend = await requestJson(`/api/agent/context?path=${encodeURIComponent(path)}`);
+      backend = await requestJson(`/api/v1/agent/context?path=${encodeURIComponent(path)}`);
     } catch (error) {
       backend = { error: error.message || String(error) };
     }
@@ -289,7 +289,7 @@
           cols: state.term?.cols || 100,
           rows: state.term?.rows || 30,
         };
-        const result = await requestJson('/api/agent/sessions', {
+        const result = await requestJson('/api/v1/agent/sessions', {
           method: 'POST',
           data: body,
         });
@@ -313,7 +313,7 @@
     if (!state.sessionId) return;
     if (state.socket) state.socket.close();
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    state.socket = new WebSocket(`${protocol}//${window.location.host}/api/agent/sessions/${state.sessionId}/terminal`);
+    state.socket = new WebSocket(`${protocol}//${window.location.host}/api/v1/agent/sessions/${state.sessionId}/terminal`);
     state.socket.addEventListener('open', () => {
       setStatus(`${state.cliType} - connected`);
       sendResize();
@@ -370,7 +370,7 @@
     if (!state.sessionId) return;
     const id = state.sessionId;
     try {
-      await requestJson(`/api/agent/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      await requestJson(`/api/v1/agent/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
     } catch (_error) {}
   }
 
@@ -784,11 +784,11 @@
 
   async function agentTerminalEnabled() {
     // The dashboard has no session yet when this runs, so this hits the
-    // token-authenticated /api/agent/context route the same way the rest of
+    // token-authenticated /api/v1/agent/context route the same way the rest of
     // the page's own fetches do (cookie set at page load). A failed/blocked
     // request is treated as "disabled" -- fail closed, not open.
     try {
-      const context = await requestJson('/api/agent/context?path=/');
+      const context = await requestJson('/api/v1/agent/context?path=/');
       return Boolean(context.agent_terminal_enabled);
     } catch (_error) {
       return false;

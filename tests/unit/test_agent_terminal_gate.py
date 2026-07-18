@@ -25,7 +25,7 @@ def _cfg(tmp_root) -> Config:
 def test_agent_context_reports_disabled_by_default(tmp_root):
     cfg = _cfg(tmp_root)
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
-    r = client.get("/api/agent/context", params={"path": "/"})
+    r = client.get("/api/v1/agent/context", params={"path": "/"})
     assert r.status_code == 200
     assert r.json()["agent_terminal_enabled"] is False
 
@@ -34,7 +34,7 @@ def test_agent_context_reports_enabled_once_configured(tmp_root):
     cfg = _cfg(tmp_root)
     enable_agent_terminal(cfg)
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
-    r = client.get("/api/agent/context", params={"path": "/"})
+    r = client.get("/api/v1/agent/context", params={"path": "/"})
     assert r.status_code == 200
     assert r.json()["agent_terminal_enabled"] is True
 
@@ -42,7 +42,7 @@ def test_agent_context_reports_enabled_once_configured(tmp_root):
 def test_list_sessions_403_when_disabled(tmp_root):
     cfg = _cfg(tmp_root)
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
-    r = client.get("/api/agent/sessions")
+    r = client.get("/api/v1/agent/sessions")
     assert r.status_code == 403
     assert "agent_terminal.enabled" in r.json()["detail"]
 
@@ -50,14 +50,14 @@ def test_list_sessions_403_when_disabled(tmp_root):
 def test_create_session_403_when_disabled(tmp_root):
     cfg = _cfg(tmp_root)
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
-    r = client.post("/api/agent/sessions", json={"cli_type": "claude", "context": {}})
+    r = client.post("/api/v1/agent/sessions", json={"cli_type": "claude", "context": {}})
     assert r.status_code == 403
 
 
 def test_delete_session_403_when_disabled(tmp_root):
     cfg = _cfg(tmp_root)
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
-    r = client.delete("/api/agent/sessions/whatever")
+    r = client.delete("/api/v1/agent/sessions/whatever")
     assert r.status_code == 403
 
 
@@ -65,7 +65,7 @@ def test_terminal_ws_403_closes_when_disabled(tmp_root):
     cfg = _cfg(tmp_root)
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect("/api/agent/sessions/whatever/terminal"):
+        with client.websocket_connect("/api/v1/agent/sessions/whatever/terminal"):
             pass
 
 
@@ -74,7 +74,7 @@ def test_create_session_succeeds_once_enabled(tmp_root, monkeypatch):
     cfg = _cfg(tmp_root)
     enable_agent_terminal(cfg)
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
-    r = client.post("/api/agent/sessions", json={"cli_type": "claude", "context": {}})
+    r = client.post("/api/v1/agent/sessions", json={"cli_type": "claude", "context": {}})
     assert r.status_code == 200
     assert r.json()["ok"] is True
 

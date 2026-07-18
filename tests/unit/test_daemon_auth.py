@@ -1,6 +1,6 @@
-"""Phase 2a: token auth on every daemon route (except GET /api/health) plus
+"""Phase 2a: token auth on every daemon route (except GET /api/v1/health) plus
 the browser session bootstrap (/auth, /auth/session, /auth/bootstrap,
-/api/auth/otc) and the agent-terminal websocket.
+/api/v1/auth/otc) and the agent-terminal websocket.
 """
 
 from __future__ import annotations
@@ -66,22 +66,22 @@ def test_every_route_requires_auth_except_exempt(tmp_root):
 def test_health_is_exempt(tmp_root):
     cfg = _base_cfg(tmp_root)
     client = TestClient(build_app(cfg))
-    r = client.get("/api/health")
+    r = client.get("/api/v1/health")
     assert r.status_code == 200
 
 
 def test_valid_bearer_token_authenticates(tmp_root):
     cfg = _base_cfg(tmp_root)
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
-    assert client.get("/api/health").status_code == 200
-    assert client.post("/api/sync_due").status_code == 200
+    assert client.get("/api/v1/health").status_code == 200
+    assert client.post("/api/v1/sync_due").status_code == 200
 
 
 def test_valid_x_pdb_token_header_authenticates(tmp_root):
     cfg = _base_cfg(tmp_root)
     token = ensure_token(cfg)
     client = TestClient(build_app(cfg), headers={"X-PDB-Token": token})
-    assert client.post("/api/sync_due").status_code == 200
+    assert client.post("/api/v1/sync_due").status_code == 200
 
 
 def test_wrong_bearer_token_is_401(tmp_root):
@@ -105,15 +105,15 @@ def test_auth_session_valid_token_sets_cookie_and_grants_access(tmp_root):
     client = TestClient(build_app(cfg))
     r = client.post(
         "/auth/session",
-        data={"token": token, "next": "/api/health"},
+        data={"token": token, "next": "/api/v1/health"},
         follow_redirects=False,
     )
     assert r.status_code == 303
-    assert r.headers["location"] == "/api/health"
+    assert r.headers["location"] == "/api/v1/health"
     assert auth_mod.COOKIE_NAME in client.cookies
 
     # The cookie alone (no bearer header) now authenticates every route.
-    r2 = client.post("/api/sync_due")
+    r2 = client.post("/api/v1/sync_due")
     assert r2.status_code == 200
 
 
@@ -134,15 +134,15 @@ def test_otc_mint_and_bootstrap_grants_cookie(tmp_root):
     app = build_app(cfg)
     owner = TestClient(app, headers=auth_headers(cfg))
 
-    minted = owner.post("/api/auth/otc")
+    minted = owner.post("/api/v1/auth/otc")
     assert minted.status_code == 200
     otc = minted.json()["otc"]
     assert minted.json()["expires_in"] > 0
 
     anon = TestClient(app)
-    r = anon.get(f"/auth/bootstrap?otc={otc}&next=/api/health", follow_redirects=False)
+    r = anon.get(f"/auth/bootstrap?otc={otc}&next=/api/v1/health", follow_redirects=False)
     assert r.status_code == 303
-    assert r.headers["location"] == "/api/health"
+    assert r.headers["location"] == "/api/v1/health"
     assert auth_mod.COOKIE_NAME in anon.cookies
 
 
@@ -150,7 +150,7 @@ def test_otc_is_single_use(tmp_root):
     cfg = _base_cfg(tmp_root)
     app = build_app(cfg)
     owner = TestClient(app, headers=auth_headers(cfg))
-    otc = owner.post("/api/auth/otc").json()["otc"]
+    otc = owner.post("/api/v1/auth/otc").json()["otc"]
 
     first = TestClient(app)
     r1 = first.get(f"/auth/bootstrap?otc={otc}", follow_redirects=False)
@@ -184,13 +184,13 @@ def test_agent_ws_rejects_without_auth(tmp_root, monkeypatch):
     app = build_app(cfg)
     owner = TestClient(app, headers=auth_headers(cfg))
     created = owner.post(
-        "/api/agent/sessions", json={"cli_type": "claude", "context": {}}
+        "/api/v1/agent/sessions", json={"cli_type": "claude", "context": {}}
     )
     session_id = created.json()["session"]["id"]
 
     anon = TestClient(app)
     with pytest.raises(WebSocketDisconnect):
-        with anon.websocket_connect(f"/api/agent/sessions/{session_id}/terminal"):
+        with anon.websocket_connect(f"/api/v1/agent/sessions/{session_id}/terminal"):
             pass
 
 
@@ -201,11 +201,11 @@ def test_agent_ws_accepts_with_bearer_header(tmp_root, monkeypatch):
     app = build_app(cfg)
     owner = TestClient(app, headers=auth_headers(cfg))
     created = owner.post(
-        "/api/agent/sessions", json={"cli_type": "claude", "context": {}}
+        "/api/v1/agent/sessions", json={"cli_type": "claude", "context": {}}
     )
     session_id = created.json()["session"]["id"]
 
-    with owner.websocket_connect(f"/api/agent/sessions/{session_id}/terminal"):
+    with owner.websocket_connect(f"/api/v1/agent/sessions/{session_id}/terminal"):
         pass
 
 
@@ -220,11 +220,11 @@ def test_agent_ws_accepts_with_session_cookie(tmp_root, monkeypatch):
     cookie_client.post("/auth/session", data={"token": token, "next": "/"})
 
     created = cookie_client.post(
-        "/api/agent/sessions", json={"cli_type": "claude", "context": {}}
+        "/api/v1/agent/sessions", json={"cli_type": "claude", "context": {}}
     )
     session_id = created.json()["session"]["id"]
 
-    with cookie_client.websocket_connect(f"/api/agent/sessions/{session_id}/terminal"):
+    with cookie_client.websocket_connect(f"/api/v1/agent/sessions/{session_id}/terminal"):
         pass
 
 

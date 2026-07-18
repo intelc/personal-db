@@ -221,7 +221,7 @@ async function installHooks(button, tracker) {
   out.textContent = "installing…";
   out.classList.remove("error");   // reset stale error styling on retry
   try {
-    const r = await fetch(`/api/trackers/${tracker}/actions/install_hooks`, {method: "POST"});
+    const r = await fetch(`/api/v1/trackers/${tracker}/actions/install_hooks`, {method: "POST"});
     const body = await r.json();
     out.textContent = body.message || JSON.stringify(body);
     if (!body.ok) out.classList.add("error");
@@ -239,7 +239,7 @@ async function refreshHookStatus(el) {
   const badge = el.querySelector(".hook-status-badge");
   if (!badge) return;
   try {
-    const r = await fetch(`/api/trackers/${tracker}/actions/verify_hooks`, {method: "POST"});
+    const r = await fetch(`/api/v1/trackers/${tracker}/actions/verify_hooks`, {method: "POST"});
     const body = await r.json();
     badge.textContent = body.ours_present ? "✓ installed" : "✗ not installed";
     badge.className = `hook-status-badge ${body.ours_present ? "ok" : "warn"}`;
@@ -272,7 +272,7 @@ async function refreshTrackerActionStatus(el) {
   const badge = el.querySelector(".tracker-action-status");
   if (!badge || !statusAction) return;
   try {
-    const r = await fetch(`/api/trackers/${tracker}/actions/${statusAction}`, {method: "POST"});
+    const r = await fetch(`/api/v1/trackers/${tracker}/actions/${statusAction}`, {method: "POST"});
     const body = await r.json();
     badge.textContent = summarizeActionStatus(body);
     badge.className = `tracker-action-status ${body.ok ? "ok" : "warn"}`;
@@ -290,7 +290,7 @@ async function runTrackerAction(button, tracker, action) {
   out.textContent = "running…";
   out.classList.remove("error");
   try {
-    const r = await fetch(`/api/trackers/${tracker}/actions/${action}`, {method: "POST"});
+    const r = await fetch(`/api/v1/trackers/${tracker}/actions/${action}`, {method: "POST"});
     const body = await r.json();
     out.textContent = body.message || JSON.stringify(body, null, 2);
     if (body.url) window.open(body.url, "_blank", "noopener");
@@ -324,7 +324,7 @@ async function loadPlaidAccountLabels() {
   if (!section) return;
   const bodyEl = section.querySelector(".plaid-labels-body");
   try {
-    const r = await fetch(`/api/trackers/plaid/actions/account_labels_status`, {method: "POST"});
+    const r = await fetch(`/api/v1/trackers/plaid/actions/account_labels_status`, {method: "POST"});
     const body = await r.json();
     if (!body.ok) throw new Error(body.message || JSON.stringify(body));
     if (!body.accounts.length) {
@@ -411,7 +411,7 @@ async function savePlaidAccountLabels(button) {
   out.classList.remove("error");
   out.textContent = "saving…";
   try {
-    const r = await fetch(`/api/trackers/plaid/actions/save_account_labels`, {
+    const r = await fetch(`/api/v1/trackers/plaid/actions/save_account_labels`, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({accounts: collectPlaidAccountLabels()}),
@@ -435,7 +435,7 @@ async function syncPlaidAfterLabels(button) {
   button.disabled = true;
   out.textContent = "saved; syncing plaid…";
   try {
-    const r = await fetch(`/api/sync/plaid`, {method: "POST"});
+    const r = await fetch(`/api/v1/sync/plaid`, {method: "POST"});
     const body = await r.json();
     if (!r.ok || !body.ok) throw new Error(body.detail || JSON.stringify(body));
     out.textContent = "saved and synced plaid";
@@ -466,7 +466,7 @@ async function loadMonarchExports() {
   if (!section) return;
   const bodyEl = section.querySelector(".monarch-exports-body");
   try {
-    const r = await fetch(`/api/trackers/monarch/actions/accounts_status`, {method: "POST"});
+    const r = await fetch(`/api/v1/trackers/monarch/actions/accounts_status`, {method: "POST"});
     const body = await r.json();
     if (!body.ok) throw new Error(body.message || JSON.stringify(body));
     if (!body.accounts.length) {
@@ -537,7 +537,7 @@ async function saveMonarchExports(button) {
   out.classList.remove("error");
   out.textContent = "saving…";
   try {
-    const r = await fetch(`/api/trackers/monarch/actions/save_account_exports`, {
+    const r = await fetch(`/api/v1/trackers/monarch/actions/save_account_exports`, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({accounts: collectMonarchExports()}),
@@ -561,7 +561,7 @@ async function syncMonarchAfterExports(button) {
   button.disabled = true;
   out.textContent = "saved; syncing monarch…";
   try {
-    const r = await fetch(`/api/sync/monarch`, {method: "POST"});
+    const r = await fetch(`/api/v1/sync/monarch`, {method: "POST"});
     const body = await r.json();
     if (!r.ok || !body.ok) throw new Error(body.detail || JSON.stringify(body));
     out.textContent = "saved and synced monarch";
@@ -581,7 +581,7 @@ async function loadCryptoWallets() {
   if (!section) return;
   const bodyEl = section.querySelector(".crypto-wallet-body");
   try {
-    const r = await fetch(`/api/trackers/crypto_wallet/actions/wallets_status`, {method: "POST"});
+    const r = await fetch(`/api/v1/trackers/crypto_wallet/actions/wallets_status`, {method: "POST"});
     const body = await r.json();
     if (!body.ok) throw new Error(body.message || JSON.stringify(body));
     if (!body.wallets.length) {
@@ -675,7 +675,7 @@ async function addCryptoWallet(button) {
   out.classList.remove("error");
   out.textContent = "validating…";
   try {
-    const r = await fetch(`/api/trackers/crypto_wallet/actions/add_wallet`, {
+    const r = await fetch(`/api/v1/trackers/crypto_wallet/actions/add_wallet`, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
@@ -709,7 +709,7 @@ async function saveCryptoWallets(button) {
   out.classList.remove("error");
   out.textContent = "saving…";
   try {
-    const r = await fetch(`/api/trackers/crypto_wallet/actions/save_wallets`, {
+    const r = await fetch(`/api/v1/trackers/crypto_wallet/actions/save_wallets`, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({wallets: collectCryptoWallets()}),
@@ -734,7 +734,7 @@ async function validateCryptoWallet(button) {
   out.classList.remove("error");
   out.textContent = "validating…";
   try {
-    const r = await fetch(`/api/trackers/crypto_wallet/actions/validate_wallet`, {
+    const r = await fetch(`/api/v1/trackers/crypto_wallet/actions/validate_wallet`, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
@@ -765,7 +765,7 @@ async function deleteCryptoWallet(button) {
   out.classList.remove("error");
   out.textContent = "deleting…";
   try {
-    const r = await fetch(`/api/trackers/crypto_wallet/actions/save_wallets`, {
+    const r = await fetch(`/api/v1/trackers/crypto_wallet/actions/save_wallets`, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({wallets: collectCryptoWallets()}),
@@ -788,7 +788,7 @@ async function syncCryptoWallets(button) {
   button.disabled = true;
   out.textContent = "saved; syncing crypto_wallet…";
   try {
-    const r = await fetch(`/api/sync/crypto_wallet`, {method: "POST"});
+    const r = await fetch(`/api/v1/sync/crypto_wallet`, {method: "POST"});
     const body = await r.json();
     if (!r.ok || !body.ok) throw new Error(body.detail || JSON.stringify(body));
     out.textContent = "saved and synced crypto_wallet";

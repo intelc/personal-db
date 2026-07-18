@@ -5,7 +5,7 @@ import urllib.parse
 from collections.abc import Callable
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket
+from fastapi import APIRouter, HTTPException, Request, WebSocket
 
 from personal_db.core.apps import load_named_queries
 from personal_db.core.config import Config
@@ -27,7 +27,7 @@ def _require_agent_terminal_enabled(cfg: Config) -> None:
 
 
 def register_agent_routes(
-    app: FastAPI,
+    router: APIRouter,
     cfg: Config,
     *,
     agent_terminals: AgentTerminalManager,
@@ -37,7 +37,7 @@ def register_agent_routes(
     verify_same_origin_write: Callable[[Request], None],
     daemon_token: str,
 ) -> None:
-    @app.get("/api/agent/context")
+    @router.get("/agent/context")
     async def api_agent_context(path: str = "/") -> dict[str, Any]:
         """Structured route metadata for the terminal drawer's startup prompt."""
         parsed = urllib.parse.urlparse(path)
@@ -51,11 +51,11 @@ def register_agent_routes(
             # drawer affordance in the first place.
             "agent_terminal_enabled": cfg.agent_terminal.enabled,
             "dashboard_api": {
-                "health": "/api/health",
-                "sync_due": "/api/sync_due",
-                "app_query_pattern": "/api/apps/{app}/queries/{query}",
-                "app_model_pattern": "/api/apps/{app}/models/{model}",
-                "app_action_pattern": "/api/apps/{app}/actions/{action}",
+                "health": "/api/v1/health",
+                "sync_due": "/api/v1/sync_due",
+                "app_query_pattern": "/api/v1/apps/{app}/queries/{query}",
+                "app_model_pattern": "/api/v1/apps/{app}/models/{model}",
+                "app_action_pattern": "/api/v1/apps/{app}/actions/{action}",
             },
             "trackers": (
                 sorted(
@@ -178,12 +178,12 @@ def register_agent_routes(
         base["kind"] = "other"
         return base
 
-    @app.get("/api/agent/sessions")
+    @router.get("/agent/sessions")
     async def api_agent_sessions() -> dict[str, Any]:
         _require_agent_terminal_enabled(cfg)
         return {"sessions": agent_terminals.list()}
 
-    @app.post("/api/agent/sessions")
+    @router.post("/agent/sessions")
     async def api_agent_session_create(request: Request) -> dict[str, Any]:
         _require_agent_terminal_enabled(cfg)
         verify_same_origin_write(request)
@@ -219,7 +219,7 @@ def register_agent_routes(
             },
         }
 
-    @app.delete("/api/agent/sessions/{session_id}")
+    @router.delete("/agent/sessions/{session_id}")
     async def api_agent_session_delete(session_id: str, request: Request) -> dict[str, Any]:
         _require_agent_terminal_enabled(cfg)
         verify_same_origin_write(request)
@@ -228,7 +228,7 @@ def register_agent_routes(
             raise HTTPException(status_code=404, detail="agent terminal session not found")
         return {"ok": True, "session_id": session_id}
 
-    @app.websocket("/api/agent/sessions/{session_id}/terminal")
+    @router.websocket("/agent/sessions/{session_id}/terminal")
     async def api_agent_terminal_ws(websocket: WebSocket, session_id: str) -> None:
         if not cfg.agent_terminal.enabled:
             await websocket.close(code=4403)

@@ -1,7 +1,7 @@
 """User-triggered Plaid Link action.
 
 Run via:
-  curl -X POST http://127.0.0.1:8765/api/trackers/plaid/actions/link_item
+  curl -X POST http://127.0.0.1:8765/api/v1/trackers/plaid/actions/link_item
 """
 
 from __future__ import annotations

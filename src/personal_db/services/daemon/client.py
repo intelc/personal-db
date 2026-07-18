@@ -83,11 +83,11 @@ def _get(path: str) -> dict[str, Any]:
 
 
 def sync_one(name: str) -> dict[str, Any]:
-    return _post(f"/api/sync/{name}")
+    return _post(f"/api/v1/sync/{name}")
 
 
 def sync_due() -> dict[str, Any]:
-    return _post("/api/sync_due")
+    return _post("/api/v1/sync_due")
 
 
 def backfill(name: str, start: str | None, end: str | None) -> dict[str, Any]:
@@ -96,11 +96,11 @@ def backfill(name: str, start: str | None, end: str | None) -> dict[str, Any]:
         params["from"] = start
     if end:
         params["to"] = end
-    return _post(f"/api/backfill/{name}", params=params)
+    return _post(f"/api/v1/backfill/{name}", params=params)
 
 
 def health() -> dict[str, Any]:
-    return _get("/api/health")
+    return _get("/api/v1/health")
 
 
 def bootstrap_url(cfg: Config, *, base: str, path: str = "/") -> str:
@@ -120,7 +120,7 @@ def bootstrap_url(cfg: Config, *, base: str, path: str = "/") -> str:
     if token:
         try:
             resp = requests.post(
-                f"{base}/api/auth/otc",
+                f"{base}/api/v1/auth/otc",
                 headers={"Authorization": f"Bearer {token}"},
                 timeout=5,
             )
