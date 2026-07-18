@@ -233,6 +233,22 @@ exists, not a side detail:
   Support/com.apple.TCC/TCC.db` itself, or a Messages/Mail/Safari data
   file) and treat a `PermissionError` as "not granted."
 
+## Custom pack dependencies (sealed bundle)
+
+Because the app bundle above is code-signed (and, once notarization runs,
+notarized), `Contents/Resources/python/` cannot be written to after the
+fact — pip-installing into its `site-packages` would invalidate the
+signature and Gatekeeper would reject the app. Custom trackers/apps that
+declare a `python_deps` list in their manifest (`core/manifest.py`,
+`core/apps.py`, `core/sources.py`) get their dependencies installed
+somewhere else entirely: `<root>/lib` (a plain directory in the user's data
+root, never inside the bundle), via `personal-db tracker deps <name>` /
+`personal-db app deps <name>` (`core/pack_deps.py`). Every entrypoint —
+CLI, daemon, MCP server — adds `<root>/lib` to `sys.path` at startup
+(`core/runtime_env.py::activate_lib_dir`), appended *after* the bundle's
+own `site-packages` so a pack's dependency can never shadow one the engine
+itself ships. The bundle itself stays sealed; only `<root>/lib` grows.
+
 ## Release checklist
 
 1. Bump the version — single source is `pyproject.toml`'s `[project]

@@ -219,6 +219,16 @@ class Manifest(BaseModel):
     # Version of this tracker's *data* schema (schema.sql + any migrations/
     # dir). Bump when a migration is added; see core/migrations.py.
     schema_version: int = 1
+    # PEP 508 requirement strings (e.g. "requests>=2.0") this tracker's
+    # ingest.py/transforms need beyond what the bundle ships. `personal-db
+    # tracker deps <name>` installs these into <root>/lib (core/pack_deps.py,
+    # core/runtime_env.py) -- required because the signed app bundle's
+    # embedded Python is sealed and can't have packages added to its own
+    # site-packages. Rides along in the validation hash automatically (see
+    # core/validation.py's module docstring: the whole manifest.yaml file is
+    # hashed) -- editing this list re-requires validation before sync, same
+    # as any other manifest change.
+    python_deps: list[str] = Field(default_factory=list)
 
 
 def load_manifest(path: Path) -> Manifest:

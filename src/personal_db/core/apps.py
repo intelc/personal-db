@@ -76,6 +76,9 @@ class AppManifest:
     # manifests; not currently gated at app-install time (apps are pure-Python
     # views/actions over tables a platform-gated tracker already populated).
     platform: tuple[PlatformName, ...] | None = None
+    # PEP 508 requirement strings; see Manifest.python_deps in core/manifest.py
+    # for the full rationale (sealed bundle -> installed into <root>/lib).
+    python_deps: tuple[str, ...] = ()
 
     @property
     def default_page(self) -> AppPage:
@@ -226,6 +229,7 @@ def load_app_manifest(path: Path) -> AppManifest:
         background_jobs=_background_jobs(raw.get("background_jobs"), field_name="background_jobs"),
         mcp_tools=_mcp_tools(raw.get("mcp_tools"), field_name="mcp_tools"),
         platform=platform,  # type: ignore[arg-type]
+        python_deps=_strings(raw.get("python_deps"), field_name="python_deps"),
     )
 
 

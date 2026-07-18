@@ -6,6 +6,7 @@ from personal_db.core.db import apply_tracker_schema, init_db
 from personal_db.core.installer import install_template, update_template
 from personal_db.core.manifest import PlatformUnsupportedError, load_manifest
 from personal_db.core.migrations import apply_pending_migrations
+from personal_db.core.pack_deps import DepsInstallError, install_tracker_deps, tracker_python_deps
 from personal_db.core.validation import validate_tracker
 from personal_db.services.wizard.menu import run_menu
 from personal_db.services.wizard.runner import run_tracker
@@ -150,6 +151,64 @@ def validate(name: str) -> None:
     else:
         typer.echo(f"{name}: validation failed — sync will refuse these files", err=True)
         raise typer.Exit(1)
+
+
+def deps(
+    name: str = typer.Argument(None),
+    all_: bool = typer.Option(
+        False, "--all", help="Install declared python_deps for every installed tracker"
+    ),
+) -> None:
+    """Install a tracker's declared python_deps into <root>/lib/.
+
+    The sealed, signed app bundle can't have packages added to its own
+    site-packages -- this is how a custom tracker gets a third-party
+    dependency the bundle doesn't ship (see core/runtime_env.py). Safe to
+    re-run: uses `pip install --target --upgrade`, so it also picks up a
+    changed pin after editing python_deps in manifest.yaml.
+    """
+    if name is not None and all_:
+        typer.echo("specify either a tracker name or --all, not both", err=True)
+        raise typer.Exit(2)
+    if name is None and not all_:
+        typer.echo("specify a tracker name or --all", err=True)
+        raise typer.Exit(2)
+
+    cfg = Config(root=get_root())
+    if all_:
+        trackers_dir = cfg.trackers_dir
+        if not trackers_dir.exists():
+            typer.echo("no trackers installed")
+            return
+        names = sorted(
+            d.name
+            for d in trackers_dir.iterdir()
+            if d.is_dir() and (d / "manifest.yaml").is_file()
+        )
+    else:
+        names = [name]
+
+    exit_code = 0
+    for n in names:
+        try:
+            declared = tracker_python_deps(cfg, n)
+        except FileNotFoundError as e:
+            typer.echo(f"{n}: {e}", err=True)
+            exit_code = 1
+            continue
+        if not declared:
+            typer.echo(f"{n}: no python_deps declared")
+            continue
+        typer.echo(f"{n}: installing {', '.join(declared)} -> {cfg.lib_dir}")
+        try:
+            result = install_tracker_deps(cfg, n)
+        except DepsInstallError as e:
+            typer.echo(f"{n}: {e}", err=True)
+            exit_code = 1
+            continue
+        typer.echo(f"{n}: {result.detail}")
+    if exit_code:
+        raise typer.Exit(exit_code)
 
 
 def setup(name: str | None = typer.Argument(None)) -> None:

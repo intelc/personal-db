@@ -15,6 +15,7 @@ from personal_db.core.intervals import parse_every as _parse_every
 from personal_db.core.manifest import OAuthStep, check_platform_supported, load_manifest
 from personal_db.core.migrations import apply_pending_migrations
 from personal_db.core.oauth import ensure_adapter_from_manifest
+from personal_db.core.runtime_env import activate_lib_dir
 from personal_db.core.tracker import Tracker
 from personal_db.core.transforms import TransformError, make_context, topo_sort, validate
 from personal_db.core.validation import ensure_validated
@@ -137,6 +138,20 @@ def _run_transforms(cfg: Config, name: str, mod, tracker_dir: Path) -> None:
             ctx.con.close()
 
 
+def _reraise_with_deps_hint(err: Exception, name: str, manifest) -> None:
+    """Re-raise `err` (an ImportError/ModuleNotFoundError from a tracker's
+    ingest.py) with a hint appended when the manifest declares python_deps --
+    the likeliest fix is that they haven't been installed into <root>/lib yet
+    (see core/pack_deps.py). Kept simple per the spec: always appends the
+    hint when python_deps is non-empty, rather than trying to match the
+    missing module name against the declared requirement strings.
+    """
+    if not manifest.python_deps:
+        raise err
+    hint = f"if this is a declared dependency, run `personal-db tracker deps {name}`"
+    raise type(err)(f"{err} ({hint})") from err
+
+
 def _register_oauth_adapters(tracker_dir: Path, manifest) -> None:
     """Register every OAuthStep.adapter declared in the manifest. Idempotent."""
     for step in manifest.setup_steps:
@@ -152,9 +167,18 @@ def sync_one(cfg: Config, name: str) -> None:
     ensure_validated(cfg, name, tracker_dir)
     _register_oauth_adapters(tracker_dir, manifest)
     _ensure_schema(cfg, name, tracker_dir, manifest)
-    mod = _load_ingest_module(tracker_dir, name)
-    t = Tracker(name=name, cfg=cfg, manifest=manifest)
-    mod.sync(t)
+    # Re-check <root>/lib on every sync, not just at process startup: a
+    # long-running daemon may have started before `tracker deps <name>`
+    # populated <root>/lib for the first time, in which case the one-time
+    # activate_lib_dir call at daemon startup (services/daemon/server.py)
+    # would have no-op'd. This call is cheap and idempotent (see
+    # core/runtime_env.py) so paying it on every sync is fine.
+    activate_lib_dir(cfg)
+    try:
+        mod = _load_ingest_module(tracker_dir, name)
+        mod.sync(Tracker(name=name, cfg=cfg, manifest=manifest))
+    except (ImportError, ModuleNotFoundError) as e:
+        _reraise_with_deps_hint(e, name, manifest)
     _run_transforms(cfg, name, mod, tracker_dir)
     _write_last_run(cfg, name, datetime.now(UTC).isoformat())
     _store_horizon(cfg, name, manifest)
@@ -168,9 +192,12 @@ def backfill_one(cfg: Config, name: str, start: str | None, end: str | None) -> 
     ensure_validated(cfg, name, tracker_dir)
     _register_oauth_adapters(tracker_dir, manifest)
     _ensure_schema(cfg, name, tracker_dir, manifest)
-    mod = _load_ingest_module(tracker_dir, name)
-    t = Tracker(name=name, cfg=cfg, manifest=manifest)
-    mod.backfill(t, start, end)
+    activate_lib_dir(cfg)  # see comment in sync_one
+    try:
+        mod = _load_ingest_module(tracker_dir, name)
+        mod.backfill(Tracker(name=name, cfg=cfg, manifest=manifest), start, end)
+    except (ImportError, ModuleNotFoundError) as e:
+        _reraise_with_deps_hint(e, name, manifest)
     _run_transforms(cfg, name, mod, tracker_dir)
     _store_horizon(cfg, name, manifest)
 

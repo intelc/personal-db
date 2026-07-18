@@ -189,6 +189,11 @@ def _render_tracker(name: str, manifest: Manifest) -> str:
         )
     if manifest.related_entities:
         meta.append(f"- **related_entities**: {', '.join(manifest.related_entities)}")
+    if manifest.python_deps:
+        meta.append(
+            f"- **python_deps**: `{'`, `'.join(manifest.python_deps)}` "
+            "(installed into `<root>/lib` via `personal-db tracker deps`)"
+        )
     lines.extend(meta)
     lines.append("")
     for table_name, table in sorted(manifest.schema.tables.items()):
@@ -225,6 +230,11 @@ def _render_app(name: str, manifest: AppManifest) -> str:
             writes.append(f"actions: {', '.join(manifest.writes.actions)}")
         lines.append(f"- **writes** (via `/api/v1/apps/{name}/actions/<action>`): {'; '.join(writes)}")
     lines.append(f"- **pages**: {', '.join(p.slug for p in manifest.pages)}")
+    if manifest.python_deps:
+        lines.append(
+            f"- **python_deps**: `{'`, `'.join(manifest.python_deps)}` "
+            "(installed into `<root>/lib` via `personal-db app deps`)"
+        )
     lines.append("")
     return "\n".join(lines)
 
@@ -237,6 +247,8 @@ def _render_source(name: str, manifest: SourceManifest) -> str:
         lines.append(f"- **{caveat}**")
     if manifest.capabilities:
         lines.append(f"- **capabilities**: {', '.join(manifest.capabilities)}")
+    if manifest.python_deps:
+        lines.append(f"- **python_deps**: `{'`, `'.join(manifest.python_deps)}`")
     lines.append("")
     return "\n".join(lines)
 

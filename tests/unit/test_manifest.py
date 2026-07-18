@@ -107,6 +107,39 @@ schema:
     assert step.adapter == "oauth_adapter:WithingsAdapter"
 
 
+def test_manifest_python_deps_defaults_empty(tmp_path):
+    p = tmp_path / "m.yaml"
+    p.write_text(
+        "name: x\n"
+        "description: x\n"
+        "permission_type: none\n"
+        "time_column: ts\n"
+        "schema:\n"
+        "  tables:\n"
+        "    x: {columns: {ts: {type: TEXT, semantic: ts}}}\n"
+    )
+    m = load_manifest(p)
+    assert m.python_deps == []
+
+
+def test_manifest_python_deps_parses_requirement_strings(tmp_path):
+    p = tmp_path / "m.yaml"
+    p.write_text(
+        "name: x\n"
+        "description: x\n"
+        "permission_type: none\n"
+        "time_column: ts\n"
+        "python_deps:\n"
+        "  - requests>=2.31\n"
+        "  - some-niche-package==1.2.3\n"
+        "schema:\n"
+        "  tables:\n"
+        "    x: {columns: {ts: {type: TEXT, semantic: ts}}}\n"
+    )
+    m = load_manifest(p)
+    assert m.python_deps == ["requests>=2.31", "some-niche-package==1.2.3"]
+
+
 def test_oauth_step_adapter_field_is_optional(tmp_path):
     from personal_db.core.manifest import load_manifest, OAuthStep
 

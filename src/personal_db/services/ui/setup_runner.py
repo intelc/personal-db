@@ -300,6 +300,17 @@ def process_form(
         write_status(cfg, name, success=False, detail=detail)
         return results, RunResult(success=False, detail=detail)
 
+    # TODO(python_deps): the terminal wizard (wizard/runner.py::run_tracker)
+    # auto-installs manifest.python_deps via core.pack_deps.install_tracker_deps
+    # before the test sync. The web wizard doesn't do this yet -- wiring it in
+    # here needs a StepView-shaped result (new type_ e.g. "python_deps") so
+    # setup_tracker.html can render its outcome like every other step, plus a
+    # decision on whether the multi-second pip install should block this POST
+    # or run as a background step the page polls, which didn't fit in this
+    # change's scope. Today: a tracker with python_deps whose ingest.py can't
+    # import them will just fail "test sync failed: No module named ..." below
+    # (with the CLI-facing `personal-db tracker deps <name>` hint appended by
+    # core/sync.py) -- workable but not as smooth as the terminal flow.
     try:
         sync_one(cfg, name)
     except Exception as e:

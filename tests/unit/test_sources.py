@@ -56,3 +56,37 @@ def test_load_source_manifest_rejects_bad_capabilities(tmp_path):
 
     with pytest.raises(SourceManifestError):
         load_source_manifest(path)
+
+
+def test_load_source_manifest_python_deps_defaults_empty(tmp_path):
+    path = tmp_path / "source.yaml"
+    path.write_text(yaml.safe_dump({"name": "s", "provider": "spark", "description": "d"}))
+    m = load_source_manifest(path)
+    assert m.python_deps == ()
+
+
+def test_load_source_manifest_parses_python_deps(tmp_path):
+    path = tmp_path / "source.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "name": "s",
+                "provider": "spark",
+                "description": "d",
+                "python_deps": ["requests>=2.31"],
+            }
+        )
+    )
+    m = load_source_manifest(path)
+    assert m.python_deps == ("requests>=2.31",)
+
+
+def test_load_source_manifest_rejects_bad_python_deps(tmp_path):
+    path = tmp_path / "source.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {"name": "s", "provider": "spark", "description": "d", "python_deps": "not-a-list"}
+        )
+    )
+    with pytest.raises(SourceManifestError):
+        load_source_manifest(path)

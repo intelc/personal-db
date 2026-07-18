@@ -97,6 +97,32 @@ def test_app_manifest_validation_rejects_bad_names(tmp_path):
         load_app_manifest(manifest)
 
 
+def test_app_manifest_python_deps_defaults_empty(tmp_path):
+    manifest = tmp_path / "app.yaml"
+    manifest.write_text(
+        yaml.safe_dump(
+            {"name": "sample", "pages": [{"slug": "home", "title": "Home", "view": "v"}]}
+        )
+    )
+    m = load_app_manifest(manifest)
+    assert m.python_deps == ()
+
+
+def test_app_manifest_parses_python_deps(tmp_path):
+    manifest = tmp_path / "app.yaml"
+    manifest.write_text(
+        yaml.safe_dump(
+            {
+                "name": "sample",
+                "pages": [{"slug": "home", "title": "Home", "view": "v"}],
+                "python_deps": ["requests>=2.31"],
+            }
+        )
+    )
+    m = load_app_manifest(manifest)
+    assert m.python_deps == ("requests>=2.31",)
+
+
 def test_named_queries_parse_and_reject_writes(tmp_path):
     queries = tmp_path / "queries.sql"
     queries.write_text(

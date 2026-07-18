@@ -123,6 +123,26 @@ def test_core_tables_section_documents_action_log_and_enrichment_jobs(tmp_root):
     assert "`notes`" in doc
 
 
+def test_python_deps_rendered_when_declared(tmp_root):
+    cfg = Config(root=tmp_root)
+    _write_tracker(cfg, "widgets", python_deps=["requests>=2.31"])
+    _write_tracker(cfg, "no_deps")
+
+    doc = generate_contract(cfg, bundled=False)
+
+    assert "**python_deps**: `requests>=2.31`" in doc
+    assert "personal-db tracker deps" in doc
+
+
+def test_python_deps_omitted_when_not_declared(tmp_root):
+    cfg = Config(root=tmp_root)
+    _write_tracker(cfg, "no_deps")
+
+    doc = generate_contract(cfg, bundled=False)
+
+    assert "python_deps" not in doc
+
+
 def test_malformed_manifest_is_skipped_not_fatal(tmp_root):
     cfg = Config(root=tmp_root)
     bad_dir = cfg.trackers_dir / "broken"

@@ -15,6 +15,7 @@ from personal_db.core.manifest import (
     TrackerActionStep,
     load_manifest,
 )
+from personal_db.core.pack_deps import DepsInstallError, install_tracker_deps
 from personal_db.core.sync import sync_one
 from personal_db.services.wizard.status import write_status
 from personal_db.services.wizard.steps import (
@@ -68,6 +69,22 @@ def run_tracker(cfg: Config, name: str) -> RunResult:
             print(f"    skipped: {result.reason}")
         else:  # Ok
             print(f"    ok: {result.detail}")
+
+    # Install any declared python_deps before the test sync, so a tracker
+    # whose ingest.py imports a third-party package doesn't fail its first
+    # sync just because <root>/lib hasn't been populated yet (see
+    # core/pack_deps.py / core/runtime_env.py -- the sealed bundle can't
+    # carry the dependency itself).
+    if manifest.python_deps:
+        print(f"\n  Installing declared python_deps: {', '.join(manifest.python_deps)}")
+        try:
+            deps_result = install_tracker_deps(cfg, name)
+        except DepsInstallError as e:
+            detail = f"python_deps install failed: {e}"
+            write_status(cfg, name, success=False, detail=detail)
+            print(f"    failed: {detail}")
+            return RunResult(success=False, detail=detail)
+        print(f"    ok: {deps_result.detail}")
 
     # Test sync
     print(f"\n  Running test sync for {name}...")

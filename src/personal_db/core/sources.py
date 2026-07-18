@@ -34,6 +34,9 @@ class SourceManifest:
     mcp_tools: tuple[McpToolSpec, ...] = ()
     # None (default) = portable. Mirrors Manifest.platform for trackers.
     platform: tuple[PlatformName, ...] | None = None
+    # PEP 508 requirement strings; see Manifest.python_deps in core/manifest.py
+    # for the full rationale (sealed bundle -> installed into <root>/lib).
+    python_deps: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -111,6 +114,7 @@ def load_source_manifest(path: Path) -> SourceManifest:
         setup_steps=tuple(setup_steps),
         mcp_tools=mcp_tools,
         platform=platform,  # type: ignore[arg-type]
+        python_deps=_strings(raw.get("python_deps"), field_name="python_deps"),
     )
 
 

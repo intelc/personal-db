@@ -277,6 +277,118 @@ def test_sync_one_runs_on_supported_platform(tmp_root, monkeypatch):
     assert "imessage_like" in last_run
 
 
+def _make_tracker_with_broken_import(cfg: Config, name: str, *, python_deps: list[str]) -> Path:
+    d = cfg.trackers_dir / name
+    d.mkdir(parents=True)
+    (d / "manifest.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": name,
+                "description": "test",
+                "permission_type": "none",
+                "time_column": "ts",
+                "python_deps": python_deps,
+                "schema": {
+                    "tables": {name: {"columns": {"ts": {"type": "TEXT", "semantic": "ts"}}}}
+                },
+            }
+        )
+    )
+    (d / "schema.sql").write_text(f"CREATE TABLE IF NOT EXISTS {name} (ts TEXT);")
+    (d / "ingest.py").write_text(
+        "import this_module_does_not_exist_anywhere\n"
+        "def sync(t):\n    pass\n"
+        "def backfill(t, start, end):\n    pass\n"
+    )
+    mark_valid(cfg, name)
+    return d
+
+
+def test_sync_one_import_error_gets_deps_hint_when_python_deps_declared(tmp_root):
+    cfg = Config(root=tmp_root)
+    init_db(cfg.db_path)
+    _make_tracker_with_broken_import(cfg, "needs_dep", python_deps=["some-package>=1.0"])
+    with pytest.raises(ModuleNotFoundError, match="personal-db tracker deps needs_dep"):
+        sync_one(cfg, "needs_dep")
+
+
+def test_backfill_one_import_error_gets_deps_hint_when_python_deps_declared(tmp_root):
+    from personal_db.core.sync import backfill_one
+
+    cfg = Config(root=tmp_root)
+    init_db(cfg.db_path)
+    _make_tracker_with_broken_import(cfg, "needs_dep_b", python_deps=["some-package>=1.0"])
+    with pytest.raises(ModuleNotFoundError, match="personal-db tracker deps needs_dep_b"):
+        backfill_one(cfg, "needs_dep_b", start=None, end=None)
+
+
+def test_sync_one_import_error_has_no_hint_without_declared_deps(tmp_root):
+    """Keep the message plain (no hint) for a tracker that never declared
+    python_deps -- the hint would just be noise/misleading there."""
+    cfg = Config(root=tmp_root)
+    init_db(cfg.db_path)
+    _make_tracker_with_broken_import(cfg, "no_deps_declared", python_deps=[])
+    with pytest.raises(ModuleNotFoundError) as exc_info:
+        sync_one(cfg, "no_deps_declared")
+    assert "personal-db tracker deps" not in str(exc_info.value)
+
+
+def test_sync_one_picks_up_lib_dir_populated_after_process_started(tmp_root):
+    """Simulates the real long-running-daemon scenario: <root>/lib gets
+    populated by a separate process (`personal-db tracker deps <name>`)
+    *after* this interpreter already started, so this process's sys.path has
+    never been extended with cfg.lib_dir before. sync_one must still succeed
+    by re-checking <root>/lib on every call (core/sync.py) rather than
+    relying solely on the one-time activate_lib_dir call at process startup
+    (services/daemon/server.py) -- otherwise a long-lived daemon would need
+    restarting after every `tracker deps` run.
+    """
+    cfg = Config(root=tmp_root)
+    init_db(cfg.db_path)
+
+    tracker_dir = cfg.trackers_dir / "needs_lib"
+    tracker_dir.mkdir(parents=True)
+    (tracker_dir / "manifest.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": "needs_lib",
+                "description": "test",
+                "permission_type": "none",
+                "time_column": "ts",
+                "python_deps": ["pdb_lib_probe_pkg_for_sync_test"],
+                "schema": {
+                    "tables": {"needs_lib": {"columns": {"ts": {"type": "TEXT", "semantic": "ts"}}}}
+                },
+            }
+        )
+    )
+    (tracker_dir / "schema.sql").write_text(
+        "CREATE TABLE IF NOT EXISTS needs_lib (id TEXT PRIMARY KEY, ts TEXT);"
+    )
+    (tracker_dir / "ingest.py").write_text(
+        "import pdb_lib_probe_pkg_for_sync_test as probe\n"
+        "def backfill(t, start, end):\n    pass\n"
+        "def sync(t):\n"
+        "    t.upsert('needs_lib', [{'id': 's1', 'ts': probe.VALUE}], key=['id'])\n"
+    )
+    mark_valid(cfg, "needs_lib")
+
+    # Populate <root>/lib directly -- bypassing core.pack_deps.install_python_deps
+    # (which itself calls activate_lib_dir) -- to isolate sync_one's own
+    # defensive re-check from that other code path.
+    pkg_dir = cfg.lib_dir / "pdb_lib_probe_pkg_for_sync_test"
+    pkg_dir.mkdir(parents=True)
+    (pkg_dir / "__init__.py").write_text("VALUE = 'from-lib-dir'\n")
+    assert str(cfg.lib_dir) not in sys.path  # sanity: nothing has activated it yet
+
+    try:
+        sync_one(cfg, "needs_lib")  # must not raise
+    finally:
+        sys.modules.pop("pdb_lib_probe_pkg_for_sync_test", None)
+        if str(cfg.lib_dir) in sys.path:
+            sys.path.remove(str(cfg.lib_dir))
+
+
 def test_sync_one_runs_when_manifest_platform_is_portable(tmp_root, monkeypatch):
     """`platform: None` (the default -- most trackers never set this field)
     means portable: no gate at all, regardless of sys.platform."""

@@ -141,6 +141,26 @@ In Claude Code:
 
 A tracker is just four files: `manifest.yaml`, `schema.sql`, `ingest.py`, and an optional `visualizations.py`. Full guide with a worked example: **[docs/creating-trackers.md](docs/creating-trackers.md)**.
 
+## Custom pack dependencies
+
+The signed native app ships a sealed, embedded Python interpreter — nothing can be added to its own `site-packages` without breaking the code signature. If your custom tracker/app's `ingest.py` (or `views.py`/`actions.py`) needs a third-party package the bundle doesn't ship, declare it in the manifest:
+
+```yaml
+# manifest.yaml (tracker) or app.yaml (app)
+python_deps:
+  - requests>=2.31
+  - some-niche-package==1.2.3
+```
+
+Then install it:
+
+```bash
+personal-db tracker deps <name>     # or: personal-db app deps <name>
+personal-db tracker deps --all      # every installed tracker
+```
+
+This runs `pip install --target <root>/lib` — a plain directory the CLI, daemon, and MCP server all add to `sys.path` at startup (after the bundle's own packages, so a pack can never shadow one of the engine's own dependencies). Re-run `tracker deps` after changing `python_deps`; editing `manifest.yaml` also invalidates the tracker's validation stamp, so `sync`/`backfill` will ask for `tracker validate` again first. If a sync fails with `ModuleNotFoundError` for a tracker that declares `python_deps`, the error message includes a `personal-db tracker deps <name>` hint.
+
 ## Layout
 
 See `docs/creating-trackers.md` for the tracker-authoring guide.

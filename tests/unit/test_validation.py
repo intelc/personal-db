@@ -177,3 +177,20 @@ def test_validate_tracker_unknown_tracker_raises(tmp_root):
     cfg = Config(root=tmp_root)
     with pytest.raises(FileNotFoundError):
         validate_tracker(cfg, "nope")
+
+
+def test_python_deps_edit_invalidates_validation_stamp(tmp_root):
+    """python_deps rides along in the hash automatically (compute_files_hash
+    hashes manifest.yaml's raw bytes) -- editing it must invalidate an
+    existing stamp exactly like editing any other manifest field would."""
+    cfg = Config(root=tmp_root)
+    _write_tracker(cfg)
+    tracker_dir = cfg.trackers_dir / "demo"
+    record_validation(cfg, "demo", compute_files_hash(tracker_dir))
+    assert is_validated(cfg, "demo", tracker_dir) is True
+
+    manifest = yaml.safe_load((tracker_dir / "manifest.yaml").read_text())
+    manifest["python_deps"] = ["requests>=2.31"]
+    (tracker_dir / "manifest.yaml").write_text(yaml.safe_dump(manifest))
+
+    assert is_validated(cfg, "demo", tracker_dir) is False

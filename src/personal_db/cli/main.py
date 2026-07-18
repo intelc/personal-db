@@ -68,6 +68,7 @@ tracker_app.command("install")(tracker_cmd.install)
 tracker_app.command("reinstall")(tracker_cmd.reinstall)
 tracker_app.command("setup")(tracker_cmd.setup)
 tracker_app.command("validate")(tracker_cmd.validate)
+tracker_app.command("deps")(tracker_cmd.deps)
 # `tracker new` moved under `dev tracker new` (scaffolding a brand-new tracker
 # is a developer action); kept here too, hidden, for compatibility.
 tracker_app.command("new", hidden=True)(leaf_alias(tracker_cmd.new, "dev tracker new"))
@@ -78,6 +79,7 @@ app_app.command("list")(app_cmd.list_cmd)
 app_app.command("available")(app_cmd.available)
 app_app.command("install")(app_cmd.install)
 app_app.command("reinstall")(app_cmd.reinstall)
+app_app.command("deps")(app_cmd.deps)
 app.add_typer(app_app, name="app")
 
 # `mcp` keeps `install` (and the bare-invocation "run the stdio server"
