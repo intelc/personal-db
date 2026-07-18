@@ -8,7 +8,8 @@
   "use strict";
 
   async function handleSubmit(event) {
-    const form = event.currentTarget;
+    const form = event.target.closest(".pdb-sync-form");
+    if (!form) return; // not a sync form submit -- ignore
     const tracker = form.dataset.tracker;
     const button = form.querySelector(".pdb-sync-btn");
     if (!tracker || !button) return; // fall back to the plain form POST
@@ -42,7 +43,10 @@
     }
   }
 
-  document.querySelectorAll(".pdb-sync-form").forEach((form) => {
-    form.addEventListener("submit", handleSubmit);
-  });
+  // Delegated on `document` (rather than bound per-form) so sync buttons
+  // rendered into a page swapped in by pdb-nav.js still work without
+  // needing to be re-bound on every navigation -- the "submit" event
+  // bubbles, so this fires for forms that didn't exist when this script
+  // first ran.
+  document.addEventListener("submit", handleSubmit);
 })();

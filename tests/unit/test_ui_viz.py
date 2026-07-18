@@ -536,13 +536,14 @@ def test_base_uses_vendored_ag_assets(tmp_path):
     assert r.status_code == 200
     assert "/static/vendor/ag-grid-community/35.3.0/ag-grid-community.min.js" in r.text
     assert "/static/vendor/ag-charts-community/13.3.0/ag-charts-community.min.js" in r.text
-    assert "/static/pdb-grid.js?v=6" in r.text
-    assert "/static/pdb-chart.js?v=13" in r.text
+    assert "/static/pdb-grid.js?v=7" in r.text
+    assert "/static/pdb-chart.js?v=14" in r.text
     assert "/static/style.css?v=app-shell-1" in r.text
-    assert "/static/pdb-app-state.js?v=2" in r.text
+    assert "/static/pdb-app-state.js?v=3" in r.text
     assert "/static/apps/finance-burn-rate.js?v=4" in r.text
     assert "/static/apps/finance-categorize.js?v=1" in r.text
     assert "/static/apps/finance-rules.js?v=1" in r.text
-    assert "/static/pdb-finance.js?v=9" in r.text
-    assert "/static/pdb-sync.js?v=1" in r.text
+    assert "/static/pdb-finance.js?v=10" in r.text
+    assert "/static/pdb-sync.js?v=2" in r.text
+    assert "/static/pdb-nav.js?v=1" in r.text
     assert "cdn.jsdelivr.net" not in r.text

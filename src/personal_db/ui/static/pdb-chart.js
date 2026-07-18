@@ -500,6 +500,22 @@
     };
   }
 
+  // Elements with a mounted AG Charts instance. Tracked separately (rather
+  // than re-querying `[data-pdb-chart]` on every color-scheme change) so a
+  // page swap that removes an element from the DOM (see pdb-nav.js) doesn't
+  // leave a dangling chart instance responding to the media-query listener
+  // below forever.
+  const mountedCharts = [];
+
+  function pruneDisconnectedCharts() {
+    for (let i = mountedCharts.length - 1; i >= 0; i -= 1) {
+      const el = mountedCharts[i];
+      if (el.isConnected) continue;
+      if (el.__pdbChart && typeof el.__pdbChart.destroy === 'function') el.__pdbChart.destroy();
+      mountedCharts.splice(i, 1);
+    }
+  }
+
   function initChart(el) {
     if (el.dataset.pdbChartReady === '1') return;
     const script = document.querySelector(
@@ -536,6 +552,7 @@
     if (toolbar) el.parentElement.insertBefore(toolbar, el);
     render();
     el.dataset.pdbChartReady = '1';
+    mountedCharts.push(el);
     // Theme changes need a full recreate (not `api.update`) so AG Charts
     // re-resolves the `theme` option cleanly instead of merging deltas
     // against the previous (opposite-scheme) instance.
@@ -547,11 +564,13 @@
   }
 
   function initAll() {
+    pruneDisconnectedCharts();
     document.querySelectorAll('[data-pdb-chart]').forEach(initChart);
   }
 
   function handleColorSchemeChange() {
-    document.querySelectorAll('[data-pdb-chart]').forEach((el) => {
+    pruneDisconnectedCharts();
+    mountedCharts.forEach((el) => {
       if (typeof el.__pdbChartRerender === 'function') el.__pdbChartRerender();
     });
   }
@@ -570,4 +589,5 @@
   } else {
     initAll();
   }
+  document.addEventListener('pdb:navigate', initAll);
 })();
