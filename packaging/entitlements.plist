@@ -16,17 +16,17 @@
     dylib a signed binary loads to be signed by the *same* Team ID. CPython
     dlopens compiled extension modules (.so files) from site-packages at
     import time, and those are ordinary Python-ecosystem wheels signed (if
-    at all) by whoever built them -- not us. Without this, `import ssl`,
+    at all) by whoever built them, not us. Without this, `import ssl`,
     `import cryptography`, etc. fail under a hardened-runtime-signed
     interpreter.
 
   This is a real (if unavoidable) reduction in hardened runtime's
-  protection -- it's the standard tradeoff every frozen-Python-as-a-signed-
+  protection, but it's the standard tradeoff every frozen-Python-as-a-signed-
   macOS-app project makes (PyInstaller/py2app apps that embed C extensions
   all need the same three). Scope stays as narrow as the plan allows: no
   other entitlements (no network-client sandboxing exception needed since
-  this app isn't sandboxed at all -- App Store distribution is explicitly
-  out of scope, see packaging/README.md -- and no camera/mic/etc entries).
+  this app isn't sandboxed at all (App Store distribution is explicitly
+  out of scope, see packaging/README.md), and no camera/mic/etc entries).
 -->
 <plist version="1.0">
 <dict>

@@ -28,7 +28,10 @@
       "../../packaging/build/payload/python": "python"
     },
     "macOS": {
-      "minimumSystemVersion": "11.0"
+      "minimumSystemVersion": "11.0",
+      "signingIdentity": "Developer ID Application: Yiheng Chen (T78LM3Z7A5)",
+      "entitlements": "../../packaging/entitlements.plist",
+      "hardenedRuntime": true
     }
   }
 }
