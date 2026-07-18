@@ -392,6 +392,114 @@
     return toolbar;
   }
 
+  // Dark-mode theming ----------------------------------------------------
+  //
+  // AG Charts options here come from agcharts.py, whose Python-side defaults
+  // stay pinned to light-mode colors (SDK stability + existing tests). Dark
+  // support is applied client-side instead: `applyDarkTheme` runs on the
+  // fully-resolved options object right before it's handed to AG Charts, so
+  // it works regardless of which tracker/app produced the payload.
+  const DARK_MEDIA_QUERY = window.matchMedia
+    ? window.matchMedia('(prefers-color-scheme: dark)')
+    : null;
+
+  function isDarkMode() {
+    return Boolean(DARK_MEDIA_QUERY && DARK_MEDIA_QUERY.matches);
+  }
+
+  // Literal blacks that read fine on a white chart background but disappear
+  // against a dark one (e.g. agcharts.py's `line_color: str = "#111111"`
+  // default in gain_loss_area_chart, or callers passing "#000"/"#000000").
+  // Every other explicit color (series greens/reds/etc.) is left untouched.
+  const DARK_ON_DARK_COLORS = new Set(['#000', '#000000', '#111', '#111111']);
+  const DARK_ON_DARK_REPLACEMENT = '#e8e8ec';
+  const DARK_AXIS_TEXT_COLOR = '#a1a1a6';
+  const DARK_GRID_STROKE = 'rgba(255, 255, 255, 0.1)';
+
+  function remapDarkOnDarkColors(value) {
+    if (Array.isArray(value)) return value.map(remapDarkOnDarkColors);
+    if (value && typeof value === 'object') {
+      const out = {};
+      for (const key of Object.keys(value)) out[key] = remapDarkOnDarkColors(value[key]);
+      return out;
+    }
+    if (typeof value === 'string' && DARK_ON_DARK_COLORS.has(value.trim().toLowerCase())) {
+      return DARK_ON_DARK_REPLACEMENT;
+    }
+    return value;
+  }
+
+  // `chartOptions()` always strips the pdb-internal `axes` object (see
+  // `stripAxes` above) before the options reach AG Charts, so axis styling
+  // can't be layered on via a top-level `axes` key here. AG Charts' own
+  // theme system (`overrides.common.axes.<type>`) applies regardless of
+  // which axis types AG Charts ends up auto-inferring, so use that instead.
+  function darkChartTheme() {
+    const axisText = { color: DARK_AXIS_TEXT_COLOR };
+    const axisCommon = {
+      label: axisText,
+      title: axisText,
+      line: { stroke: DARK_GRID_STROKE },
+      tick: { stroke: DARK_GRID_STROKE },
+      gridLine: { style: [{ stroke: DARK_GRID_STROKE }] },
+      crosshair: {
+        stroke: DARK_GRID_STROKE,
+        label: { color: '#1f1f21', backgroundColor: DARK_AXIS_TEXT_COLOR },
+      },
+    };
+    return {
+      // AG Charts ships a matching "-dark" variant of every base theme.
+      // Using it (rather than the light "ag-default") is what switches the
+      // DOM-rendered chrome AG Charts draws outside the canvas — the
+      // no-data/loading overlay text and the wrapper's CSS custom
+      // properties — since those aren't reachable through `overrides` at
+      // all (confirmed by inspecting the vendored bundle: overlay text has
+      // no color option, only `enabled`/`renderer`/`text`). The
+      // `overrides.common.*` below then fine-tunes the canvas-drawn axes/
+      // legend on top of that base.
+      baseTheme: 'ag-default-dark',
+      overrides: {
+        common: {
+          background: { visible: false },
+          title: axisText,
+          subtitle: axisText,
+          legend: { item: { label: axisText } },
+          axes: {
+            category: axisCommon,
+            number: axisCommon,
+            time: axisCommon,
+            log: axisCommon,
+          },
+        },
+      },
+    };
+  }
+
+  function applyDarkTheme(options) {
+    if (!isDarkMode()) return options;
+    const remapped = remapDarkOnDarkColors(options);
+    const legend = remapped.legend
+      ? {
+          ...remapped.legend,
+          item: {
+            ...(remapped.legend.item || {}),
+            label: { color: DARK_AXIS_TEXT_COLOR, ...((remapped.legend.item || {}).label || {}) },
+          },
+        }
+      : remapped.legend;
+    return {
+      ...remapped,
+      legend,
+      background: { visible: false },
+      theme: darkChartTheme(),
+      // Built-in AG Charts toggle (confirmed in the vendored bundle) that
+      // dark-styles the loading/no-data/no-visible-series overlay text and
+      // the tooltip chrome, which `theme.overrides` doesn't reach.
+      overlays: { ...(remapped.overlays || {}), darkTheme: true },
+      tooltip: { ...(remapped.tooltip || {}), darkTheme: true },
+    };
+  }
+
   function initChart(el) {
     if (el.dataset.pdbChartReady === '1') return;
     const script = document.querySelector(
@@ -413,7 +521,7 @@
     }
     function render() {
       const data = aggregateData(rawOptions, visibleData(), state.group);
-      const options = chartOptions(rawOptions, data, state.scale, state.group);
+      const options = applyDarkTheme(chartOptions(rawOptions, data, state.scale, state.group));
       const next = { ...options, container: el };
       if (chart && api.update) {
         api.update(chart, next);
@@ -428,10 +536,33 @@
     if (toolbar) el.parentElement.insertBefore(toolbar, el);
     render();
     el.dataset.pdbChartReady = '1';
+    // Theme changes need a full recreate (not `api.update`) so AG Charts
+    // re-resolves the `theme` option cleanly instead of merging deltas
+    // against the previous (opposite-scheme) instance.
+    el.__pdbChartRerender = () => {
+      if (chart && chart.destroy) chart.destroy();
+      chart = null;
+      render();
+    };
   }
 
   function initAll() {
     document.querySelectorAll('[data-pdb-chart]').forEach(initChart);
+  }
+
+  function handleColorSchemeChange() {
+    document.querySelectorAll('[data-pdb-chart]').forEach((el) => {
+      if (typeof el.__pdbChartRerender === 'function') el.__pdbChartRerender();
+    });
+  }
+
+  if (DARK_MEDIA_QUERY) {
+    if (DARK_MEDIA_QUERY.addEventListener) {
+      DARK_MEDIA_QUERY.addEventListener('change', handleColorSchemeChange);
+    } else if (DARK_MEDIA_QUERY.addListener) {
+      // Safari < 14 / older WebKit fallback.
+      DARK_MEDIA_QUERY.addListener(handleColorSchemeChange);
+    }
   }
 
   if (document.readyState === 'loading') {

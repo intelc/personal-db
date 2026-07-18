@@ -2,7 +2,8 @@
 
 Pure HTML/CSS — no JS, no SVG libraries. Functions return HTML strings using
 the .hbar / .vbar / .heatmap / .calendar / .wordcloud classes from style.css.
-Color is used sparingly; defaults to #000 with the option to override per call.
+Color is used sparingly; defaults to var(--chart-fg) (theme-aware) with the
+option to override per call.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ def horizontal_bars(
     items: list[tuple[str, float]],
     *,
     value_fmt: Callable[[float], str] = lambda v: f"{v:g}",
-    color: str = "#000",
+    color: str = "var(--chart-fg)",
 ) -> str:
     """[(label, value), ...] → horizontal bar chart HTML, ranked top-to-bottom."""
     if not items:
@@ -40,7 +41,7 @@ def horizontal_bars(
 def vertical_bars(
     items: list[tuple[str, float]],
     *,
-    color: str = "#000",
+    color: str = "var(--chart-fg)",
     color_fn: Callable[[float], str] | None = None,
     show_every_nth_label: int = 5,
 ) -> str:
@@ -81,6 +82,7 @@ def heatmap(
         return '<p class="meta">no data</p>'
     max_v = max_value or max(flat) or 1
     r, g, b = base_color
+    is_default_color = base_color == (0, 0, 0)
     rows_html = []
     for i, row in enumerate(grid):
         cells = []
@@ -90,9 +92,16 @@ def heatmap(
             else:
                 opacity = max(0.08, min(1.0, v / max_v))
                 title = f"{row_labels[i]} {col_labels[j]}: {v:g}"
+                if is_default_color:
+                    bg = (
+                        "color-mix(in srgb, var(--chart-fg) "
+                        f"{opacity * 100:.0f}%, transparent)"
+                    )
+                else:
+                    bg = f"rgba({r},{g},{b},{opacity:.2f})"
                 cells.append(
                     f'<td class="heat" '
-                    f'style="background: rgba({r},{g},{b},{opacity:.2f})" '
+                    f'style="background: {bg}" '
                     f'title="{escape(title)}"></td>'
                 )
         rows_html.append(
@@ -144,7 +153,7 @@ def calendar_grid(
         if color_fn:
             return color_fn(v)
         opacity = max(0.1, min(1.0, v / max_v))
-        return f"rgba(0,0,0,{opacity:.2f})"
+        return f"color-mix(in srgb, var(--chart-fg) {opacity * 100:.0f}%, transparent)"
 
     def _title(d: date, v: float) -> str:
         if label_fn:
@@ -229,7 +238,7 @@ def stacked_vertical_bars(
 def line_chart(
     items: list[tuple[str, float | None]],
     *,
-    color: str = "#000",
+    color: str = "var(--chart-fg)",
     height_px: int = 140,
     show_every_nth_label: int = 5,
     y_min: float | None = None,
@@ -432,7 +441,7 @@ def multi_line_chart(
             anchor = "start" if i == 0 else "end" if i == n - 1 else "middle"
             parts.append(
                 f'<text x="{x_for(i):.1f}" y="{height_px - 4}" '
-                f'font-size="10" text-anchor="{anchor}" fill="#666">{escape(str(lbl))}</text>'
+                f'font-size="10" text-anchor="{anchor}" fill="var(--chart-muted)">{escape(str(lbl))}</text>'
             )
 
     def _axis_label(v: float) -> str:
@@ -446,9 +455,9 @@ def multi_line_chart(
 
     parts.append(
         f'<text{_vattr(hi)} x="{m_left - 4:.1f}" y="{m_top + 4:.1f}" '
-        f'font-size="10" text-anchor="end" fill="#666">{_axis_label(hi)}</text>'
+        f'font-size="10" text-anchor="end" fill="var(--chart-muted)">{_axis_label(hi)}</text>'
         f'<text{_vattr(lo)} x="{m_left - 4:.1f}" y="{m_top + plot_h:.1f}" '
-        f'font-size="10" text-anchor="end" fill="#666">{_axis_label(lo)}</text>'
+        f'font-size="10" text-anchor="end" fill="var(--chart-muted)">{_axis_label(lo)}</text>'
     )
 
     legend = ""
