@@ -8,6 +8,15 @@
 -- no-op if schema.sql already created the table in its (identical) target
 -- shape, and the rebuild below is then just a no-op copy of an
 -- already-correct, possibly-empty table.
+-- Views that reference monarch_account_exports must not exist during the
+-- drop/rename below: ALTER TABLE ... RENAME reparses the schema and errors
+-- on any view whose referenced table is mid-flight. schema.sql recreates
+-- every view (DROP VIEW IF EXISTS + CREATE VIEW) right after migrations run.
+DROP VIEW IF EXISTS monarch_finance_accounts_export;
+DROP VIEW IF EXISTS monarch_finance_transactions_export;
+DROP VIEW IF EXISTS monarch_finance_holdings_export;
+DROP VIEW IF EXISTS monarch_finance_holding_snapshots_export;
+
 CREATE TABLE IF NOT EXISTS monarch_account_exports (
   account_id      TEXT PRIMARY KEY,
   export_enabled  INTEGER NOT NULL DEFAULT 0,
