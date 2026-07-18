@@ -2,11 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}personal_db{% endblock %}</title>
   <link rel="stylesheet" href="/static/vendor/ag-grid-community/35.3.0/ag-grid.min.css">
   <link rel="stylesheet" href="/static/vendor/ag-grid-community/35.3.0/ag-theme-quartz.min.css">
   <link rel="stylesheet" href="/static/vendor/xterm/6.0.0/xterm.css">
-  <link rel="stylesheet" href="/static/style.css?v=finance-app-12">
+  <link rel="stylesheet" href="/static/style.css?v=app-shell-1">
   <script defer src="/static/vendor/ag-grid-community/35.3.0/ag-grid-community.min.js"></script>
   <script defer src="/static/vendor/ag-charts-community/13.3.0/ag-charts-community.min.js"></script>
   <script defer src="/static/vendor/xterm/6.0.0/xterm.js"></script>
@@ -19,6 +20,7 @@
   <script defer src="/static/apps/finance-rules.js?v=1"></script>
   <script defer src="/static/pdb-finance.js?v=9"></script>
   <script defer src="/static/pdb-agent-terminal.js?v=8"></script>
+  <script defer src="/static/pdb-shell.js?v=1"></script>
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute">
@@ -29,28 +31,35 @@
       </pattern>
     </defs>
   </svg>
-  <header class="masthead">
-    <span class="logo">[ personal_db ]</span>
-    <nav>
-      <a href="/" {% if active=='dashboard' %}class="active"{% endif %}>dashboard</a>
-      <a href="/a" {% if active=='apps' %}class="active"{% endif %}>apps</a>
-      {% for t in nav_visible %}
-        <a href="/t/{{ t }}" {% if active==t %}class="active"{% endif %}>{{ t }}</a>
-      {% endfor %}
-      {% if nav_overflow %}
-        <details class="nav-more">
-          <summary>more ▾</summary>
-          <div class="nav-more-menu">
-            {% for t in nav_overflow %}
-              <a href="/t/{{ t }}">{{ t }}</a>
-            {% endfor %}
-          </div>
-        </details>
-      {% endif %}
-    </nav>
-  </header>
-  <main>
-    {% block content %}{% endblock %}
-  </main>
+  <div class="shell">
+    <aside class="sidebar" id="pdb-sidebar">
+      <div class="sidebar-title">PersonalDB</div>
+      <nav class="sidebar-nav">
+        <a href="/" {% if active=='dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
+        <div class="sidebar-group">Apps</div>
+        {% for a in nav_apps %}
+          <a href="/a/{{ a.name }}" {% if active==a.name %}aria-current="page"{% endif %}>{{ a.title }}</a>
+        {% endfor %}
+        <a href="/a" {% if active=='apps' %}aria-current="page"{% endif %}>All Apps</a>
+        <div class="sidebar-group">Trackers</div>
+        {% for t in nav_trackers %}
+          <a href="/t/{{ t.slug }}" {% if active==t.slug %}aria-current="page"{% endif %}>{{ t.title }}</a>
+        {% endfor %}
+      </nav>
+      <div class="sidebar-footer">
+        <a href="/setup" class="sidebar-item" {% if active=='setup' %}aria-current="page"{% endif %}>Setup</a>
+      </div>
+    </aside>
+    <div class="sidebar-scrim" id="pdb-sidebar-scrim"></div>
+    <div class="content">
+      <div class="topbar">
+        <button type="button" class="topbar-toggle" id="pdb-sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+        <span class="topbar-title">{% block page_title %}PersonalDB{% endblock %}</span>
+      </div>
+      <main>
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
 </body>
 </html>

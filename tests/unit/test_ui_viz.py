@@ -221,53 +221,29 @@ def test_refresh_endpoint_swallows_sync_errors(tmp_path):
     assert r.status_code == 303  # not 500
 
 
-def test_nav_split_under_limit_returns_all_visible():
-    from personal_db.services.daemon.http import _split_nav
-    visible, overflow = _split_nav(["a", "b", "c"], active=None, limit=6)
-    assert visible == ["a", "b", "c"]
-    assert overflow == []
+def test_nav_context_lists_every_tracker_with_humanized_title(tmp_path):
+    """Sidebar nav (no overflow dropdown -- the sidebar scrolls instead) lists
+    every tracker with a human title, not the raw slug."""
+    cfg = _setup(tmp_path, "github_commits", "daily_time_accounting")
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/")
+    assert r.status_code == 200
+    assert 'href="/t/github_commits"' in r.text
+    assert ">GitHub Commits<" in r.text
+    assert 'href="/t/daily_time_accounting"' in r.text
+    assert ">Daily Time Accounting<" in r.text
 
 
-def test_nav_split_over_limit_pushes_extras_to_dropdown():
-    from personal_db.services.daemon.http import _split_nav
-    trackers = ["a", "b", "c", "d", "e", "f", "g", "h"]
-    visible, overflow = _split_nav(trackers, active=None, limit=6)
-    assert visible == ["a", "b", "c", "d", "e", "f"]
-    assert overflow == ["g", "h"]
-
-
-def test_nav_split_swaps_active_into_visible():
-    """If the active tracker would be hidden in overflow, swap it into the
-    last visible slot so the highlighted tab stays on screen."""
-    from personal_db.services.daemon.http import _split_nav
-    trackers = ["a", "b", "c", "d", "e", "f", "g", "h"]
-    visible, overflow = _split_nav(trackers, active="h", limit=6)
-    assert "h" in visible
-    assert "h" not in overflow
-    # The displaced tracker (last of original visible) is now in overflow
-    assert "f" in overflow
-
-
-def test_nav_split_active_already_visible_unchanged():
-    from personal_db.services.daemon.http import _split_nav
-    trackers = ["a", "b", "c", "d", "e", "f", "g", "h"]
-    visible, overflow = _split_nav(trackers, active="b", limit=6)
-    assert visible == ["a", "b", "c", "d", "e", "f"]
-    assert overflow == ["g", "h"]
-
-
-def test_nav_overflow_renders_in_dashboard_html(tmp_path):
-    """End-to-end: install enough trackers to exceed the limit; the rendered
-    page should include a 'more' dropdown with the overflow links."""
+def test_nav_context_renders_every_bundled_tracker(tmp_path):
+    """End-to-end: install every bundled tracker; every one should show up as
+    a sidebar link (no visible-count cap anymore)."""
     from personal_db.core.installer import list_bundled
     cfg = _setup(tmp_path, *list_bundled())
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/")
     assert r.status_code == 200
-    # The "more" summary appears
-    assert "more ▾" in r.text
-    # Dropdown menu container is present
-    assert "nav-more-menu" in r.text
+    for tracker in list_bundled():
+        assert f'href="/t/{tracker}"' in r.text
 
 
 def test_every_bundled_tracker_viz_renders_without_error(tmp_path):
@@ -557,7 +533,7 @@ def test_base_uses_vendored_ag_assets(tmp_path):
     assert "/static/vendor/ag-grid-community/35.3.0/ag-grid-community.min.js" in r.text
     assert "/static/vendor/ag-charts-community/13.3.0/ag-charts-community.min.js" in r.text
     assert "/static/pdb-grid.js?v=6" in r.text
-    assert "/static/style.css?v=finance-app-12" in r.text
+    assert "/static/style.css?v=app-shell-1" in r.text
     assert "/static/pdb-app-state.js?v=2" in r.text
     assert "/static/apps/finance-burn-rate.js?v=4" in r.text
     assert "/static/apps/finance-categorize.js?v=1" in r.text

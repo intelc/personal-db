@@ -165,3 +165,67 @@ schema:
     step = m.setup_steps[0]
     assert isinstance(step, OAuthStep)
     assert step.adapter is None
+
+
+def test_humanize_tracker_name_simple_words():
+    from personal_db.core.manifest import humanize_tracker_name
+
+    assert humanize_tracker_name("screen_time") == "Screen Time"
+    assert humanize_tracker_name("daily_time_accounting") == "Daily Time Accounting"
+    assert humanize_tracker_name("code_agent_activity") == "Code Agent Activity"
+    assert humanize_tracker_name("chrome_history") == "Chrome History"
+    assert humanize_tracker_name("crypto_wallet") == "Crypto Wallet"
+    assert humanize_tracker_name("life_context") == "Life Context"
+    assert humanize_tracker_name("mosspath_lite") == "Mosspath Lite"
+
+
+def test_humanize_tracker_name_casing_overrides():
+    from personal_db.core.manifest import humanize_tracker_name
+
+    assert humanize_tracker_name("github_commits") == "GitHub Commits"
+    assert humanize_tracker_name("imessage") == "iMessage"
+    assert humanize_tracker_name("xhs_saved") == "XHS Saved"
+    assert humanize_tracker_name("omi") == "Omi"
+    assert humanize_tracker_name("oura") == "Oura"
+    assert humanize_tracker_name("whoop") == "Whoop"
+
+
+def test_manifest_display_title_falls_back_to_humanized_name(tmp_path):
+    p = tmp_path / "manifest.yaml"
+    p.write_text(
+        "name: github_commits\n"
+        "description: x\n"
+        "permission_type: api_key\n"
+        "time_column: ts\n"
+        "schema:\n"
+        "  tables: {}\n"
+    )
+    m = load_manifest(p)
+    assert m.title is None
+    assert m.display_title() == "GitHub Commits"
+
+
+def test_manifest_display_title_prefers_explicit_title(tmp_path):
+    p = tmp_path / "manifest.yaml"
+    p.write_text(
+        "name: github_commits\n"
+        "title: My Commits\n"
+        "description: x\n"
+        "permission_type: api_key\n"
+        "time_column: ts\n"
+        "schema:\n"
+        "  tables: {}\n"
+    )
+    m = load_manifest(p)
+    assert m.title == "My Commits"
+    assert m.display_title() == "My Commits"
+
+
+def test_permission_label():
+    from personal_db.core.manifest import permission_label
+
+    assert permission_label("none") == "No permissions"
+    assert permission_label("api_key") == "API key"
+    assert permission_label("oauth") == "OAuth"
+    assert permission_label("full_disk_access") == "Full Disk Access"
+    assert permission_label("manual") == "Manual"

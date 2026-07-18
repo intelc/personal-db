@@ -1,10 +1,11 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m %}
 {% block title %}{{ viz.name }} · personal_db{% endblock %}
+{% block page_title %}{{ viz.name }}{% endblock %}
 
 {% block content %}
 <section class="block">
-  <h1 class="block-h">{{ viz.name|upper }} {{ m.refresh_btn(viz.tracker) }} {{ m.setup_btn(viz.tracker) }}</h1>
+  <h1 class="block-h" title="{{ viz.slug }}">{{ viz.name|upper }} {{ m.refresh_btn(viz.tracker) }} {{ m.setup_btn(viz.tracker) }}</h1>
   {% if viz.description %}<p class="meta viz-desc">{{ viz.description }}</p>{% endif %}
   {{ html|safe }}
   <p class="meta viz-footer">

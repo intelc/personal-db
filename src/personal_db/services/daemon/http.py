@@ -46,6 +46,7 @@ from personal_db.core.apps import (
 from personal_db.core.config import Config
 from personal_db.core.daemon_token import ensure_token
 from personal_db.core.log_event import log_life_context
+from personal_db.core.manifest import ManifestError, humanize_tracker_name, load_manifest
 from personal_db.services.daemon import auth as _auth
 from personal_db.services.daemon.agent_terminal import AgentTerminalManager
 from personal_db.services.daemon.otc import OtcStore
@@ -58,8 +59,6 @@ from personal_db.services.daemon.routes.sync import register_sync_routes
 from personal_db.services.ui.viz import discover, list_trackers_with_viz, load_dashboard_slugs
 
 _HERE = Path(__file__).resolve().parents[2] / "ui"
-
-_NAV_VISIBLE_LIMIT = 6
 
 _DAEMON_START_TS: float = _time.time()
 _WRITE_METHODS = {"POST", "DELETE"}
@@ -139,27 +138,20 @@ def _verify_daemon_host(request: Request, *, port: int) -> None:
         raise HTTPException(status_code=400, detail="invalid host header")
 
 
-def _split_nav(
-    trackers: list[str], active: str | None, limit: int = _NAV_VISIBLE_LIMIT
-) -> tuple[list[str], list[str]]:
-    """Cap inline nav at `limit`; remainder goes into a dropdown.
+def _tracker_title(cfg: Config, tracker: str) -> str:
+    """Display title for a tracker page heading.
 
-    If the active tracker would otherwise be hidden in the dropdown, swap it
-    into the last visible slot so the highlighted tab always shows. The
-    displaced tracker bumps into the dropdown (sorted) so behavior stays
-    deterministic across page loads.
+    Reads the installed tracker's manifest.yaml (one small file, once per
+    page load) for `display_title()`; falls back to the mechanical
+    `humanize_tracker_name` if the manifest is missing/unparseable.
     """
-    if len(trackers) <= limit:
-        return list(trackers), []
-    visible = list(trackers[:limit])
-    overflow = list(trackers[limit:])
-    if active and active in overflow:
-        displaced = visible[-1]
-        visible[-1] = active
-        overflow.remove(active)
-        overflow.append(displaced)
-        overflow.sort()
-    return visible, overflow
+    manifest_path = cfg.trackers_dir / tracker / "manifest.yaml"
+    if manifest_path.is_file():
+        try:
+            return load_manifest(manifest_path).display_title()
+        except ManifestError:
+            pass
+    return humanize_tracker_name(tracker)
 
 
 def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
@@ -212,14 +204,28 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
         # take effect without restarting the server.
         return discover(cfg)
 
-    def _nav_context(reg, active=None):
-        visible, overflow = _split_nav(list_trackers_with_viz(reg), active)
-        return {"nav_visible": visible, "nav_overflow": overflow}
-
     def _app_registry():
         # Like tracker visualizations, apps are re-discovered per request so
         # local edits to app.yaml/views.py/queries.sql are picked up quickly.
         return discover_apps(cfg)
+
+    def _nav_context(reg, active=None):
+        # Sidebar nav data: tracker titles are derived mechanically from the
+        # slug (no manifest file read per request -- see humanize_tracker_name),
+        # apps reuse the same registry the /a routes build their listing from.
+        nav_trackers = [
+            {"slug": t, "title": humanize_tracker_name(t)}
+            for t in list_trackers_with_viz(reg)
+        ]
+        try:
+            apps = _app_registry()
+            nav_apps = [
+                {"name": a.name, "title": a.manifest.title}
+                for a in sorted(apps.values(), key=lambda a: a.manifest.title)
+            ]
+        except Exception:
+            nav_apps = []
+        return {"nav_trackers": nav_trackers, "nav_apps": nav_apps}
 
     register_agent_routes(
         api_router,
@@ -264,7 +270,7 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
             for p in definition.manifest.pages
         ]
         return {
-            "active": "apps",
+            "active": definition.name,
             "app": definition,
             "page": page,
             "app_nav": app_nav,
@@ -347,6 +353,7 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
             context={
                 "active": tracker,
                 "tracker": tracker,
+                "tracker_title": _tracker_title(cfg, tracker),
                 "rendered": rendered,
                 **_nav_context(reg, active=tracker),
             },

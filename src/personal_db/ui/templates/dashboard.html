@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m %}
 {% block title %}dashboard · personal_db{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
 
 {% block content %}
 {% if rendered %}
   {% for entry in rendered %}
     <section class="block">
       <h2 class="block-h">
-        <a href="/v/{{ entry.viz.slug }}" class="viz-title-link">{{ entry.viz.name|upper }}</a>
-        <span class="viz-meta">{{ entry.viz.slug }}</span>
+        <a href="/v/{{ entry.viz.slug }}" class="viz-title-link" title="{{ entry.viz.slug }}">{{ entry.viz.name|upper }}</a>
         {{ m.refresh_btn(entry.viz.tracker) }}
       </h2>
       {{ entry.html|safe }}
@@ -25,8 +25,8 @@
   </section>
 {% endif %}
 
-<section class="block">
-  <h2 class="block-h">CONFIGURE</h2>
+<details class="block">
+  <summary class="block-h">CONFIGURE</summary>
   <p class="meta">
     Edit <code>~/personal_db/.config/dashboard.yaml</code> with a
     <code>viz:</code> list of slugs to control what shows here. Available slugs:
@@ -34,5 +34,5 @@
   <ul class="slug-list">
     {% for entry in rendered %}<li><code>{{ entry.viz.slug }}</code></li>{% endfor %}
   </ul>
-</section>
+</details>
 {% endblock %}
