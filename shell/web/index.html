@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>PersonalDB</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #0f172a;
+        color: #e2e8f0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        margin: 0;
+      }
+      .wrap { text-align: center; }
+      .dot {
+        width: 10px; height: 10px; border-radius: 50%;
+        background: #2dd4bf; display: inline-block; margin-right: 0.5rem;
+        animation: pulse 1.2s ease-in-out infinite;
+      }
+      @keyframes pulse { 0%,100% { opacity: 0.3 } 50% { opacity: 1 } }
+    </style>
+  </head>
+  <body>
+    <!--
+      This page is a fallback only. In normal operation the Rust core
+      resolves the daemon's health/auth state *before* creating the
+      window and points it directly at either the authenticated
+      dashboard bootstrap URL or daemon-down.html — see
+      src-tauri/src/daemon.rs::open_dashboard. If you're seeing this,
+      the window was created without an explicit target URL.
+    -->
+    <div class="wrap">
+      <p><span class="dot"></span>Loading PersonalDB&hellip;</p>
+    </div>
+  </body>
+</html>

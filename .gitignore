@@ -11,3 +11,8 @@ node_modules/
 .env
 *.env
 .worktrees/
+
+# Rust (shell/) and packaging build artifacts
+target/
+shell/src-tauri/gen/
+packaging/build/

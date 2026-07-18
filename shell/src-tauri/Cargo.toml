@@ -1,0 +1,27 @@
+[package]
+name = "personal-db-shell"
+version = "0.1.0"
+description = "Menu-bar shell for the personal_db daemon"
+authors = ["personal_db"]
+edition = "2021"
+rust-version = "1.75"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-notification = "2"
+tauri-plugin-autostart = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# default-tls (Security.framework on macOS) avoids needing an OpenSSL
+# toolchain just to talk to 127.0.0.1 over plain HTTP.
+reqwest = { version = "0.12", features = ["json"] }
+url = "2"
+dirs = "6"
+
+[features]
+# `custom-protocol` is required by tauri-build's generate_context! wiring
+# when frontendDist is a static directory rather than a dev server.
+custom-protocol = ["tauri/custom-protocol"]
