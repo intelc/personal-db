@@ -3,12 +3,15 @@
 // actually ships for.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod cli_install;
 mod daemon;
+mod mcp_connect;
+mod onboarding;
 
 #[cfg(target_os = "macos")]
 use tauri::ActivationPolicy;
 use tauri::{
-    menu::{CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder},
+    menu::{CheckMenuItemBuilder, MenuBuilder, MenuItem, MenuItemBuilder, SubmenuBuilder},
     tray::TrayIconBuilder,
     AppHandle,
 };
@@ -39,6 +42,36 @@ fn spawn_sync_now(app: &AppHandle) {
         if let Err(e) = daemon::sync_now(&handle).await {
             eprintln!("sync_now failed: {e}");
         }
+    });
+}
+
+/// Runs `cli_install::install_or_repair` on a background thread (it may
+/// block for a while on the `osascript` admin-privileges prompt) and
+/// updates the menu item's title + shows a notification once it settles.
+fn spawn_install_cli(app: &AppHandle, item: MenuItem<tauri::Wry>) {
+    let handle = app.clone();
+    std::thread::spawn(move || match cli_install::install_or_repair(&handle) {
+        Ok(link) => {
+            let _ = item.set_text(cli_install::menu_title(cli_install::LinkState::Correct));
+            daemon::notify(
+                &handle,
+                "Command Line Tool Installed",
+                &format!("personal-db is now available at {}", link.display()),
+            );
+        }
+        Err(e) => {
+            daemon::notify(&handle, "Command Line Tool Install Failed", &e);
+        }
+    });
+}
+
+/// Runs `<cli> mcp install <target>` on a background thread and reports the
+/// result via a native notification.
+fn spawn_mcp_connect(app: &AppHandle, target: &'static str, label: &'static str) {
+    let handle = app.clone();
+    std::thread::spawn(move || match mcp_connect::install(&handle, target) {
+        Ok(detail) => daemon::notify(&handle, &format!("Connected to {label}"), &detail),
+        Err(e) => daemon::notify(&handle, &format!("Failed to connect to {label}"), &e),
     });
 }
 
@@ -75,10 +108,38 @@ fn main() {
                 CheckMenuItemBuilder::with_id("start_at_login", "Start at Login")
                     .checked(autostart_enabled)
                     .build(app)?;
+
+            // "Install Command Line Tool..." / "Connect AI Apps" --
+            // DMG-user onboarding: exposes the embedded CLI (see
+            // packaging/cli/personal-db, cli_install.rs) on PATH and wires
+            // it into Claude Code / Claude Desktop / Cursor's MCP configs
+            // (mcp_connect.rs), matching how the daemon-side `personal-db
+            // mcp install` already works for a venv install.
+            let app_handle = app.handle().clone();
+            let cli_state = cli_install::describe_state(&app_handle);
+            let install_cli_item =
+                MenuItemBuilder::with_id("install_cli", cli_install::menu_title(cli_state))
+                    .build(app)?;
+
+            let connect_items: Vec<_> = mcp_connect::TARGETS
+                .iter()
+                .copied()
+                .map(|(id, label)| MenuItemBuilder::with_id(format!("connect_{id}"), label).build(app))
+                .collect::<Result<_, _>>()?;
+            let connect_submenu = {
+                let mut builder = SubmenuBuilder::new(app, "Connect AI Apps");
+                for item in &connect_items {
+                    builder = builder.item(item);
+                }
+                builder.build()?
+            };
+
             let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
 
             let menu = MenuBuilder::new(app)
                 .items(&[&open_item, &sync_item, &status_item])
+                .separator()
+                .items(&[&install_cli_item, &connect_submenu])
                 .separator()
                 .items(&[&start_login_item])
                 .separator()
@@ -86,6 +147,7 @@ fn main() {
                 .build()?;
 
             let start_login_item_for_toggle = start_login_item.clone();
+            let install_cli_item_for_update = install_cli_item.clone();
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
@@ -94,6 +156,14 @@ fn main() {
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "open_dashboard" | "status" => spawn_open_dashboard(app),
                     "sync_now" => spawn_sync_now(app),
+                    "install_cli" => spawn_install_cli(app, install_cli_item_for_update.clone()),
+                    "connect_claude_code" => {
+                        spawn_mcp_connect(app, "claude_code", "Claude Code")
+                    }
+                    "connect_claude_desktop" => {
+                        spawn_mcp_connect(app, "claude_desktop", "Claude Desktop")
+                    }
+                    "connect_cursor" => spawn_mcp_connect(app, "cursor", "Cursor"),
                     "start_at_login" => {
                         // `tauri-plugin-autostart` is the *interim*
                         // mechanism for "Start at Login" -- see
@@ -125,6 +195,11 @@ fn main() {
             // First launch: open the dashboard immediately, same as clicking
             // "Open Dashboard" from the tray.
             spawn_open_dashboard(&app.handle().clone());
+
+            // One-time nudge toward the Set Up items above, if the user
+            // hasn't touched either the CLI symlink or any MCP host yet
+            // (see onboarding.rs -- no-ops on every launch after the first).
+            onboarding::maybe_nudge(&app_handle);
 
             Ok(())
         })

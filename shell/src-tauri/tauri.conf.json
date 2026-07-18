@@ -25,7 +25,8 @@
     ],
     "externalBin": ["../../packaging/build/payload/personal-db-daemon"],
     "resources": {
-      "../../packaging/build/payload/python": "python"
+      "../../packaging/build/payload/python": "python",
+      "../../packaging/cli": "cli"
     },
     "macOS": {
       "minimumSystemVersion": "11.0",

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import sys
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -21,6 +23,99 @@ def test_personal_db_path_raises_when_missing():
         pytest.raises(RuntimeError, match="not found"),
     ):
         mcp_setup._personal_db_path()
+
+
+# --- argv[0] / stable-symlink preference (DMG-user onboarding) ---
+#
+# These exercise `_personal_db_path()`'s resolution order for the bundled
+# Tauri shell's CLI wrapper: prefer the /usr/local/bin/personal-db symlink
+# when it's the one pointing at the currently-running binary, else the
+# running binary's own resolved path, else fall back to shutil.which(). See
+# shell/src-tauri/src/cli_install.rs (creates the symlink) and
+# shell/src-tauri/src/mcp_connect.rs (invokes the CLI with the same
+# preference, so the two sides agree on which path ends up in a host's MCP
+# config).
+
+
+def _set_argv0(monkeypatch, path: Path) -> None:
+    monkeypatch.setattr(sys, "argv", [str(path)] + sys.argv[1:])
+
+
+def test_resolve_running_cli_path_none_when_argv0_not_personal_db(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["/usr/bin/pytest"])
+    assert mcp_setup._resolve_running_cli_path() is None
+
+
+def test_resolve_running_cli_path_none_when_argv0_named_personal_db_but_missing(
+    monkeypatch, tmp_path
+):
+    # Name matches but no file exists there -- e.g. a stale/garbage argv[0].
+    _set_argv0(monkeypatch, tmp_path / "personal-db")
+    assert mcp_setup._resolve_running_cli_path() is None
+
+
+def test_resolve_running_cli_path_returns_resolved_argv0(monkeypatch, tmp_path):
+    running = tmp_path / "personal-db"
+    running.write_text("#!/bin/sh\n")
+    _set_argv0(monkeypatch, running)
+    assert mcp_setup._resolve_running_cli_path() == str(running.resolve())
+
+
+def test_personal_db_path_uses_running_argv0_when_no_stable_symlink(monkeypatch, tmp_path):
+    running = tmp_path / "personal-db"
+    running.write_text("#!/bin/sh\n")
+    _set_argv0(monkeypatch, running)
+    monkeypatch.setattr(mcp_setup, "_CLI_LINK_PATH", tmp_path / "linkdir" / "personal-db")
+
+    assert mcp_setup._personal_db_path() == str(running.resolve())
+
+
+def test_personal_db_path_prefers_stable_symlink_when_it_matches(monkeypatch, tmp_path):
+    bundle_wrapper = tmp_path / "bundle" / "Contents" / "Resources" / "cli" / "personal-db"
+    bundle_wrapper.parent.mkdir(parents=True)
+    bundle_wrapper.write_text("#!/bin/sh\n")
+    _set_argv0(monkeypatch, bundle_wrapper)
+
+    link_dir = tmp_path / "linkdir"
+    link_dir.mkdir()
+    link = link_dir / "personal-db"
+    link.symlink_to(bundle_wrapper)
+    monkeypatch.setattr(mcp_setup, "_CLI_LINK_PATH", link)
+
+    # The stable symlink path wins over the raw bundle path -- this is what
+    # a Claude Code/Cursor/Claude Desktop config should end up storing.
+    assert mcp_setup._personal_db_path() == str(link)
+
+
+def test_personal_db_path_ignores_symlink_pointing_elsewhere(monkeypatch, tmp_path):
+    running = tmp_path / "bundle-a" / "personal-db"
+    running.parent.mkdir(parents=True)
+    running.write_text("#!/bin/sh\n")
+    _set_argv0(monkeypatch, running)
+
+    other_bundle = tmp_path / "bundle-b" / "personal-db"
+    other_bundle.parent.mkdir(parents=True)
+    other_bundle.write_text("#!/bin/sh\n")
+
+    link_dir = tmp_path / "linkdir"
+    link_dir.mkdir()
+    link = link_dir / "personal-db"
+    # Symlink points at a *different* (e.g. stale) bundle than the one
+    # currently running -- must not be preferred.
+    link.symlink_to(other_bundle)
+    monkeypatch.setattr(mcp_setup, "_CLI_LINK_PATH", link)
+
+    assert mcp_setup._personal_db_path() == str(running.resolve())
+
+
+def test_personal_db_path_falls_back_to_which_when_argv0_is_not_cli(monkeypatch, tmp_path):
+    monkeypatch.setattr(sys, "argv", ["/usr/bin/pytest"])
+    monkeypatch.setattr(mcp_setup, "_CLI_LINK_PATH", tmp_path / "linkdir" / "personal-db")
+    monkeypatch.setattr(
+        "personal_db.services.wizard.mcp_setup.shutil.which",
+        lambda x: "/fake/personal-db" if x == "personal-db" else None,
+    )
+    assert mcp_setup._personal_db_path() == str(Path("/fake/personal-db").resolve())
 
 
 def test_upsert_creates_new_json(tmp_path):

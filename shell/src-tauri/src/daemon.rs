@@ -355,7 +355,7 @@ fn summarize_results(results: &serde_json::Value) -> (usize, usize) {
     (ok, err)
 }
 
-fn notify(app: &AppHandle, title: &str, body: &str) {
+pub(crate) fn notify(app: &AppHandle, title: &str, body: &str) {
     if let Err(e) = app.notification().builder().title(title).body(body).show() {
         eprintln!("notification failed: {e}");
     }

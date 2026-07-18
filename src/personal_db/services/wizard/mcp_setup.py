@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,10 +17,66 @@ _BACK = "__BACK__"
 _AUTO = "__AUTO__"
 _MANUAL = "__MANUAL__"
 
+# The stable, on-PATH symlink the Tauri shell's "Install Command Line
+# Tool..." tray item creates (see shell/src-tauri/src/cli_install.rs),
+# pointing at whatever bundle is currently installed. Module-level so tests
+# can monkeypatch it to a scratch path instead of touching the real
+# /usr/local/bin.
+_CLI_LINK_PATH = Path("/usr/local/bin/personal-db")
+
+
+def _resolve_running_cli_path() -> str | None:
+    """Absolute path to the personal-db entry point invoking THIS process,
+    if argv[0] is one. Mirrors
+    services/daemon/install.py::_resolve_cli_binary's argv[0] preference:
+    the process running `<venv>/bin/personal-db mcp install ...` (or the
+    frozen bundle's `Contents/Resources/cli/personal-db` wrapper invoked
+    directly, or the /usr/local/bin symlink pointing at it) should write
+    *that* binary's path into the host config, not some unrelated copy
+    that happens to shadow it on PATH. Returns None when argv[0] isn't a
+    personal-db entry point at all (e.g. this is invoked as a library call
+    from a plain `python`/pytest process).
+    """
+    argv0 = Path(sys.argv[0]).resolve()
+    if argv0.name == "personal-db" and argv0.is_file():
+        return str(argv0)
+    return None
+
 
 def _personal_db_path() -> str:
     """Absolute path to the personal-db CLI shim. Required for MCP target configs:
-    they spawn child processes without inheriting PATH."""
+    they spawn child processes without inheriting PATH.
+
+    Resolution order:
+      1. The /usr/local/bin/personal-db symlink (`_CLI_LINK_PATH`), IF it
+         resolves to the exact binary currently running this process --
+         i.e. it's the Tauri shell's tray-installed symlink pointing at
+         this exact bundle (see shell/src-tauri/src/cli_install.rs and
+         mcp_connect.rs, which invoke the CLI via that same preference so
+         the two sides agree). This is the most *stable* choice: it
+         survives the app bundle being resigned, rebuilt, or moved, so a
+         host's MCP config written against it keeps working across app
+         updates.
+      2. argv[0] resolved, when it's itself a personal-db entry point (a
+         venv's `bin/personal-db` shim, or the bundle's
+         `Contents/Resources/cli/personal-db` wrapper invoked directly
+         without the symlink) -- mirrors
+         services/daemon/install.py::_resolve_cli_binary's argv[0]
+         preference.
+      3. `shutil.which("personal-db")` as a last resort, for the classic
+         case of calling this outside a `personal-db ...` invocation
+         entirely (argv[0] is `python`/`pytest`/etc.).
+    """
+    running = _resolve_running_cli_path()
+    if running is not None:
+        try:
+            if _CLI_LINK_PATH.is_symlink() and os.path.realpath(_CLI_LINK_PATH) == os.path.realpath(
+                running
+            ):
+                return str(_CLI_LINK_PATH)
+        except OSError:
+            pass
+        return running
     p = shutil.which("personal-db")
     if not p:
         raise RuntimeError(
