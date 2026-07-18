@@ -45,6 +45,7 @@ _TOP_LEVEL_HIDDEN = {
 
 _DEV_VISIBLE = {
     "query",
+    "contract",
     "context",
     "enrich",
     "source",

@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from personal_db.cli import (
     app_cmd,
     code_agent_hook_cmd,
+    contract_cmd,
     context_cmd,
     daemon_cmd,
     enrich_cmd,
@@ -120,6 +121,7 @@ app.add_typer(code_agent_hook_cmd.app, name="code-agent-hook-write", hidden=True
 # --- `personal-db dev ...`: developer/plumbing commands ---------------------
 
 dev_app.command("query")(query_cmd.query)
+dev_app.command("contract")(contract_cmd.contract)
 dev_app.add_typer(context_cmd.app, name="context")
 dev_app.add_typer(enrich_cmd.app, name="enrich")
 dev_app.add_typer(source_cmd.app, name="source")
