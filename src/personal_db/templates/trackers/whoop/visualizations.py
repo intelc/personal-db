@@ -76,7 +76,7 @@ def render_sleep_efficiency(cfg: Config) -> str:
         items.append((d[5:], rows.get(d, 0)))
     return (
         '<p class="meta">whoop sleep efficiency · last 30 days · higher is better (naps excluded)</p>'
-        + vertical_bars(items, color="#1a3a5e", show_every_nth_label=5)
+        + vertical_bars(items, color="var(--chart-accent)", show_every_nth_label=5)
     )
 
 

@@ -577,7 +577,7 @@ def render_session_timeline(cfg: Config) -> str:
     parts.append(
         f'<svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" '
         f'style="width: 100%; height: auto; max-height: {H + 20}px; '
-        f'border: 1px solid #000; background: #fafafa;">'
+        f'border: 1px solid var(--border); background: var(--bg-inset);">'
     )
     # Gridlines: hour (full, darker, labeled every 2h) + half-hour (faint, no label).
     for half in range(0, 49):  # 0, 0.5h, 1h, ... 24h
@@ -586,7 +586,7 @@ def render_session_timeline(cfg: Config) -> str:
             continue
         x = PAD_L + (ts_h - cutoff_ts) / span * plot_w
         is_hour = (half % 2) == 0
-        stroke = "#ddd" if is_hour else "#eee"
+        stroke = "var(--chart-grid)" if is_hour else "color-mix(in srgb, var(--chart-grid) 55%, transparent)"
         parts.append(
             f'<line x1="{x:.1f}" y1="{PAD_T}" x2="{x:.1f}" y2="{PAD_T + plot_h}" '
             f'stroke="{stroke}" stroke-width="1" />'
@@ -596,7 +596,7 @@ def render_session_timeline(cfg: Config) -> str:
             label_dt = datetime.fromtimestamp(ts_h)
             parts.append(
                 f'<text x="{x:.1f}" y="{H - PAD_B + 14}" font-size="10" '
-                f'text-anchor="middle" fill="#666" font-family="ui-monospace, monospace">'
+                f'text-anchor="middle" fill="var(--chart-muted)" font-family="ui-monospace, monospace">'
                 f"{label_dt.strftime('%H:%M')}</text>"
             )
 
@@ -635,13 +635,13 @@ def render_session_timeline(cfg: Config) -> str:
         parts.append(_agent_glyph(agent, color, gl_x, gl_y, gl_size))
         parts.append(
             f'<text x="{PAD_L - 6}" y="{y + LANE_H / 2 + 4:.1f}" font-size="10" '
-            f'text-anchor="end" fill="#333" font-family="ui-monospace, monospace">'
+            f'text-anchor="end" fill="var(--chart-fg)" font-family="ui-monospace, monospace">'
             f"{escape(label)}</text>"
         )
         # Lane background
         parts.append(
             f'<rect x="{PAD_L}" y="{y}" width="{plot_w}" height="{LANE_H}" '
-            f'fill="#fff" stroke="#eee" />'
+            f'fill="var(--bg)" stroke="var(--border)" />'
         )
         # Intervals
         for r in sessions[key]:
@@ -678,7 +678,7 @@ def render_session_timeline(cfg: Config) -> str:
             x = x_of(kr["timestamp"])
             parts.append(
                 f'<line x1="{x:.1f}" y1="{tick_y}" x2="{x:.1f}" y2="{tick_y + 4}" '
-                f'stroke="#000" stroke-width="0.6" stroke-opacity="0.5" />'
+                f'stroke="var(--chart-fg)" stroke-width="0.6" stroke-opacity="0.5" />'
             )
 
     parts.append("</svg>")
@@ -702,7 +702,7 @@ def render_session_timeline(cfg: Config) -> str:
         "<style>"
         ".cga-tip-wrap{position:relative;}"
         ".cga-tip{position:absolute;display:none;pointer-events:none;"
-        "background:#000;color:#fff;padding:5px 7px;font-size:11px;"
+        "background:var(--fg);color:var(--bg);padding:5px 7px;font-size:11px;"
         "font-family:ui-monospace,monospace;border-radius:3px;"
         "max-width:520px;white-space:pre-wrap;line-height:1.4;"
         "z-index:1000;}"
