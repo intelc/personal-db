@@ -38,6 +38,16 @@ cd personal-db
 source .venv/bin/activate
 ```
 
+## Native app (in development)
+
+A Tauri menu-bar app that wraps the daemon — tray icon, "Open Dashboard"
+launches the same web UI in a native window, "Sync Now", no dock icon — is
+in progress under [`shell/`](shell/README.md). It's currently unsigned and
+local-build-only; see [`packaging/`](packaging/README.md) for the
+freeze-daemon-into-a-standalone-binary and sign/notarize/DMG story that
+turns it into a real distributable app. Until that lands, the CLI + browser
+dashboard above is the primary way to use personal_db.
+
 ## Quick start
 
 `personal-db setup` is the only command you need to run after install. It walks through tracker selection, configuration, daemon install, and agent wire-up in one flow.

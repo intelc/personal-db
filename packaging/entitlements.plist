@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened-runtime entitlements for the signed PersonalDB.app + its frozen
+  daemon sidecar (see sign-and-notarize.sh). Hardened runtime is required
+  for notarization; these three exceptions are required *in addition* to
+  it because the payload is a python-build-standalone CPython interpreter,
+  not a normal compiled Mach-O app:
+
+  - allow-jit / allow-unsigned-executable-memory: CPython's own bytecode
+    interpreter (and any C-extension that JITs, e.g. some numeric/crypto
+    libs) writes to and executes from memory it allocated at runtime.
+    Hardened runtime blocks W^X-violating executable memory by default;
+    without these two, the interpreter can crash or refuse to start.
+  - disable-library-validation: hardened runtime otherwise requires every
+    dylib a signed binary loads to be signed by the *same* Team ID. CPython
+    dlopens compiled extension modules (.so files) from site-packages at
+    import time, and those are ordinary Python-ecosystem wheels signed (if
+    at all) by whoever built them -- not us. Without this, `import ssl`,
+    `import cryptography`, etc. fail under a hardened-runtime-signed
+    interpreter.
+
+  This is a real (if unavoidable) reduction in hardened runtime's
+  protection -- it's the standard tradeoff every frozen-Python-as-a-signed-
+  macOS-app project makes (PyInstaller/py2app apps that embed C extensions
+  all need the same three). Scope stays as narrow as the plan allows: no
+  other entitlements (no network-client sandboxing exception needed since
+  this app isn't sandboxed at all -- App Store distribution is explicitly
+  out of scope, see packaging/README.md -- and no camera/mic/etc entries).
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>

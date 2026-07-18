@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Template for the future SMAppService-registered agent (see
+  RegisterAgent.swift in this directory). NOT wired into the current shell/
+  build -- "Start at Login" uses tauri-plugin-autostart's plain
+  ~/Library/LaunchAgents plist today (see shell/src-tauri/src/main.rs).
+
+  To actually use this, a future build step would need to:
+    1. Copy this file to
+       PersonalDB.app/Contents/Library/LaunchAgents/com.personal_db.daemon.plist
+       (SMAppService.agent(plistName:) requires it at exactly that path
+       inside the signed bundle -- it will not find it anywhere else).
+    2. Make sure the path in BundleProgram below matches wherever the
+       frozen daemon sidecar (packaging/freeze-daemon.sh's
+       personal-db-daemon-aarch64-apple-darwin launcher, plus its sibling
+       python/ tree) actually lands once shell/'s tauri.conf.json grows a
+       bundle.externalBin + bundle.resources entry for it. The path below
+       is a *guess* at Tauri's externalBin convention
+       (Contents/MacOS/<name>-<target-triple>) -- verify against the real
+       built bundle layout before relying on it.
+    3. Re-sign the app afterward (this plist lives inside the signed
+       bundle, so it's covered by the outer `codesign` in
+       sign-and-notarize.sh -- no separate signing step needed for the
+       plist itself, but changing it after signing invalidates the
+       signature like any other bundle content change).
+
+  BundleProgram (not Program/ProgramArguments with an absolute path) is
+  deliberate: SMAppService-managed plists are resolved relative to the
+  app bundle, which is what makes this survive the user installing the
+  .app anywhere (Applications, Downloads, a different volume) -- the
+  plain-plist LaunchAgent approach tauri-plugin-autostart uses today has
+  to bake in an absolute path instead, which is the other half of the
+  fragility this replaces.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.personal_db.daemon</string>
+
+    <key>BundleProgram</key>
+    <string>Contents/MacOS/personal-db-daemon-aarch64-apple-darwin</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>dev</string>
+        <string>daemon</string>
+        <string>run</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart on crash, but not in a tight loop if it's failing fast --
+         SuccessfulExit=false means "only restart if it exited nonzero or
+         was killed", not "restart unconditionally"; ThrottleInterval
+         caps the restart rate. -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>~/Library/Logs/PersonalDB/daemon.log</string>
+    <key>StandardErrorPath</key>
+    <string>~/Library/Logs/PersonalDB/daemon.err.log</string>
+
+    <!-- PERSONAL_DB_ROOT intentionally left unset here -- the daemon's own
+         default (~/personal_db) matches what the CLI and this Tauri shell
+         both resolve to when the env var is absent, so there's no need to
+         hardcode it in the launchd environment. -->
+</dict>
+</plist>
