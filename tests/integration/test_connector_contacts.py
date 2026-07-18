@@ -14,7 +14,8 @@ from personal_db.sync import sync_one
 def _seed_addressbook(root: Path, *, source: str = "src1",
                       records: list[tuple] = (),  # type: ignore
                       phones: list[tuple] = (),
-                      emails: list[tuple] = ()):
+                      emails: list[tuple] = (),
+                      urls: list[tuple] = ()):
     """Build a fake AddressBook source DB at root/Sources/<source>/AddressBook-v22.abcddb."""
     db_path = root / "Sources" / source / "AddressBook-v22.abcddb"
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -32,6 +33,9 @@ def _seed_addressbook(root: Path, *, source: str = "src1",
         CREATE TABLE ZABCDEMAILADDRESS (
             Z_PK INTEGER PRIMARY KEY, ZOWNER INTEGER, ZADDRESS TEXT
         );
+        CREATE TABLE ZABCDURLADDRESS (
+            Z_PK INTEGER PRIMARY KEY, ZOWNER INTEGER, ZLABEL TEXT, ZURL TEXT
+        );
         """
     )
     con.executemany(
@@ -46,6 +50,10 @@ def _seed_addressbook(root: Path, *, source: str = "src1",
     con.executemany(
         "INSERT INTO ZABCDEMAILADDRESS(ZOWNER, ZADDRESS) VALUES (?, ?)",
         emails,
+    )
+    con.executemany(
+        "INSERT INTO ZABCDURLADDRESS(ZOWNER, ZLABEL, ZURL) VALUES (?, ?, ?)",
+        urls,
     )
     con.commit()
     con.close()
@@ -109,6 +117,10 @@ def test_contacts_sync_reads_addressbook(tmp_path, monkeypatch):
             (1, "alice@example.com"),
             (2, "Bob@ACME.com"),
         ],
+        urls=[
+            (1, "Telegram", "https://t.me/@idId(rawValue: 5387494480)"),
+            (2, "_$!<HomePage>!$_", "https://example.com"),
+        ],
     )
     monkeypatch.setenv("CONTACTS_ADDRESSBOOK_DIR", str(ab_root))
     sync_one(cfg, "contacts")
@@ -131,14 +143,23 @@ def test_contacts_sync_reads_addressbook(tmp_path, monkeypatch):
     # Org-only contact: display_name falls back to organization
     assert by_id["abc-uuid:3"][2] == "Org Only LLC"
 
-    # 5 handles total
-    assert len(handles) == 5
+    # 6 handles total: phones, emails, and one Telegram URL. Non-Telegram URLs are skipped.
+    assert len(handles) == 6
     # Alice's two phones normalize correctly
     alice_phones = sorted(h[2] for h in handles if h[0] == "abc-uuid:1" and h[1] == "phone")
     assert alice_phones == ["4085551212", "4089215283"]
     # Bob's email is lowercased
     bob_emails = [h for h in handles if h[0] == "abc-uuid:2" and h[1] == "email"]
     assert bob_emails == [("abc-uuid:2", "email", "bob@acme.com", "Bob@ACME.com")]
+    alice_telegram = [h for h in handles if h[0] == "abc-uuid:1" and h[1] == "telegram"]
+    assert alice_telegram == [
+        (
+            "abc-uuid:1",
+            "telegram",
+            "telegram:5387494480",
+            "https://t.me/@idId(rawValue: 5387494480)",
+        )
+    ]
 
 
 def test_contacts_resync_replaces_old_data(tmp_path, monkeypatch):

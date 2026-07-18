@@ -14,6 +14,7 @@ Schema columns of interest (all on the Z* CoreData prefix):
                       ZMODIFICATIONDATE
   ZABCDPHONENUMBER:   ZOWNER (FK to ZABCDRECORD.Z_PK), ZFULLNUMBER
   ZABCDEMAILADDRESS:  ZOWNER (FK), ZADDRESS
+  ZABCDURLADDRESS:    ZOWNER (FK), ZLABEL, ZURL
 
 ZMODIFICATIONDATE is Mac absolute time (seconds since 2001-01-01 UTC).
 
@@ -25,9 +26,11 @@ incremental sync isn't worth the complexity.
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.parse import unquote
 
 from personal_db.handle_norm import normalize_handle
 from personal_db.tracker import Tracker
@@ -95,6 +98,21 @@ def _display_name(first: str | None, last: str | None,
     return "(unnamed)"
 
 
+def _normalize_telegram_url(url: str | None) -> str:
+    if not url:
+        return ""
+    decoded = unquote(str(url).strip())
+    if not decoded:
+        return ""
+    raw_value = re.search(r"rawValue:\s*(\d+)", decoded, flags=re.IGNORECASE)
+    if raw_value:
+        return f"telegram:{raw_value.group(1)}"
+    tme_path = re.search(r"(?:https?://)?t\.me/@?([^/?#)\s]+)", decoded, flags=re.IGNORECASE)
+    if tme_path:
+        return f"telegram:{tme_path.group(1).lower()}"
+    return f"telegram:{decoded.lower()}"
+
+
 def _read_source(source: str, db_path: Path) -> tuple[list[dict], list[dict]]:
     """Pull contacts + handles from one AddressBook DB.
 
@@ -156,6 +174,27 @@ def _read_source(source: str, db_path: Path) -> tuple[list[dict], list[dict]]:
                 "kind": "email",
                 "normalized": normalized,
                 "raw": address,
+            })
+
+        # Telegram is stored by Contacts.app as a URL row labeled "Telegram".
+        # Preserve the raw Apple URL while normalizing to a stable handle.
+        for pk, label, url in con.execute(
+            "SELECT ZOWNER, ZLABEL, ZURL FROM ZABCDURLADDRESS WHERE ZURL IS NOT NULL"
+        ):
+            if pk not in record_pks:
+                continue
+            label_text = str(label or "").lower()
+            url_text = str(url or "")
+            if "telegram" not in label_text and "t.me/" not in url_text.lower():
+                continue
+            normalized = _normalize_telegram_url(url_text)
+            if not normalized:
+                continue
+            handles.append({
+                "contact_id": f"{source}:{pk}",
+                "kind": "telegram",
+                "normalized": normalized,
+                "raw": url_text,
             })
     finally:
         con.close()

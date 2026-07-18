@@ -1,5 +1,5 @@
 name: contacts
-description: macOS Contacts (AddressBook) — names + phones + emails. Reference table for joining against imessage handles, calendar attendees, etc.
+description: macOS Contacts (AddressBook) — names, phones, emails, and Telegram URLs. Reference table for joining against imessage handles, calendar attendees, etc.
 permission_type: manual
 
 setup_steps:
@@ -59,10 +59,10 @@ schema:
           semantic: FK to contacts.contact_id
         kind:
           type: TEXT
-          semantic: '"phone" or "email"'
+          semantic: '"phone", "email", or "telegram"'
         normalized:
           type: TEXT
-          semantic: normalized for matching — lowercased email, or last-10-digits of phone
+          semantic: normalized for matching — lowercased email, last-10-digits of phone, or stable Telegram identifier
         raw:
           type: TEXT
           semantic: original handle as stored in AddressBook
