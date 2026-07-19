@@ -258,16 +258,54 @@ async fn try_start_sidecar(app: &AppHandle, base: &str) -> bool {
         }
     };
 
+    // The sidecar binary is now a copy of the frozen python3 Mach-O itself
+    // (see packaging/freeze-daemon.sh step 4), not a wrapper script -- a
+    // script's code signature is a detached xattr that Tauri's updater
+    // extraction drops, which is exactly the bug this whole arrangement
+    // fixes (a Mach-O's signature is embedded in the file and survives
+    // that extraction). The cost: a standalone python-build-standalone
+    // interpreter resolves its stdlib/site-packages from the *real path of
+    // the running executable* by default, which is wrong once this binary
+    // lives at Contents/MacOS/personal-db-daemon (bundle.externalBin) while
+    // the `python/` tree it needs lives at the sibling Contents/Resources/python
+    // (bundle.resources) -- so PYTHONHOME is set explicitly here rather than
+    // left for the binary to infer. `resource_dir()` is the same call
+    // `cli_install.rs::wrapper_path` uses to find `Contents/Resources/cli/`;
+    // `.join("python")` mirrors tauri.conf.json's
+    // `"../../packaging/build/payload/python": "python"` resource mapping.
+    // PYTHONHOME alone is sufficient -- python-build-standalone's site
+    // module finds `<PYTHONHOME>/lib/python3.11/site-packages` on its own;
+    // no PYTHONPATH needed (verified locally against the actual frozen
+    // payload). `-m personal_db` is prepended to the args since this binary
+    // is bare python3 now, with no wrapper script to supply it.
+    let python_home = match app.path().resource_dir() {
+        Ok(dir) => dir.join("python"),
+        Err(e) => {
+            eprintln!("failed to resolve bundle resource dir for PYTHONHOME, not spawning sidecar: {e}");
+            return false;
+        }
+    };
+
     let port = daemon_port(base);
     let root = root_dir();
     eprintln!(
-        "daemon unreachable at {base}; spawning sidecar (root={}, port={port})",
-        root.display()
+        "daemon unreachable at {base}; spawning sidecar (root={}, port={port}, PYTHONHOME={})",
+        root.display(),
+        python_home.display()
     );
 
     let sidecar = sidecar
         .env("PERSONAL_DB_ROOT", root.to_string_lossy().to_string())
-        .args(["dev", "daemon", "run", "--port", &port.to_string()]);
+        .env("PYTHONHOME", python_home.to_string_lossy().to_string())
+        .args([
+            "-m",
+            "personal_db",
+            "dev",
+            "daemon",
+            "run",
+            "--port",
+            &port.to_string(),
+        ]);
 
     let child = match sidecar.spawn() {
         Ok((mut rx, child)) => {

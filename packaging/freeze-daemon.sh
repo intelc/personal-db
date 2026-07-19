@@ -4,11 +4,16 @@
 #   packaging/build/payload/
 #     python/                          python-build-standalone CPython, "install_only"
 #     python/lib/python3.11/site-packages/personal_db/...   (+ deps, incl. finance/xhs extras)
-#     personal-db-daemon-<TARGET_TRIPLE>   thin launcher, execs the embedded python
+#     personal-db-daemon-<TARGET_TRIPLE>   a COPY of python/bin/python3.<minor> itself (the
+#                                           real Mach-O, not a symlink/wrapper -- see step 4's
+#                                           comment for why it's not a launcher script anymore)
 #
-# This is NOT wired into shell/ as a Tauri sidecar yet (that's future work —
-# see packaging/README.md). This script's job is just to produce the payload
-# and prove it runs the daemon standalone (see VERIFY at the bottom / the
+# Wired into shell/ as a Tauri `bundle.externalBin` sidecar — see
+# shell/src-tauri/tauri.conf.json and shell/src-tauri/src/daemon.rs's
+# `try_start_sidecar` (which sets `PYTHONHOME` at spawn time; step 4 below
+# explains why that env var, not this script, now owns interpreter
+# discovery). This script's own job is just to produce the payload and
+# prove it runs the daemon standalone (see VERIFY at the bottom / the
 # `--verify` flag).
 #
 # Why python-build-standalone + uv, not a system Python: the whole point of
@@ -155,47 +160,58 @@ log "built $WHEEL"
 log "installing personal_db[finance,xhs] into the embedded interpreter"
 uv pip install --python "$EMBEDDED_PYTHON" "${WHEEL}[finance,xhs]"
 
-# --- 4. the launcher ------------------------------------------------------------
+# --- 4. the sidecar binary -------------------------------------------------
 
 # Tauri's `externalBin` sidecar convention expects a binary literally named
 # `<name>-<target-triple>` (it appends the triple itself when resolving
-# which platform binary to bundle/run) — so that's the name here, even
-# though wiring this into shell/src-tauri/tauri.conf.json's `bundle.externalBin`
-# + `bundle.resources` (for the sibling `python/` tree the launcher needs) is
-# future work, not done by this milestone.
+# which platform binary to bundle/run) — so that's the name here.
 #
-# `python -m personal_db` is exactly the CLI entry point
-# (personal_db.cli.main:app, wired via src/personal_db/__main__.py) — no
-# need for the `-c "from personal_db.cli.main import app; app()"` fallback
-# the plan anticipated; `-m personal_db` just works because the package
-# already ships a `__main__.py`.
-LAUNCHER="$PAYLOAD_DIR/personal-db-daemon-${TARGET_TRIPLE}"
-cat > "$LAUNCHER" <<'LAUNCHER_EOF'
-#!/usr/bin/env bash
-# Relocatable launcher: looks for the embedded `python/` interpreter in
-# either of the two layouts this launcher actually ships in:
-#   1. sibling directory -- packaging/build/payload/ (this script's own
-#      layout, and how freeze-daemon.sh's own --verify step runs it).
-#   2. shell/src-tauri/tauri.conf.json's `bundle.externalBin` copies this
-#      launcher into Contents/MacOS/ (the Tauri sidecar convention) while
-#      `bundle.resources` copies the `python/` tree into Contents/Resources/
-#      -- siblings under Contents/, but not siblings of each other, so the
-#      lookup falls back to `../Resources/python` relative to this script.
-set -euo pipefail
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -x "$DIR/python/bin/python3" ]]; then
-  PYTHON_BIN="$DIR/python/bin/python3"
-elif [[ -x "$DIR/../Resources/python/bin/python3" ]]; then
-  PYTHON_BIN="$(cd "$DIR/../Resources/python/bin" && pwd)/python3"
-else
-  echo "personal-db-daemon launcher: no embedded python found (looked in" >&2
-  echo "  $DIR/python and $DIR/../Resources/python)" >&2
+# THIS USED TO BE a thin bash launcher script that `exec`'d the embedded
+# python3 with `-m personal_db`. That broke through Tauri v2's *updater*
+# specifically (proved on the v0.1.2 rollout): macOS stores a script's code
+# signature as a **detached** xattr (`com.apple.cs.*`), never embedded in
+# the file, and Tauri's updater extracts its downloaded `.tar.gz` without
+# restoring xattrs (bsdtar/Finder/DMG installs do restore them, which is
+# why this only ever broke updater-delivered installs) — so every
+# updater-delivered copy of the script ran unsigned and failed
+# `codesign -vv --deep` with "code object is not signed at all:
+# Contents/MacOS/personal-db-daemon", even though it was a byte-identical
+# copy of a file that verified fine everywhere else.
+#
+# FIX: ship the frozen python3 **Mach-O** binary itself as the sidecar —
+# a Mach-O's signature is embedded in the file's own bytes (__LINKEDIT),
+# not a detached xattr, so it survives an xattr-dropping extraction. The
+# tradeoff: a standalone python-build-standalone interpreter resolves its
+# stdlib/site-packages (`sys.prefix`) from the *real path of the running
+# executable* by default, which breaks the moment this binary is copied to
+# Contents/MacOS/personal-db-daemon (nowhere near Contents/Resources/python/
+# — bundle.externalBin and bundle.resources land in sibling directories
+# under Contents/, not siblings of each other). So `PYTHONHOME` is no
+# longer this launcher's problem: the Rust spawn side
+# (`shell/src-tauri/src/daemon.rs::try_start_sidecar`) sets it explicitly
+# at spawn time (resolved via `app.path().resource_dir()` -> `.../python`
+# at runtime, matching `bundle.resources`'s `"...python": "python"`
+# mapping) and passes `-m personal_db` as the first two args, since this
+# binary is bare python3 now with no wrapper to supply that. PYTHONHOME
+# alone is sufficient — python-build-standalone's site module finds
+# `<PYTHONHOME>/lib/python3.11/site-packages` on its own; no PYTHONPATH
+# needed (verified locally: `PYTHONHOME=... <copy> -m personal_db --help`
+# resolves personal_db and all its deps with PYTHONPATH unset).
+#
+# The copy is of the *real* interpreter file (python3.<minor>), not the
+# `python3`/`python` symlinks next to it — same resolution
+# `sign-and-notarize.sh` already uses to find the interpreter to sign.
+SIDECAR_BIN="$PAYLOAD_DIR/personal-db-daemon-${TARGET_TRIPLE}"
+REAL_PYTHON_BIN="$(find "$PAYLOAD_DIR/python/bin" -maxdepth 1 -type f -perm -u+x -name 'python3.*' | head -1)"
+if [[ -z "$REAL_PYTHON_BIN" ]]; then
+  echo "couldn't find the real python3.X interpreter binary under $PAYLOAD_DIR/python/bin" >&2
   exit 1
 fi
-exec "$PYTHON_BIN" -m personal_db "$@"
-LAUNCHER_EOF
-chmod +x "$LAUNCHER"
-log "launcher: $LAUNCHER"
+log "sidecar: copying $REAL_PYTHON_BIN -> $SIDECAR_BIN"
+rm -f "$SIDECAR_BIN"
+cp "$REAL_PYTHON_BIN" "$SIDECAR_BIN"
+chmod +x "$SIDECAR_BIN"
+log "sidecar binary: $SIDECAR_BIN"
 
 PAYLOAD_SIZE="$(du -sh "$PAYLOAD_DIR" | awk '{print $1}')"
 log "payload size: $PAYLOAD_SIZE ($PAYLOAD_DIR)"
@@ -205,7 +221,11 @@ log "payload size: $PAYLOAD_SIZE ($PAYLOAD_DIR)"
 if [[ "$DO_VERIFY" == "1" ]]; then
   SCRATCH_ROOT="$(mktemp -d)"
   log "verify: running frozen daemon on scratch root $SCRATCH_ROOT (port $DAEMON_PORT)"
-  PERSONAL_DB_ROOT="$SCRATCH_ROOT" "$LAUNCHER" dev daemon run --port "$DAEMON_PORT" &
+  # Same env/args the Rust spawn side now sets (see the comment on step 4
+  # above): PYTHONHOME pointed at the sibling python/ tree, `-m personal_db`
+  # prepended since the sidecar is bare python3, not a wrapper script.
+  PERSONAL_DB_ROOT="$SCRATCH_ROOT" PYTHONHOME="$PAYLOAD_DIR/python" \
+    "$SIDECAR_BIN" -m personal_db dev daemon run --port "$DAEMON_PORT" &
   DAEMON_PID=$!
   cleanup() {
     kill "$DAEMON_PID" >/dev/null 2>&1 || true

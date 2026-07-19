@@ -56,6 +56,16 @@
 # `tauri signer sign` (a second password prompt for the same updater key).
 # Without this, updater-delivered copies fail spctl with "no usable
 # signature" -- observed live on the v0.1.1 rollout.
+#
+# Sidecar signature (v0.1.2 rollout bug, separate from the above): the
+# sidecar at Contents/MacOS/personal-db-daemon is now a copy of the frozen
+# python3 Mach-O itself, not a bash launcher -- a script's signature is a
+# detached xattr that Tauri's *client-side* updater extraction drops (this
+# script's own `tar -czf` above preserves xattrs fine; the drop happens
+# later, in the installed app's Rust updater unpacking this archive), so a
+# script sidecar verified on this machine but failed `codesign -vv --deep`
+# on every updater-delivered install. See packaging/freeze-daemon.sh step 4
+# and shell/src-tauri/src/daemon.rs::try_start_sidecar for the fix.
 
 set -euo pipefail
 
