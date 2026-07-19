@@ -277,6 +277,28 @@ def test_setup_overview_marks_installed_with_icon(tmp_path):
     assert "Needs setup" in r.text or "Ready" in r.text
 
 
+def test_recent_successful_sync_outranks_stale_needs_setup(tmp_path):
+    """last_run.json is only written after a fully successful sync, so a
+    tracker that synced recently must show Ready even if its wizard status
+    icon still says needs-attention (e.g. set up outside the wizard)."""
+    import json
+    from datetime import UTC, datetime
+
+    cfg = _init(tmp_path)
+    _install(cfg.root, "habits")
+
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    before = client.get("/setup")
+    assert "Needs setup" in before.text  # habits: 1 step, never test-synced
+
+    (cfg.state_dir / "last_run.json").write_text(
+        json.dumps({"habits": datetime.now(UTC).isoformat()})
+    )
+    after = client.get("/setup")
+    assert "● Ready" in after.text
+    assert "Needs setup" not in after.text
+
+
 @pytest.mark.darwin_only  # installs the darwin-gated code_agent_activity tracker
 def test_install_hooks_step_renders_button(tmp_path):
     """Render a manifest with an install_hooks step; assert the button and

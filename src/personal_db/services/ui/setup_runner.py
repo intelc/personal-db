@@ -15,7 +15,7 @@ import os
 import re
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from importlib import resources
 from pathlib import Path
 
@@ -114,7 +114,15 @@ def list_overview(cfg: Config) -> list[TrackerOverview]:
             ts = last_runs.get(name)
             if ts:
                 try:
-                    last_sync_age = humanize_age(now - datetime.fromisoformat(ts))
+                    age = now - datetime.fromisoformat(ts)
+                    last_sync_age = humanize_age(age)
+                    # last_run.json is only written after a fully successful
+                    # sync, so a recent entry outranks a stale wizard icon --
+                    # "Needs setup" next to "Synced 39s ago" reads as a
+                    # contradiction. The per-tracker page still shows the
+                    # wizard's step-by-step detail.
+                    if status_class == "warn" and age <= timedelta(hours=24):
+                        status_label, status_class = "● Ready", "ok"
                 except ValueError:
                     last_sync_age = None
             out.append(
