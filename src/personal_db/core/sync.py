@@ -81,6 +81,17 @@ def _extract_schema_tables(schema_sql: str) -> set[str]:
     return set(pattern.findall(schema_sql))
 
 
+def tracker_schema_tables(schema_sql: str) -> set[str]:
+    """Public wrapper around `_extract_schema_tables`.
+
+    Callers outside this module (e.g. the data-browser API, which must
+    validate a user-supplied table name against a tracker's *installed*
+    schema.sql before it ever appears in SQL) should use this instead of
+    reaching into the private helper directly.
+    """
+    return _extract_schema_tables(schema_sql)
+
+
 def _record_transform_error(cfg: Config, tracker: str, transform_name: str, err: Exception) -> None:
     err_path = cfg.state_dir / "sync_errors.jsonl"
     with err_path.open("a") as f:

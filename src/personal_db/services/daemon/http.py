@@ -4,6 +4,7 @@ Routes:
   GET  /                          → dashboard (configured viz list)
   GET  /v/<slug>                  → single viz on its own page
   GET  /t/<tracker>               → all viz for one tracker
+  GET  /t/<tracker>/data          → read-only data browser (raw tracker tables)
   GET  /viz/<slug>/html           → one viz's rendered fragment (pdb-lazy.js)
   GET  /health                    → sync health: last error/success per tracker
   GET  /setup                     → web wizard overview (tracker list + status)
@@ -69,6 +70,7 @@ from personal_db.services.daemon.routes.actions import register_action_routes
 from personal_db.services.daemon.routes.auth import register_auth_routes
 from personal_db.services.daemon.routes.common import validate_name as _validate_name
 from personal_db.services.daemon.routes.dashboard import register_dashboard_routes
+from personal_db.services.daemon.routes.data import register_data_routes
 from personal_db.services.daemon.routes.setup import register_setup_routes
 from personal_db.services.daemon.routes.sync import (
     _app_version,
@@ -377,6 +379,15 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
         verify_same_origin_write=_verify_same_origin_write,
     )
     register_dashboard_routes(api_router, cfg, registry=_registry)
+    register_data_routes(
+        app,
+        api_router,
+        cfg,
+        templates=templates,
+        nav_context=_nav_context,
+        tracker_title=_tracker_title,
+        registry=_registry,
+    )
 
     @app.get("/", response_class=HTMLResponse)
     async def dashboard(request: Request, full: bool = False):

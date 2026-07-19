@@ -2169,3 +2169,149 @@ body.pdb-agent-ask-mode * {
     animation: none;
   }
 }
+
+/* Custom-source scaffold (setup_new.html; "Add your own source" entry on
+   setup.html; the just-scaffolded notice on setup_tracker.html) ------------
+   Additive section (append-only -- do not edit rules above this point). */
+
+.tracker-card-add {
+  border-style: dashed;
+}
+.tracker-card-add .tracker-card-title {
+  text-decoration: none;
+  cursor: pointer;
+}
+.tracker-card-add .tracker-card-title:hover {
+  text-decoration: underline;
+}
+
+.created-notice {
+  position: relative;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.created-notice-dismiss {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  border: none;
+  background: none;
+  color: var(--fg-secondary);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.created-notice-dismiss:hover {
+  color: var(--fg);
+}
+.created-file-list {
+  margin: 6px 0;
+  padding-left: 18px;
+}
+.created-file-list li {
+  margin: 2px 0;
+  color: var(--fg-secondary);
+  font-size: 12px;
+}
+.agent-prompt-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.agent-prompt-row code {
+  flex: 1;
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 8px 10px;
+  background: var(--bg-inset);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.copy-btn {
+  flex-shrink: 0;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+}
+.copy-btn:hover {
+  background: var(--bg-hover);
+}
+
+/* Data browser (data_browser.html; /t/<tracker>/data) ---------------------
+   Additive section (append-only -- do not edit rules above this point). */
+
+.data-browser {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--grid) * 1.5);
+}
+
+.data-browser-tables {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.data-browser-table-btn {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  letter-spacing: 0.02em;
+}
+.data-browser-table-btn:hover {
+  background: var(--bg-hover);
+}
+.data-browser-table-btn.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.data-browser-table-count {
+  color: var(--fg-tertiary);
+  margin-left: 2px;
+}
+.data-browser-table-btn.is-active .data-browser-table-count {
+  color: var(--accent);
+}
+
+.data-browser-meta {
+  margin: 0;
+}
+
+.data-browser-grid-mount {
+  min-height: 60px;
+}
+
+.data-browser-paging {
+  display: flex;
+  gap: 6px;
+}
+.data-browser-paging button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.tracker-data-link,
+.health-data-link {
+  color: var(--fg-tertiary);
+  font-size: 11px;
+  text-decoration: none;
+  margin-left: 6px;
+}
+.tracker-data-link:hover,
+.health-data-link:hover {
+  color: var(--fg);
+  text-decoration: underline;
+}

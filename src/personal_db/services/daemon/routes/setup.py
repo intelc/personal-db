@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import errno
 import os
+import re
 import sys
 import urllib.parse
 from collections.abc import Callable
@@ -16,13 +17,35 @@ from fastapi.templating import Jinja2Templates
 from personal_db.core.config import Config
 from personal_db.core.db import apply_tracker_schema, init_db
 from personal_db.core.global_writes import blocked_reason
-from personal_db.core.installer import install_template
+from personal_db.core.installer import install_template, list_bundled
 from personal_db.core.manifest import OAuthStep, PlatformUnsupportedError, load_manifest
 from personal_db.core.migrations import apply_pending_migrations
 from personal_db.core.oauth import ensure_adapter_from_manifest, start_web_oauth
+from personal_db.core.scaffold import apply_manifest_overrides, scaffold_tracker
 from personal_db.services.ui.setup_runner import list_overview, list_step_views, process_form
 from personal_db.services.wizard.env_file import read_env
 from personal_db.services.wizard.mcp_setup import _TARGETS as _MCP_TARGETS
+
+# Slug rule for the "Add your own source" scaffold form: lowercase, starts
+# with a letter, digits/underscores after, 2-32 chars total. Deliberately
+# stricter than routes/common.py's validate_name (which just guards path
+# traversal) -- this one also has to read well as a Python module stem
+# (ingest.py imports it implicitly) and a SQL table-name prefix.
+_NEW_SLUG_RE = re.compile(r"^[a-z][a-z0-9_]{1,31}$")
+
+
+def _validate_new_slug(cfg: Config, slug: str) -> str | None:
+    """Return an error message if `slug` can't be scaffolded, else None."""
+    if not slug or not _NEW_SLUG_RE.match(slug):
+        return (
+            "Slug must start with a lowercase letter and contain only lowercase "
+            "letters, digits, and underscores (2-32 characters)."
+        )
+    if (cfg.trackers_dir / slug).exists():
+        return f"A tracker named '{slug}' is already installed."
+    if slug in list_bundled():
+        return f"'{slug}' collides with a bundled tracker name."
+    return None
 
 
 def _install_daemon_safe(cfg: Config) -> str:
@@ -218,8 +241,49 @@ def register_setup_routes(
             status_code=303,
         )
 
+    @app.get("/setup/new", response_class=HTMLResponse)
+    async def setup_new_get(request: Request):
+        reg = registry()
+        return templates.TemplateResponse(
+            request=request,
+            name="setup_new.html",
+            context={
+                "active": "setup",
+                "error": None,
+                "form": {},
+                **nav_context(reg, None),
+            },
+        )
+
+    @app.post("/setup/new", response_class=HTMLResponse)
+    async def setup_new_post(request: Request):
+        reg = registry()
+        form = dict(await request.form())
+        slug = str(form.get("slug", "")).strip()
+        title = str(form.get("title", "")).strip()
+        description = str(form.get("description", "")).strip()
+
+        error = _validate_new_slug(cfg, slug)
+        if error:
+            return templates.TemplateResponse(
+                request=request,
+                name="setup_new.html",
+                context={
+                    "active": "setup",
+                    "error": error,
+                    "form": {"slug": slug, "title": title, "description": description},
+                    **nav_context(reg, None),
+                },
+            )
+
+        dest = scaffold_tracker(cfg, slug)
+        apply_manifest_overrides(
+            dest / "manifest.yaml", title=title or None, description=description or None
+        )
+        return RedirectResponse(url=f"/setup/{slug}?created=1", status_code=303)
+
     @app.get("/setup/{name}", response_class=HTMLResponse)
-    async def setup_tracker_get(request: Request, name: str, msg: str = ""):
+    async def setup_tracker_get(request: Request, name: str, msg: str = "", created: str = ""):
         reg = registry()
         manifest_path = cfg.trackers_dir / name / "manifest.yaml"
         if not manifest_path.exists():
@@ -237,6 +301,8 @@ def register_setup_routes(
                 "step_results": None,
                 "run_result": None,
                 "flash": msg,
+                "just_created": created == "1",
+                "tracker_root": str(cfg.trackers_dir / name),
                 **nav_context(reg, None),
             },
         )

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}add a source · personal_db{% endblock %}
+
+{% block content %}
+<header class="page-head">
+  <h1>Add your own source</h1>
+</header>
+
+<section class="block">
+  <p class="meta">
+    A source is a folder of four files inside your data root. Scaffold one,
+    then fill in <code>ingest.py</code> — or ask your AI agent to.
+  </p>
+</section>
+
+{% if error %}
+<section class="block setup-result fail">
+  <p class="meta">{{ error }}</p>
+</section>
+{% endif %}
+
+<section class="block">
+  <form method="post" action="/setup/new" class="setup-form">
+    <p class="meta"><label for="new-slug">slug (required)</label></p>
+    <input id="new-slug"
+           type="text"
+           name="slug"
+           class="setup-input"
+           value="{{ form.slug or '' }}"
+           placeholder="my_journal"
+           pattern="[a-z][a-z0-9_]{1,31}"
+           maxlength="32"
+           required
+           autocomplete="off"
+           autocorrect="off"
+           autocapitalize="off"
+           spellcheck="false">
+    <p class="meta">
+      Lowercase letters, digits, and underscores; must start with a letter
+      (2-32 characters). Becomes the folder name and the primary table prefix.
+    </p>
+
+    <p class="meta"><label for="new-title">display title (optional)</label></p>
+    <input id="new-title"
+           type="text"
+           name="title"
+           class="setup-input"
+           value="{{ form.title or '' }}"
+           placeholder="My Journal"
+           autocomplete="off">
+
+    <p class="meta"><label for="new-description">one-line description (optional)</label></p>
+    <input id="new-description"
+           type="text"
+           name="description"
+           class="setup-input"
+           value="{{ form.description or '' }}"
+           placeholder="What this tracker captures"
+           autocomplete="off">
+
+    <p><button type="submit" class="btn-primary">scaffold tracker →</button></p>
+  </form>
+</section>
+
+<section class="block">
+  <p class="meta">
+    Full guide, field reference, and the stable UI/data SDK:
+    <a href="https://github.com/intelc/personal-db/blob/main/docs/creating-trackers.md" target="_blank" rel="noopener">docs/creating-trackers.md</a>.
+  </p>
+</section>
+{% endblock %}

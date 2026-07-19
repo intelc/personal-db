@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}{{ tracker_title }} data · personal_db{% endblock %}
+{% block page_title %}{{ tracker_title }} data{% endblock %}
+
+{% block content %}
+<p class="meta"><a href="/t/{{ tracker }}">← back to {{ tracker_title }}</a></p>
+<header class="page-head">
+  <h1 title="{{ tracker }}">{{ tracker_title }} data</h1>
+</header>
+
+{% if not tables %}
+  <p class="meta">No tables declared for this tracker's schema.</p>
+{% else %}
+<div
+  class="data-browser"
+  data-data-browser
+  data-tracker="{{ tracker }}"
+  data-table="{{ default_table or '' }}"
+  data-limit="{{ limit }}"
+  data-offset="{{ offset }}"
+  data-total="{{ total }}"
+>
+  <div class="data-browser-tables" role="tablist">
+    {% for t in tables %}
+      <button
+        type="button"
+        class="data-browser-table-btn{% if t.name == default_table %} is-active{% endif %}"
+        data-data-table-btn="{{ t.name }}"
+        {% if t.name == default_table %}aria-current="true"{% endif %}
+      >{{ t.name }} <span class="data-browser-table-count">{{ t.row_count }}</span></button>
+    {% endfor %}
+  </div>
+
+  <p class="meta data-browser-meta" data-data-browser-meta>{{ meta_text }}</p>
+
+  <div class="data-browser-grid-mount" data-data-browser-mount>
+    {% if grid_html %}{{ grid_html|safe }}{% else %}{{ empty_html|safe }}{% endif %}
+  </div>
+
+  <div class="data-browser-paging">
+    <button type="button" class="refresh-btn" data-data-prev {% if offset <= 0 %}disabled{% endif %}>&larr; Prev</button>
+    <button type="button" class="refresh-btn" data-data-next {% if offset + limit >= total %}disabled{% endif %}>Next &rarr;</button>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
