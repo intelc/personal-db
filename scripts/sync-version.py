@@ -77,6 +77,29 @@ def sync_cargo_toml(path: Path, version: str) -> tuple[str | None, str]:
     return old, new_text
 
 
+def sync_cargo_lock(path: Path, version: str) -> tuple[str | None, str]:
+    """Returns (old_version_or_None_if_in_sync, new_text).
+
+    Cargo only rewrites the lockfile on its next invocation, so a version
+    bump that stops at Cargo.toml leaves the tree dirty mid-release (the
+    preflight clean-tree check caught exactly this on v0.1.2). Pin the
+    personal-db-shell entry here too.
+    """
+    text = path.read_text()
+    pattern = re.compile(
+        r'(^name = "personal-db-shell"\nversion = ")([^"]+)(")',
+        re.MULTILINE,
+    )
+    m = pattern.search(text)
+    if not m:
+        sys.exit(f"error: no personal-db-shell package entry found in {path}")
+    old = m.group(2)
+    if old == version:
+        return None, text
+    new_text = pattern.sub(lambda mm: mm.group(1) + version + mm.group(3), text, count=1)
+    return old, new_text
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -98,6 +121,7 @@ def main() -> int:
     targets = [
         (root / "shell" / "src-tauri" / "tauri.conf.json", sync_tauri_conf),
         (root / "shell" / "src-tauri" / "Cargo.toml", sync_cargo_toml),
+        (root / "shell" / "src-tauri" / "Cargo.lock", sync_cargo_lock),
     ]
 
     drift = False
