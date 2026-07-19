@@ -171,16 +171,19 @@ def render_sources(ctx: AppContext) -> str:
         "Action Rate",
         "Avg Seconds",
     ]
-    return c.join_html(
-        [
-        _style(),
-        c.section(
+    if not table_rows:
+        body = c.empty_state(
+            "No notification sources yet",
+            hint="Attention needs the notifications tracker synced. First sync may take a few minutes.",
+            action=("Go to Setup", "/setup"),
+        )
+    else:
+        body = c.section(
             "Source Ranking",
             c.data_grid(table_rows, columns, page_size=25, height_px=620),
             subtitle="Past 30 days. Highest derailment and action rates are the sources worth tuning first.",
-        ),
-        ]
-    )
+        )
+    return c.join_html([_style(), body])
 
 
 def render_events(ctx: AppContext) -> str:
@@ -200,10 +203,14 @@ def render_events(ctx: AppContext) -> str:
                 html.escape(str(row["evidence"] or "")),
             )
         )
-    return c.join_html(
-        [
-        _style(),
-        c.section(
+    if not table_rows:
+        body = c.empty_state(
+            "No notification events yet",
+            hint="Attention needs the notifications tracker synced. First sync may take a few minutes.",
+            action=("Go to Setup", "/setup"),
+        )
+    else:
+        body = c.section(
             "Recent Inferences",
             c.data_grid(
                 table_rows,
@@ -223,6 +230,5 @@ def render_events(ctx: AppContext) -> str:
                 html_columns={2},
             ),
             subtitle="Latest notifications with nearby context evidence.",
-        ),
-        ]
-    )
+        )
+    return c.join_html([_style(), body])

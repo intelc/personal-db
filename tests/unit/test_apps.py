@@ -281,7 +281,7 @@ def test_bundled_finance_route_renders_without_finance_tables(tmp_root):
     r = client.get("/a/finance")
     assert r.status_code == 200
     assert "Finance Overview" in r.text
-    assert "No combined finance data yet" in r.text
+    assert "No finance data yet" in r.text
 
 
 def test_finance_receipts_page_shows_latest_and_queues_rerun(tmp_root):

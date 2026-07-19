@@ -175,32 +175,35 @@ def render_blocks(ctx: AppContext) -> str:
                 html.escape(_json_labels(row.get("top_domains_json"))),
             )
         )
-    return c.join_html(
-        [
-            _style(),
-            c.section(
-                "Recent Blocks",
-                c.data_grid(
-                    table,
-                    [
-                        "Time",
-                        "Title",
-                        "Calendar",
-                        "Planned",
-                        "Observed",
-                        "Reality",
-                        "Fragmentation",
-                        "Top Apps",
-                        "Top Domains",
-                    ],
-                    page_size=25,
-                    height_px=680,
-                    html_columns={5},
-                ),
-                subtitle="Latest calendar blocks with actual app/browser evidence.",
+    if not table:
+        body = c.empty_state(
+            "No calendar blocks yet",
+            hint="Calendar Reality needs the calendar tracker synced, plus Screen Time or Chrome History for observed activity.",
+            action=("Go to Setup", "/setup"),
+        )
+    else:
+        body = c.section(
+            "Recent Blocks",
+            c.data_grid(
+                table,
+                [
+                    "Time",
+                    "Title",
+                    "Calendar",
+                    "Planned",
+                    "Observed",
+                    "Reality",
+                    "Fragmentation",
+                    "Top Apps",
+                    "Top Domains",
+                ],
+                page_size=25,
+                height_px=680,
+                html_columns={5},
             ),
-        ]
-    )
+            subtitle="Latest calendar blocks with actual app/browser evidence.",
+        )
+    return c.join_html([_style(), body])
 
 
 def render_sources(ctx: AppContext) -> str:
@@ -228,18 +231,24 @@ def render_sources(ctx: AppContext) -> str:
             meta = f"{imported:,} imported events · {analyzed:,} timed blocks analyzed · {first} to {last}"
         else:
             meta = f"{imported:,} imported events · no timed blocks analyzed yet"
-    return c.join_html(
-        [
-            _style(),
-            c.section(
-                "Calendars",
-                c.data_grid(
-                    table,
-                    ["Calendar", "Blocks", "Planned", "Observed", "Focused", "Fragmented", "Avg Fragmentation"],
-                    page_size=25,
-                    height_px=560,
-                ),
-                subtitle=meta or "Calendar-level planned-vs-actual summary.",
+    if not table:
+        body = c.section(
+            "Calendars",
+            c.empty_state(
+                "No calendars yet",
+                hint="Calendar Reality needs the calendar tracker synced. First sync may take a few minutes.",
+                action=("Go to Setup", "/setup"),
             ),
-        ]
-    )
+        )
+    else:
+        body = c.section(
+            "Calendars",
+            c.data_grid(
+                table,
+                ["Calendar", "Blocks", "Planned", "Observed", "Focused", "Fragmented", "Avg Fragmentation"],
+                page_size=25,
+                height_px=560,
+            ),
+            subtitle=meta or "Calendar-level planned-vs-actual summary.",
+        )
+    return c.join_html([_style(), body])

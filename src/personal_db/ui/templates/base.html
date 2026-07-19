@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/static/vendor/ag-grid-community/35.3.0/ag-grid.min.css">
   <link rel="stylesheet" href="/static/vendor/ag-grid-community/35.3.0/ag-theme-quartz.min.css">
   <link rel="stylesheet" href="/static/vendor/xterm/6.0.0/xterm.css">
-  <link rel="stylesheet" href="/static/style.css?v=app-shell-2">
+  <link rel="stylesheet" href="/static/style.css?v=ux-pass-1">
   <script defer src="/static/vendor/ag-grid-community/35.3.0/ag-grid-community.min.js"></script>
   <script defer src="/static/vendor/ag-charts-community/13.3.0/ag-charts-community.min.js"></script>
   <script defer src="/static/vendor/xterm/6.0.0/xterm.js"></script>
@@ -21,7 +21,7 @@
   <script defer src="/static/pdb-finance.js?v=10"></script>
   <script defer src="/static/pdb-agent-terminal.js?v=9"></script>
   <script defer src="/static/pdb-shell.js?v=1"></script>
-  <script defer src="/static/pdb-sync.js?v=2"></script>
+  <script defer src="/static/pdb-sync.js?v=3"></script>
   <script defer src="/static/pdb-nav.js?v=1"></script>
 </head>
 <body>
@@ -49,6 +49,7 @@
         {% endfor %}
       </nav>
       <div class="sidebar-footer">
+        <a href="/health" class="sidebar-item" {% if active=='health' %}aria-current="page"{% endif %}>Health</a>
         <a href="/setup" class="sidebar-item" {% if active=='setup' %}aria-current="page"{% endif %}>Setup</a>
       </div>
     </aside>

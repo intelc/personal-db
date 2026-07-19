@@ -1672,6 +1672,20 @@ body.pdb-agent-ask-mode * {
   border-color: var(--danger);
   color: var(--danger);
 }
+/* Inline error text pdb-sync.js inserts right after a failed .pdb-sync-btn --
+   short (truncated ~140 chars, full message in title=) so it sits on one
+   line next to the button instead of only surfacing on hover. */
+.pdb-sync-error {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 11.5px;
+  color: var(--danger);
+  vertical-align: middle;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* App page head -----------------------------------------------------------
    App pages (components.page(), plus app_page.html's fallback header for
@@ -1708,4 +1722,151 @@ body.pdb-agent-ask-mode * {
 }
 .app-tabs a {
   font-size: 13px;
+}
+
+/* Health page ------------------------------------------------------------
+   GET /health: daemon uptime/version strip + one row per installed tracker
+   (last sync age, schedule, last-unresolved-error). */
+.health-daemon-meta {
+  margin-bottom: calc(var(--grid) * 2);
+  font-family: var(--font-mono);
+}
+.health-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.health-table th,
+.health-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.health-table th {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-tertiary);
+}
+.health-table a {
+  color: var(--fg);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--border-strong);
+}
+.health-table a:hover {
+  background: var(--bg-hover);
+  border-bottom-color: transparent;
+}
+.health-row-error {
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
+}
+.health-row-action {
+  white-space: nowrap;
+  text-align: right;
+}
+.health-ok {
+  color: var(--ok);
+  font-size: 12px;
+}
+.health-error {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 480px;
+}
+.health-error-age {
+  font-size: 10.5px;
+  color: var(--fg-tertiary);
+  font-family: var(--font-mono);
+}
+.health-error-line {
+  color: var(--danger);
+  font-size: 12.5px;
+}
+.health-error-details {
+  margin-top: 2px;
+}
+.health-error-details summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--fg-secondary);
+}
+.health-error-details pre {
+  margin: 6px 0 0;
+  padding: 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+/* Welcome / empty states */
+.welcome-hero {
+  max-width: 480px;
+  margin: calc(var(--grid) * 8) auto;
+  padding: calc(var(--grid) * 4);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--grid) * 1.5);
+}
+.welcome-kicker {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-tertiary);
+}
+.welcome-title {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.35;
+  font-weight: 600;
+  color: var(--fg);
+}
+.welcome-promise {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fg-secondary);
+  line-height: 1.5;
+}
+.welcome-promise code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.welcome-cta {
+  margin-top: var(--grid);
+  text-transform: none;
+  text-decoration: none;
+  letter-spacing: normal;
+  font-size: 13px;
+  padding: 7px 16px;
+}
+.welcome-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: calc(var(--grid) * 2);
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.empty-state-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--fg-tertiary);
+}
+.empty-state-action {
+  margin-top: 4px;
 }

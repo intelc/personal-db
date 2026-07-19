@@ -4,7 +4,22 @@
 {% block page_title %}Dashboard{% endblock %}
 
 {% block content %}
-{% if rendered %}
+{% if not nav_trackers %}
+  <section class="welcome-hero">
+    <p class="welcome-kicker">PersonalDB</p>
+    <h1 class="welcome-title">Your personal data, synced into one private database</h1>
+    <p class="welcome-promise">
+      Everything lives in <code>~/personal_db</code> on this Mac — nothing leaves your machine.
+    </p>
+    <a href="/setup" class="btn-primary welcome-cta">Connect your first source &rarr;</a>
+    <div class="welcome-badges">
+      <span class="badge">Whoop</span>
+      <span class="badge">Oura</span>
+      <span class="badge">GitHub</span>
+      <span class="badge">Screen Time</span>
+    </div>
+  </section>
+{% elif rendered %}
   {% for entry in rendered %}
     <section class="block">
       <h2 class="block-h">
@@ -18,13 +33,15 @@
   <section class="block">
     <h1 class="block-h">DASHBOARD</h1>
     <p class="meta">
-      No visualizations available yet. Install a tracker that ships a
-      <code>visualizations.py</code> (e.g. <code>daily_time_accounting</code>),
-      then refresh.
+      Your trackers are installed — visualizations appear here as data syncs.
+      Configure which ones show on the dashboard, or install a tracker that
+      ships a <code>visualizations.py</code> (e.g. <code>daily_time_accounting</code>),
+      then refresh. <a href="/setup">Go to Setup &rarr;</a>
     </p>
   </section>
 {% endif %}
 
+{% if nav_trackers %}
 <details class="block">
   <summary class="block-h">CONFIGURE</summary>
   <p class="meta">
@@ -35,4 +52,5 @@
     {% for entry in rendered %}<li><code>{{ entry.viz.slug }}</code></li>{% endfor %}
   </ul>
 </details>
+{% endif %}
 {% endblock %}

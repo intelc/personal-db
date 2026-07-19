@@ -146,5 +146,20 @@ def notice(message: str, *, kind: str = "info") -> str:
     return f'<p class="notice notice-{escape(kind)}">{escape(message)}</p>'
 
 
-def empty_state(message: str) -> str:
-    return f'<p class="meta empty-state">{escape(message)}</p>'
+def empty_state(
+    message: str,
+    *,
+    hint: str = "",
+    action: tuple[str, str] | None = None,
+) -> str:
+    """Render an instructive empty state: message, optional hint, optional action link.
+
+    Backward compatible with the original `empty_state(message)` call sites --
+    `hint` and `action` are additive kwargs.
+    """
+    hint_html = f'<p class="empty-state-hint">{escape(hint)}</p>' if hint else ""
+    action_html = ""
+    if action:
+        label, href = action
+        action_html = f'<a class="btn-link empty-state-action" href="{escape(href)}">{escape(label)}</a>'
+    return f'<div class="empty-state"><p class="meta">{escape(message)}</p>{hint_html}{action_html}</div>'

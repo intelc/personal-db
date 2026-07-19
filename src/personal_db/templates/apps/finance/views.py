@@ -1001,7 +1001,13 @@ def _parent_draw_section(ctx: AppContext) -> str:
 def _net_worth_section(ctx: AppContext, scope: str, title: str) -> str:
     rows = list(reversed(_q(ctx, "net_worth_rows", owner=_scope_owner(scope), limit=370)))
     if not rows:
-        return c.section(title, c.empty_state("No net worth history yet"))
+        return c.section(
+            title,
+            c.empty_state(
+                "No net worth history yet",
+                hint="Net worth builds from Plaid or Monarch account balances — sync finance to populate it.",
+            ),
+        )
     labels = [str(row["date"])[5:] for row in rows]
     return c.section(
         title,
@@ -1054,7 +1060,10 @@ def _holding_section(ctx: AppContext, scope: str, title: str) -> str:
     pie = (
         agcharts.pie_chart(pie_items, value_format="usd")
         if pie_items
-        else c.empty_state("No holdings to chart")
+        else c.empty_state(
+            "No holdings to chart",
+            hint="Investment holdings sync from Plaid or Monarch brokerage accounts.",
+        )
     )
     return c.section(
         title,
@@ -1096,7 +1105,14 @@ def render_overview(ctx: AppContext) -> str:
             ctx,
             "overview",
             "Finance Overview",
-            c.notice("No combined finance data yet. Sync Plaid and/or Monarch, then sync finance."),
+            c.empty_state(
+                "No finance data yet",
+                hint="Finance combines transactions from Plaid or Monarch. First sync may take a few minutes.",
+                # Note: link to the /setup overview, not a per-tracker deep link
+                # like /setup/plaid -- that route 404s until the tracker is
+                # installed, which is exactly the state a first-time user is in.
+                action=("Set up Plaid", "/setup"),
+            ),
         )
     dashboard = (
         '<div class="finance-dashboard" data-finance-dashboard>'
@@ -1318,7 +1334,11 @@ def _receipt_rerun_controls(ctx: AppContext, transaction_id: str) -> str:
 def render_receipts(ctx: AppContext) -> str:
     rows = _receipt_rows(ctx)
     if not rows:
-        body = c.empty_state("No finance transactions or enrichment tables are available yet.")
+        body = c.empty_state(
+            "No finance transactions yet",
+            hint="Receipts match against synced Plaid/Monarch transactions — sync finance first.",
+            action=("Go to Finance Overview", "/a/finance"),
+        )
     else:
         grid_rows = []
         for row in rows:

@@ -444,7 +444,10 @@ def _leaflet_loader(init_fn: str, *, needs_heat: bool = False) -> str:
 
 def _map_html(points: list[dict[str, Any]], map_id: str) -> str:
     if not points:
-        return c.empty_state("No map points")
+        return c.empty_state(
+            "No map points yet",
+            hint="Places reads location history from a mobile export import, not a live sync — run an export to populate it.",
+        )
 
     heat_points: list[list[float]] = []
     by_place: dict[str, dict[str, Any]] = {}
@@ -617,7 +620,10 @@ def _movement_map_html(points: list[dict[str, Any]], map_id: str) -> str:
             }
         )
     if not locs:
-        return c.empty_state(f"No high-accuracy GPS points in the last 24h (<= {_ACCURACY_M_MAX}m)")
+        return c.empty_state(
+            f"No high-accuracy GPS points in the last 24h (<= {_ACCURACY_M_MAX}m)",
+            hint="Location data comes from your last mobile export, not a live sync — indoor points are often lower accuracy.",
+        )
 
     stops = _detect_stops(locs)
     for stop in stops:
