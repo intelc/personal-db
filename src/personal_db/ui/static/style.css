@@ -1250,9 +1250,8 @@ table.health th {
   padding: 6px 16px;
   font: inherit;
   font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 .btn-primary:hover { opacity: 0.9; }
 
@@ -1869,4 +1868,128 @@ body.pdb-agent-ask-mode * {
 }
 .empty-state-action {
   margin-top: 4px;
+}
+
+/* ==========================================================================
+   ux-pass-3: dashboard editing (dashboard.html's .page-head "Edit dashboard"
+   button + #pdb-dash-edit-panel, wired up by pdb-dashboard.js). Replaces the
+   old collapsed <details> CONFIGURE leftover. Everything below this marker
+   is scoped to `.dash-edit-*` classes.
+   ========================================================================== */
+
+.dash-edit-toggle {
+  flex-shrink: 0;
+}
+
+.dash-edit-panel {
+  margin-top: 0;
+}
+
+.dash-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--grid) * 1.5);
+}
+
+.dash-edit-rows {
+  border: var(--rule);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.dash-edit-group-head {
+  padding: 6px 10px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--fg-tertiary);
+  background: var(--bg-inset);
+  border-top: var(--rule);
+}
+.dash-edit-group-head:first-child {
+  border-top: none;
+}
+
+.dash-edit-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--grid);
+  padding: 8px 10px;
+  border-top: var(--rule);
+}
+.dash-edit-row:first-child {
+  border-top: none;
+}
+.dash-edit-row:hover {
+  background: var(--bg-hover);
+}
+
+.dash-edit-row-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+  min-width: 0;
+}
+.dash-edit-row-main input[type="checkbox"] {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.dash-edit-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.dash-edit-row-name {
+  font-size: 13px;
+  color: var(--fg);
+}
+.dash-edit-row-desc {
+  font-size: 11px;
+  color: var(--fg-tertiary);
+}
+
+.dash-edit-row-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.dash-edit-move {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-secondary);
+  width: 22px;
+  height: 22px;
+  line-height: 1;
+  font-size: 12px;
+  cursor: pointer;
+}
+.dash-edit-move:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.dash-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.dash-edit-error {
+  color: var(--danger);
+  text-align: right;
+}
+
+@media (max-width: 719px) {
+  .dash-edit-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .dash-edit-row-actions {
+    align-self: flex-end;
+  }
 }

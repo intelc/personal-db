@@ -23,9 +23,12 @@ Contract:
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import os
 import sqlite3
 import sys
+import tempfile
 from dataclasses import dataclass
 from html import escape
 from pathlib import Path
@@ -236,3 +239,24 @@ def load_dashboard_slugs(cfg: Config, registry: dict[str, Visualization]) -> lis
     # "recent rows" viz are still reachable via /t/<tracker> and /v/<slug> but
     # don't clutter the default dashboard.
     return [slug for slug, v in registry.items() if not v.auto]
+
+
+def save_dashboard_slugs(cfg: Config, slugs: list[str]) -> None:
+    """Persist the dashboard's enabled/ordered slug list to dashboard.yaml.
+
+    Writes atomically (temp file + rename) so a crash mid-write can't leave a
+    truncated/corrupt config behind. The file's only key is `viz` -- this
+    intentionally overwrites the whole file rather than merging, matching
+    load_dashboard_slugs' "only key is viz" contract.
+    """
+    p = _config_path(cfg)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(dir=str(p.parent), prefix=f".{p.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            yaml.safe_dump({"viz": list(slugs)}, f)
+        os.replace(tmp_name, p)
+    except BaseException:
+        with contextlib.suppress(FileNotFoundError):
+            os.remove(tmp_name)
+        raise

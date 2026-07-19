@@ -32,3 +32,23 @@
     <button type="submit" class="refresh-btn pdb-sync-all-btn" data-sync-all title="sync every due tracker now">Sync all due</button>
   </form>
 {% endmacro %}
+
+{# One row of the dashboard "Edit dashboard" panel (dashboard.html + pdb-dashboard.js).
+   `v` is a Visualization (slug/name/tracker/description); `checked` is whether
+   it's currently enabled on the dashboard. Up/Down buttons are pdb-dashboard.js's
+   reorder mechanism -- see its module docstring for why arrows over drag. #}
+{% macro dash_edit_row(v, checked) %}
+  <div class="dash-edit-row" data-dash-edit-row data-slug="{{ v.slug }}">
+    <label class="dash-edit-row-main">
+      <input type="checkbox" data-dash-edit-check {% if checked %}checked{% endif %}>
+      <span class="dash-edit-row-text">
+        <span class="dash-edit-row-name">{{ v.name }}</span>
+        {% if v.description %}<span class="dash-edit-row-desc">{{ v.description }}</span>{% endif %}
+      </span>
+    </label>
+    <span class="dash-edit-row-actions">
+      <button type="button" class="dash-edit-move" data-move="up" title="Move up" aria-label="Move {{ v.name }} up">&uarr;</button>
+      <button type="button" class="dash-edit-move" data-move="down" title="Move down" aria-label="Move {{ v.name }} down">&darr;</button>
+    </span>
+  </div>
+{% endmacro %}

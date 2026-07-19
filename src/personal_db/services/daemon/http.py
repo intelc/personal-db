@@ -62,6 +62,7 @@ from personal_db.services.daemon.routes.agent import register_agent_routes
 from personal_db.services.daemon.routes.actions import register_action_routes
 from personal_db.services.daemon.routes.auth import register_auth_routes
 from personal_db.services.daemon.routes.common import validate_name as _validate_name
+from personal_db.services.daemon.routes.dashboard import register_dashboard_routes
 from personal_db.services.daemon.routes.setup import register_setup_routes
 from personal_db.services.daemon.routes.sync import (
     _app_version,
@@ -74,7 +75,7 @@ from personal_db.services.ui.viz import discover, list_trackers_with_viz, load_d
 _HERE = Path(__file__).resolve().parents[2] / "ui"
 
 _DAEMON_START_TS: float = _time.time()
-_WRITE_METHODS = {"POST", "DELETE"}
+_WRITE_METHODS = {"POST", "PUT", "DELETE"}
 _ALLOWED_DAEMON_HOSTS = {"127.0.0.1", "localhost", "::1"}
 # remove after next release: methods the legacy /api/{rest} -> /api/v1/{rest}
 # redirect covers. Every current /api/... route uses one of these.
@@ -165,6 +166,44 @@ def _tracker_title(cfg: Config, tracker: str) -> str:
         except ManifestError:
             pass
     return humanize_tracker_name(tracker)
+
+
+def _dashboard_edit_panel(reg: dict[str, Any], enabled_slugs: list[str]) -> dict[str, Any]:
+    """Server-rendered data for the dashboard's "Edit dashboard" panel.
+
+    Splits every non-`auto` viz into two buckets:
+      - `enabled`: currently on the dashboard, in dashboard order. Reordered
+        client-side with per-row Up/Down buttons (pdb-dashboard.js) —
+        drag-to-reorder is out of scope.
+      - `groups`: everything else, grouped by tracker (human titles via
+        `humanize_tracker_name`) so a long list of available-but-off viz stays
+        scannable. Checking one of these rows moves it to the end of the
+        enabled order on Save (see pdb-dashboard.js's row-collection logic).
+    Auto-synthesized "recent rows" viz are omitted entirely, matching the
+    GET /api/v1/dashboard contract (they're reachable via /t/<tracker> and
+    /v/<slug> but don't clutter dashboard config).
+    """
+    order = {slug: i for i, slug in enumerate(enabled_slugs)}
+    non_auto = [v for v in reg.values() if not v.auto]
+    enabled = sorted((v for v in non_auto if v.slug in order), key=lambda v: order[v.slug])
+    disabled = [v for v in non_auto if v.slug not in order]
+
+    groups: list[dict[str, Any]] = []
+    by_tracker: dict[str, dict[str, Any]] = {}
+    for v in disabled:
+        group = by_tracker.get(v.tracker)
+        if group is None:
+            title = "General" if v.tracker == "_builtin" else humanize_tracker_name(v.tracker)
+            # Key is `viz`, not `items` -- a dict already has a built-in
+            # `.items()` method, and Jinja's `group.items` attribute lookup
+            # would resolve to that bound method (shadowing a same-named
+            # dict key) instead of the value we actually want here.
+            group = {"tracker": v.tracker, "title": title, "viz": []}
+            by_tracker[v.tracker] = group
+            groups.append(group)
+        group["viz"].append(v)
+
+    return {"enabled": enabled, "groups": groups}
 
 
 def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
@@ -304,6 +343,7 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
         validate_name=_validate_name,
         verify_same_origin_write=_verify_same_origin_write,
     )
+    register_dashboard_routes(api_router, cfg, registry=_registry)
 
     @app.get("/", response_class=HTMLResponse)
     async def dashboard(request: Request):
@@ -325,6 +365,7 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
             context={
                 "active": "dashboard",
                 "rendered": rendered,
+                "edit_panel": _dashboard_edit_panel(reg, slugs),
                 **_nav_context(reg, active="dashboard"),
             },
         )

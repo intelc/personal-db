@@ -566,6 +566,7 @@ def test_base_uses_vendored_ag_assets(tmp_path):
     assert "/static/pdb-finance.js?v=10" in r.text
     assert "/static/pdb-sync.js?v=4" in r.text
     assert "/static/pdb-nav.js?v=1" in r.text
+    assert "/static/pdb-dashboard.js?v=1" in r.text
     assert "cdn.jsdelivr.net" not in r.text
 
 
