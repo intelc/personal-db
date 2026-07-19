@@ -7,6 +7,7 @@ mod cli_install;
 mod daemon;
 mod mcp_connect;
 mod onboarding;
+mod updater;
 
 #[cfg(target_os = "macos")]
 use tauri::ActivationPolicy;
@@ -86,6 +87,10 @@ fn main() {
         // in tauri.conf.json) as a sidecar when nothing answers health --
         // see daemon.rs::try_start_sidecar.
         .plugin(tauri_plugin_shell::init())
+        // Actionable prompts (Install/Later/Restart) for the self-update
+        // flow -- see updater.rs. Notification stays for passive info.
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(daemon::SidecarState::default())
         .manage(daemon::HealthState::default())
         .invoke_handler(tauri::generate_handler![open_dashboard])
@@ -104,6 +109,8 @@ fn main() {
             // build time; toggling later updates the live item via
             // `set_checked` in the event handler below rather than
             // rebuilding the whole menu.
+            let check_updates_item =
+                MenuItemBuilder::with_id("check_updates", "Check for Updates…").build(app)?;
             let autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
             let start_login_item =
                 CheckMenuItemBuilder::with_id("start_at_login", "Start at Login")
@@ -142,7 +149,7 @@ fn main() {
                 .separator()
                 .items(&[&install_cli_item, &connect_submenu])
                 .separator()
-                .items(&[&start_login_item])
+                .items(&[&check_updates_item, &start_login_item])
                 .separator()
                 .items(&[&quit_item])
                 .build()?;
@@ -165,6 +172,7 @@ fn main() {
                         spawn_mcp_connect(app, "claude_desktop", "Claude Desktop")
                     }
                     "connect_cursor" => spawn_mcp_connect(app, "cursor", "Cursor"),
+                    "check_updates" => updater::spawn_check(app),
                     "start_at_login" => {
                         // `tauri-plugin-autostart` is the *interim*
                         // mechanism for "Start at Login" -- see
@@ -210,6 +218,11 @@ fn main() {
                     daemon::poll_health_status(&health_poll_handle).await;
                 }
             });
+
+            // Passive update check ~60s after launch (delayed so it never
+            // competes with startup / the daemon bootstrap): only surfaces
+            // UI when an update actually exists -- see updater.rs.
+            updater::spawn_startup_check(&app.handle().clone());
 
             // One-time nudge toward the Set Up items above, if the user
             // hasn't touched either the CLI symlink or any MCP host yet

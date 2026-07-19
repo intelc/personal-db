@@ -16,6 +16,8 @@
     "autostart:allow-enable",
     "autostart:allow-disable",
     "autostart:allow-is-enabled",
+    "dialog:default",
+    "updater:default",
     {
       "identifier": "shell:allow-execute",
       "allow": [
