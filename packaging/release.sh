@@ -51,8 +51,8 @@
 # below runs with CI explicitly unset and requires a real TTY.
 #
 # Known limitation (deliberate, matches the current pipeline order): the
-# updater archive (PersonalDB.app.tar.gz + .sig) is produced by `tauri build`
-# BEFORE sign-and-notarize.sh's deep re-sign + notarization pass, so the
+# NOTE: step 4b re-creates the updater archive from the deep-signed app --
+# the archive `tauri build` produces is discarded because it predates the
 # archive's payload carries Tauri's top-level signatures but not the deep
 # re-sign/staple. Updater-installed copies bypass Gatekeeper quarantine in
 # practice, and disable-library-validation covers the adhoc payload modules,
@@ -194,6 +194,22 @@ UPDATER_SIG="$UPDATER_ARCHIVE.sig"
 
 log "step 4: sign-and-notarize (KEYCHAIN_PROFILE=$KEYCHAIN_PROFILE -- real submission)"
 "$SCRIPT_DIR/sign-and-notarize.sh"
+
+# --- 4b. re-create the updater archive from the DEEP-SIGNED app --------------
+# `tauri build` tars the app before sign-and-notarize's deep re-sign, so the
+# archive it produced carries an incomplete signature over the frozen python
+# payload (updater-delivered copies then fail spctl with "no usable
+# signature" -- observed live on the v0.1.1 rollout). Rebuild the tarball
+# from the stapled app and re-sign it with the updater key (second password
+# prompt, same key).
+
+log "step 4b: re-tar updater archive from the signed app + tauri signer sign"
+APP_PATH="$BUNDLE_DIR/PersonalDB.app"
+[[ -d "$APP_PATH" ]] || die "signed app not found at $APP_PATH"
+rm -f "$UPDATER_ARCHIVE" "$UPDATER_SIG"
+tar -czf "$UPDATER_ARCHIVE" -C "$(dirname "$APP_PATH")" "$(basename "$APP_PATH")"
+(cd "$REPO_ROOT/shell" && env -u CI npx tauri signer sign "$UPDATER_ARCHIVE")
+[[ -f "$UPDATER_SIG" ]] || die "tauri signer sign did not produce $UPDATER_SIG"
 
 # --- 5. DMG ------------------------------------------------------------------
 
