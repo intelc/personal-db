@@ -93,6 +93,7 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(daemon::SidecarState::default())
         .manage(daemon::HealthState::default())
+        .manage(daemon::VersionDriftState::default())
         .invoke_handler(tauri::generate_handler![open_dashboard])
         .setup(|app| {
             // No dock icon / app switcher entry -- this is a menu-bar-only
@@ -207,9 +208,16 @@ fn main() {
 
             // Standing health poll: badges the tray with "!" (and a
             // tooltip naming the failing trackers) when the daemon reports
-            // `repeated_sync_failures`, and self-heals a daemon that drops
-            // off entirely -- see daemon::poll_health_status for the
-            // down-transition/no-spawn-loop logic.
+            // `repeated_sync_failures`, self-heals a daemon that drops off
+            // entirely, and detects+restarts a daemon left running an older
+            // version than this shell (the "zombie daemon after
+            // self-update" bug) -- see daemon::poll_health_status and
+            // daemon::check_version_drift. `tokio::time::interval`'s first
+            // `.tick()` fires immediately rather than after one full
+            // `HEALTH_POLL_INTERVAL`, so this loop's very first iteration
+            // runs right at startup -- exactly the moment a version-drift
+            // check matters most (right after a self-update relaunch) --
+            // with no separate startup-only check needed.
             let health_poll_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let mut interval = tokio::time::interval(daemon::HEALTH_POLL_INTERVAL);

@@ -65,6 +65,7 @@ from personal_db.core.manifest import (
 from personal_db.services.daemon import auth as _auth
 from personal_db.services.daemon.agent_terminal import AgentTerminalManager
 from personal_db.services.daemon.otc import OtcStore
+from personal_db.services.daemon.routes.admin import register_admin_routes
 from personal_db.services.daemon.routes.agent import register_agent_routes
 from personal_db.services.daemon.routes.actions import register_action_routes
 from personal_db.services.daemon.routes.auth import register_auth_routes
@@ -283,6 +284,9 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
         otc_store=otc_store,
         verify_same_origin_write=_verify_same_origin_write,
     )
+    # Not in auth.EXEMPT_ROUTES -- reachable only with a valid daemon token,
+    # same as every other route here.
+    register_admin_routes(api_router)
 
     def _registry():
         # Re-discover on every request so edits to a tracker's visualizations.py
