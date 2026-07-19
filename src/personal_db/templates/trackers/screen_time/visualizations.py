@@ -176,7 +176,7 @@ def render_device_split_30d(cfg: Config) -> str:
             {
                 "label": d[5:],
                 "segments": [
-                    (f"mac {d[5:]}", "#1a3a5e", round(mac_h, 1)),
+                    (f"mac {d[5:]}", "var(--chart-accent)", round(mac_h, 1)),
                     (f"iphone {d[5:]}", "#d97706", round(ip_h, 1)),
                 ],
             }
@@ -184,7 +184,7 @@ def render_device_split_30d(cfg: Config) -> str:
 
     return (
         f'<p class="meta">last 30 days · '
-        f'<span style="color:#1a3a5e">●</span> mac {round(total_mac, 1)}h · '
+        f'<span style="color:var(--chart-accent)">●</span> mac {round(total_mac, 1)}h · '
         f'<span style="color:#d97706">●</span> iphone {round(total_phone, 1)}h · '
         f'data from Mosspath events.sqlite</p>'
         + stacked_vertical_bars(bars, value_unit="h")
@@ -294,18 +294,18 @@ def render_device_flame_24h(cfg: Config) -> str:
     parts.append(
         f'<svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" '
         f'style="width: 100%; height: auto; max-height: 260px; '
-        f'border: 1px solid var(--ink, #000); background: #fafafa;">'
+        f'border: 1px solid var(--border); background: var(--bg-inset);">'
     )
     # Lane backgrounds + labels
     parts.append(
-        f'<rect x="{PAD_L}" y="{mac_y}" width="{plot_w}" height="{lane_h}" fill="#eee" />'
+        f'<rect x="{PAD_L}" y="{mac_y}" width="{plot_w}" height="{lane_h}" fill="var(--chart-grid)" />'
     )
     parts.append(
-        f'<rect x="{PAD_L}" y="{iphone_y}" width="{plot_w}" height="{lane_h}" fill="#eee" />'
+        f'<rect x="{PAD_L}" y="{iphone_y}" width="{plot_w}" height="{lane_h}" fill="var(--chart-grid)" />'
     )
     parts.append(
         f'<text x="{PAD_L - 6}" y="{mac_y + lane_h / 2 + 4:.1f}" font-size="11" '
-        f'text-anchor="end" fill="#1a3a5e" font-family="ui-monospace, monospace" font-weight="600">mac</text>'
+        f'text-anchor="end" fill="var(--chart-accent)" font-family="ui-monospace, monospace" font-weight="600">mac</text>'
     )
     parts.append(
         f'<text x="{PAD_L - 6}" y="{iphone_y + lane_h / 2 + 4:.1f}" font-size="11" '
@@ -317,12 +317,12 @@ def render_device_flame_24h(cfg: Config) -> str:
         x = x_of(ts)
         parts.append(
             f'<line x1="{x:.1f}" y1="{PAD_T}" x2="{x:.1f}" y2="{H - PAD_B}" '
-            f'stroke="#bbb" stroke-width="1" />'
+            f'stroke="var(--chart-grid)" stroke-width="1" />'
         )
         label_dt = cutoff + timedelta(hours=h)
         parts.append(
             f'<text x="{x:.1f}" y="{H - PAD_B + 14}" font-size="10" '
-            f'text-anchor="middle" fill="#666" font-family="ui-monospace, monospace">'
+            f'text-anchor="middle" fill="var(--chart-muted)" font-family="ui-monospace, monospace">'
             f"{label_dt.strftime('%H:%M')}</text>"
         )
     # Session rectangles. Names come from screen_time_app_names (populated at
@@ -334,7 +334,7 @@ def render_device_flame_24h(cfg: Config) -> str:
         x2 = x_of(s["end"])
         w = max(1.0, x2 - x1)
         if s["platform"] == "mac":
-            y, color = mac_y, "#1a3a5e"
+            y, color = mac_y, "var(--chart-accent)"
         else:
             y, color = iphone_y, "#d97706"
         name = name_by_bundle.get(s["bundle"], s["bundle"])
@@ -356,7 +356,7 @@ def render_device_flame_24h(cfg: Config) -> str:
     total_phone = sum(s["dur"] for s in sessions if s["platform"] == "iphone") / 3600
     return (
         f'<p class="meta">{len(sessions)} merged sessions ({len(rows)} raw) · last 24h · '
-        f'<span style="color:#1a3a5e">●</span> mac {round(total_mac, 1)}h · '
+        f'<span style="color:var(--chart-accent)">●</span> mac {round(total_mac, 1)}h · '
         f'<span style="color:#d97706">●</span> iphone {round(total_phone, 1)}h · '
         'hover any rectangle for app · data from Mosspath</p>'
         + "".join(parts)

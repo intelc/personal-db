@@ -41,7 +41,7 @@ def render_contribution_calendar(cfg: Config) -> str:
     # Green-ramp coloring (the iconic GitHub palette but desaturated to fit).
     def _color(v: float) -> str:
         if v <= 0:
-            return "#eee"
+            return "var(--chart-grid)"
         if v <= 1:
             return "#9be9a8"
         if v <= 3:

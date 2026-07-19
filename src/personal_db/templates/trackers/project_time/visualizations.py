@@ -13,8 +13,8 @@ from personal_db.viz_helpers import meta
 # Stable per-project palette so the calendar's colors mean something. Cycled
 # in declaration order; non-saturated mid-tones to fit the rest of the page.
 _PROJECT_PALETTE = [
-    "#2e5c34", "#a04a6a", "#3a7a7a", "#cc6600", "#1a3a5e",
-    "#7a4caa", "#7a5e34", "#346e7a", "#7a3434", "#5a5a5a",
+    "#2e5c34", "#a04a6a", "#3a7a7a", "#cc6600", "var(--chart-accent)",
+    "#7a4caa", "#7a5e34", "#346e7a", "#a65050", "var(--chart-muted)",
 ]
 
 

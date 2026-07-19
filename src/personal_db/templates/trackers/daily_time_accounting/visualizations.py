@@ -15,13 +15,13 @@ from personal_db.config import Config
 # Color palette per category — desaturated pixel-art tones, used only inside
 # the data viz (the shell stays B&W).
 _CAT_COLORS = {
-    "sleep": "#1a3a5e",
+    "sleep": "var(--chart-accent)",
     "workout": "#cc6600",
     "work": "#2e5c34",
     "communication": "#3a7a7a",
     "leisure": "#a04a6a",
-    "other_screen": "#666666",
-    "_unaccounted": "#cccccc",
+    "other_screen": "var(--chart-muted)",
+    "_unaccounted": "var(--chart-grid)",
     "_no_data": "url(#hatch)",
 }
 
@@ -46,7 +46,7 @@ def _query_breakdown(cfg: Config, day: date) -> list[dict]:
     finally:
         con.close()
     return [
-        {"category": c, "hours": round(h, 2), "color": _CAT_COLORS.get(c, "#888")}
+        {"category": c, "hours": round(h, 2), "color": _CAT_COLORS.get(c, "var(--chart-muted)")}
         for c, h in rows
         if h > 0.01
     ]

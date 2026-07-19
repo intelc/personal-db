@@ -63,25 +63,25 @@ def _cached_thumbnail_data_uri(cfg: Config, note_id: str) -> str:
 _STYLE = """
 <style>
 .xhs-saved { display: flex; flex-direction: column; gap: 14px; }
-.xhs-saved-summary { padding: 10px 12px; border: 1px solid #eee; border-radius: 8px;
-                     background: #fafafa; }
-.xhs-saved-summary p { margin: 0; font-size: 12px; color: #777; }
-.xhs-saved-summary strong { color: #222; font-size: 14px; }
+.xhs-saved-summary { padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+                     background: var(--bg-inset); }
+.xhs-saved-summary p { margin: 0; font-size: 12px; color: var(--chart-muted); }
+.xhs-saved-summary strong { color: var(--chart-fg); font-size: 14px; }
 .xhs-saved-post { display: flex; gap: 14px; align-items: stretch;
-                  padding-bottom: 14px; border-bottom: 1px solid #eee; }
+                  padding-bottom: 14px; border-bottom: 1px solid var(--border); }
 .xhs-saved-post:last-child { border-bottom: none; padding-bottom: 0; }
 .xhs-saved-thumb { flex: 0 0 118px; aspect-ratio: 3/4; border-radius: 6px;
-                   overflow: hidden; background: #eee; display: block; }
+                   overflow: hidden; background: var(--bg-inset); display: block; }
 .xhs-saved-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .xhs-saved-body { flex: 1; min-width: 0; display: flex; flex-direction: column;
                   gap: 5px; font-size: 12px; }
 .xhs-saved-title { margin: 0; font-size: 13px; line-height: 1.35; font-weight: 600;
                    display: -webkit-box; -webkit-line-clamp: 2;
                    -webkit-box-orient: vertical; overflow: hidden; }
-.xhs-saved-desc { margin: 0; color: #555; line-height: 1.35;
+.xhs-saved-desc { margin: 0; color: var(--chart-fg); line-height: 1.35;
                   display: -webkit-box; -webkit-line-clamp: 2;
                   -webkit-box-orient: vertical; overflow: hidden; }
-.xhs-saved-meta { margin: 0; font-size: 11px; color: #888; }
+.xhs-saved-meta { margin: 0; font-size: 11px; color: var(--chart-muted); }
 .xhs-saved-stats { margin: 0; font-size: 12px; line-height: 1.4; }
 .xhs-saved-stats strong { font-weight: 600; }
 .xhs-saved-chart { height: 96px; margin-top: 2px; overflow: hidden; }
@@ -201,11 +201,11 @@ def _render_post(cfg: Config, con: sqlite3.Connection, post: tuple) -> str:
     elif status == "error":
         err = (fetch_error or "").strip() or "detail fetch failed"
         stats_html = (
-            f'<p class="xhs-saved-stats" style="color:#999" title="{escape(err)}">'
+            f'<p class="xhs-saved-stats" style="color:var(--chart-muted)" title="{escape(err)}">'
             "detail fetch blocked</p>"
         )
     else:
-        stats_html = '<p class="xhs-saved-stats" style="color:#999">detail fetch pending</p>'
+        stats_html = '<p class="xhs-saved-stats" style="color:var(--chart-muted)">detail fetch pending</p>'
 
     return (
         '<div class="xhs-saved-post">'

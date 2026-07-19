@@ -89,7 +89,7 @@ def render_weight_trend_180d(cfg: Config) -> str:
         "last 180 days · device measurements only</p>"
         + line_chart(
             items,
-            color="#3a6ea8",
+            color="var(--chart-accent)",
             show_every_nth_label=30,
             value_attr="data-kg",
         )
@@ -141,7 +141,7 @@ def render_body_composition_30d(cfg: Config) -> str:
             x_labels,
             series=[
                 ("fat mass", fat_vals, "#cc6644"),
-                ("lean mass", lean_vals, "#3a8a4a"),
+                ("lean mass", lean_vals, "var(--chart-green)"),
             ],
             show_every_nth_label=5,
             value_attr="data-kg",

@@ -51,7 +51,7 @@ def render_impact_summary(cfg: Config) -> str:
     items = [(row["impact"].replace("_", " "), float(row["n"])) for row in rows]
     return (
         '<p class="meta">past 7 days · inferred from nearby Mosspath Lite activity when available</p>'
-        + horizontal_bars(items, value_fmt=lambda v: f"{int(v)}", color="#2563eb")
+        + horizontal_bars(items, value_fmt=lambda v: f"{int(v)}", color="var(--chart-accent)")
     )
 
 
