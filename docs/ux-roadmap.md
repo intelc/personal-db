@@ -35,13 +35,9 @@ Status key: `[ ]` not started · `[~]` in progress · `[x]` done
   `<root>` (launchd, `~/.claude/settings.json`, MCP configs) is guarded
   from scratch roots (core/global_writes.py, merged) — remaining: say so
   on the button label/confirm in the UI.
-- [ ] **9. Update story.** Notary keychain profile `personal-db-notary`
-  already exists and authenticates (verified 2026-07-19; zero submissions
-  yet). Remaining blockers: (a) generate the updater Ed25519 keypair
-  (`tauri signer generate`, human step), (b) confirm GitHub Releases as the
-  update-manifest host (repo is public). Then:
-  tauri-plugin-updater + separate Ed25519 signing key + "What's new"; DB
-  migrations logged visibly in Health.
+- [~] **9. Update story.** Wired (updater plugin, tray check, release.sh
+  one-command pipeline). Remaining: run `packaging/release.sh --notes ...`
+  once (human: signing-key password + publish click) to cut v0.1.0.
 
 ## P2 — extensibility as a feature
 
