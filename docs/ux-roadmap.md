@@ -35,9 +35,10 @@ Status key: `[ ]` not started · `[~]` in progress · `[x]` done
   `<root>` (launchd, `~/.claude/settings.json`, MCP configs) is guarded
   from scratch roots (core/global_writes.py, merged) — remaining: say so
   on the button label/confirm in the UI.
-- [~] **9. Update story.** Wired (updater plugin, tray check, release.sh
-  one-command pipeline). Remaining: run `packaging/release.sh --notes ...`
-  once (human: signing-key password + publish click) to cut v0.1.0.
+- [x] **9. Update story.** v0.1.0 published on GitHub Releases (notarized,
+  stapled, Gatekeeper-accepted); updater endpoint live; m1max installed
+  from the published DMG. The first actual self-update gets proven when
+  v0.1.1 ships — the tray check on 0.1.0 should currently report up-to-date.
 
 ## P2 — extensibility as a feature
 
