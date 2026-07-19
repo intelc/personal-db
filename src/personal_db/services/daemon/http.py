@@ -4,6 +4,7 @@ Routes:
   GET  /                          → dashboard (configured viz list)
   GET  /v/<slug>                  → single viz on its own page
   GET  /t/<tracker>               → all viz for one tracker
+  GET  /health                    → sync health: last error/success per tracker
   GET  /setup                     → web wizard overview (tracker list + status)
   GET  /setup/<name>              → per-tracker setup form
   POST /setup/<name>              → process setup form, run test sync
@@ -62,7 +63,12 @@ from personal_db.services.daemon.routes.actions import register_action_routes
 from personal_db.services.daemon.routes.auth import register_auth_routes
 from personal_db.services.daemon.routes.common import validate_name as _validate_name
 from personal_db.services.daemon.routes.setup import register_setup_routes
-from personal_db.services.daemon.routes.sync import register_sync_routes
+from personal_db.services.daemon.routes.sync import (
+    _app_version,
+    _db_user_version,
+    register_sync_routes,
+)
+from personal_db.services.ui.builtin_viz import build_health_page_data
 from personal_db.services.ui.viz import discover, list_trackers_with_viz, load_dashboard_slugs
 
 _HERE = Path(__file__).resolve().parents[2] / "ui"
@@ -369,6 +375,25 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
                 "tracker_title": _tracker_title(cfg, tracker),
                 "rendered": rendered,
                 **_nav_context(reg, active=tracker),
+            },
+        )
+
+    @app.get("/health", response_class=HTMLResponse)
+    async def health_page(request: Request):
+        reg = _registry()
+        data = build_health_page_data(
+            cfg,
+            uptime_seconds=int(_time.time() - _DAEMON_START_TS),
+            app_version=_app_version(),
+            db_user_version=_db_user_version(cfg),
+        )
+        return templates.TemplateResponse(
+            request=request,
+            name="health.html",
+            context={
+                "active": "health",
+                **data,
+                **_nav_context(reg, active="health"),
             },
         )
 

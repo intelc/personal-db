@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Health · personal_db{% endblock %}
+{% block page_title %}Health{% endblock %}
+
+{% block content %}
+<header class="page-head">
+  <h1>Health</h1>
+</header>
+
+<p class="health-daemon-meta meta">
+  daemon uptime {{ uptime }} · personal_db {{ app_version }} · db schema v{{ db_user_version }}
+</p>
+
+{% if not rows %}
+  <p class="meta">no trackers installed yet — <a href="/setup">set one up</a>.</p>
+{% else %}
+  <table class="health-table">
+    <thead>
+      <tr>
+        <th>tracker</th>
+        <th>last sync</th>
+        <th>schedule</th>
+        <th>status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr class="{{ 'health-row-error' if row.error else '' }}">
+        <td><a href="/t/{{ row.slug }}" title="{{ row.slug }}">{{ row.title }}</a></td>
+        <td class="meta">{{ row.last_sync_age or "never" }}</td>
+        <td class="meta">{{ row.schedule or "—" }}</td>
+        <td>
+          {% if row.error %}
+            <div class="health-error">
+              <span class="health-error-age">{{ row.error.age }}</span>
+              <span class="health-error-line">{{ row.error.first_line }}</span>
+              <details class="health-error-details">
+                <summary>full error</summary>
+                <pre>{{ row.error.full_text }}</pre>
+              </details>
+            </div>
+          {% else %}
+            <span class="health-ok">ok</span>
+          {% endif %}
+        </td>
+        <td class="health-row-action">{{ m.refresh_btn(row.slug) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endif %}
+{% endblock %}
