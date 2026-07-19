@@ -23,7 +23,7 @@ The exact commands that produced the first signed build, end to end:
 ./packaging/freeze-daemon.sh
 
 # 2. release build; tauri.conf.json's bundle.macOS.signingIdentity makes
-#    Tauri sign the app + main executable + sidecar launcher itself (~20s)
+#    Tauri sign the app + main executable + sidecar binary itself (~20s)
 cd shell && npm run tauri build && cd ..
 
 # 3. deep re-sign of the frozen payload inside the bundle (+ the standalone
@@ -67,9 +67,25 @@ the repo's wheel with `uv build`, and `uv pip install`s it (with the
 finance+xhs extras — see the script's "batteries included" comment) into
 the embedded interpreter. Output: `packaging/build/payload/`, a relocatable
 directory containing `python/` (the interpreter + all dependencies) and
-`personal-db-daemon-aarch64-apple-darwin` (a thin launcher script). See the
-script's own comments for the full rationale and `--clean`/`--skip-verify`
-flags.
+`personal-db-daemon-aarch64-apple-darwin` — a **copy of the frozen
+python3 Mach-O interpreter itself**, not a wrapper script. See the script's
+own comments for the full rationale and `--clean`/`--skip-verify` flags.
+
+This used to be a thin bash launcher that `exec`'d the embedded python3.
+Fixed (v0.1.2 rollout bug): macOS stores a script's code signature as a
+**detached** xattr (`com.apple.cs.*`), and Tauri v2's updater extracts its
+downloaded `.tar.gz` without restoring xattrs (DMG/bsdtar/Finder installs
+do restore them), so every updater-delivered install ran an unsigned
+script and failed `codesign -vv --deep` — even though it was a
+byte-identical copy of a file that verified fine everywhere else. A
+Mach-O's signature is embedded in the file, not a detached xattr, so
+shipping the interpreter binary directly as the sidecar survives that
+extraction. The tradeoff — a standalone interpreter normally resolves its
+stdlib from its own real path, which breaks once it's copied to
+`Contents/MacOS/` away from `Contents/Resources/python/` — is handled by
+the Rust spawn side setting `PYTHONHOME` explicitly (see
+`shell/src-tauri/src/daemon.rs::try_start_sidecar`) rather than by
+anything baked into the binary.
 
 Current payload size: ~165M (verified by actually running the script; see
 its VERIFY step, which runs the frozen daemon on a scratch root and curls
@@ -90,7 +106,7 @@ exactly the shape sketched in earlier drafts of this README:
 "bundle": {
   "externalBin": ["../../packaging/build/payload/personal-db-daemon"],
   // Tauri appends "-<target-triple>" itself when resolving which
-  // platform binary to copy in, matching the launcher's actual filename;
+  // platform binary to copy in, matching the sidecar binary's actual filename;
   // in the bundle it lands at Contents/MacOS/personal-db-daemon.
   "resources": {
     "../../packaging/build/payload/python": "python"
@@ -99,24 +115,25 @@ exactly the shape sketched in earlier drafts of this README:
 },
 ```
 
-The launcher's relative-path problem was solved in the launcher itself
-(`freeze-daemon.sh` step 4): it now probes `$DIR/python` (sibling — the
-bare payload dir layout, and Tauri *dev* builds, which flatten externalBin
-and resources into the same `target/debug/` dir) and falls back to
-`$DIR/../Resources/python` (the real `.app` layout, `Contents/MacOS/` vs
-`Contents/Resources/`). Verified both ways: the standalone payload health
-check in `freeze-daemon.sh --verify`, and running
-`PersonalDB.app/Contents/MacOS/personal-db-daemon dev daemon run` directly
-from inside the built, signed bundle (came up healthy on a scratch root —
-which also proves the hardened-runtime-signed interpreter still imports
-its adhoc-to-Developer-ID-resigned extension modules).
+The interpreter-discovery problem (see above) is solved on the Rust side,
+not in the sidecar binary itself: `try_start_sidecar` resolves
+`app.path().resource_dir().join("python")` at spawn time and passes it as
+`PYTHONHOME`, plus prepends `-m personal_db` to the args (the sidecar is
+bare python3 now, with no wrapper to supply that). PYTHONHOME alone is
+enough — python-build-standalone's site module finds
+`<PYTHONHOME>/lib/python3.11/site-packages` on its own, no PYTHONPATH
+needed (verified locally against the actual frozen payload).
 
 The Rust side (`shell/src-tauri/src/daemon.rs::try_start_sidecar`) spawns
 the sidecar via `tauri-plugin-shell` when the launch health check fails
 and a sidecar is actually configured for the build; the daemon-down
 guidance page remains the fallback when the spawn fails or times out.
 Verified via `tauri dev` with `PERSONAL_DB_DAEMON_URL` pointed at a free
-port and `PERSONAL_DB_ROOT` at a scratch dir.
+port and `PERSONAL_DB_ROOT` at a scratch dir, and — the decisive test for
+the xattr/updater bug — by tar/extracting the built bundle with Python's
+stdlib `tarfile` (which drops xattrs, simulating Tauri's updater
+extractor) and confirming `codesign -vv --deep` still passes on the
+extracted copy.
 
 ### 3. Sign
 
@@ -126,7 +143,7 @@ Two layers, both verified on the first real signed build:
 `tauri.conf.json` sets `bundle.macOS.signingIdentity`, `entitlements`
 (pointing at `packaging/entitlements.plist`), and `hardenedRuntime: true`,
 so the release build itself signs the app bundle, main executable, and the
-sidecar launcher with the real identity (~20s). But that is a *top-level*
+sidecar binary with the real identity (~20s). But that is a *top-level*
 pass only — everything under `Contents/Resources/python/` comes out still
 carrying python-build-standalone's adhoc signatures, which local Gatekeeper
 tolerates (`disable-library-validation` lets the interpreter dlopen them)

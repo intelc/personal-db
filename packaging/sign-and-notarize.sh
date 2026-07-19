@@ -151,12 +151,18 @@ is_macho() {
 #      might dlopen, found anywhere under the payload's site-packages
 #   2. the python3 interpreter binary itself (which links against some of
 #      the above at startup, e.g. libpython3.11.dylib)
-#   3. the launcher script itself (packaging/build/payload/personal-db-daemon-*)
-#      is a bash script, not a Mach-O -- but `codesign` still signs it (as a
-#      detached "generic" signature stored in an xattr, not embedded in the
-#      file). Step 2 below picks it up once it's inside the app bundle at
-#      Contents/MacOS/personal-db-daemon (bundle.externalBin's convention),
-#      same as it already got signed once by `tauri build` itself.
+#   3. the standalone sidecar copy (packaging/build/payload/personal-db-daemon-*)
+#      -- since the "script sidecar loses its signature through the
+#      updater" fix, this is a COPY of the same python3 Mach-O as step 2,
+#      not a bash launcher (a script's signature is a detached xattr that
+#      Tauri's updater extraction drops; a Mach-O's is embedded and
+#      survives it -- see packaging/freeze-daemon.sh step 4's comment).
+#      Signed explicitly here too so the standalone payload (used for
+#      testing the frozen daemon outside the app bundle) is consistent with
+#      what ships inside it. Step 2 below re-signs it again once it's
+#      inside the app bundle at Contents/MacOS/personal-db-daemon
+#      (bundle.externalBin's convention), same as it already got signed
+#      once by `tauri build` itself -- redundant but harmless.
 if [[ -d "$PAYLOAD_DIR" ]]; then
   log "signing Mach-O files under $PAYLOAD_DIR (inside-out)"
 
@@ -192,6 +198,20 @@ if [[ -d "$PAYLOAD_DIR" ]]; then
       "$PYTHON_BIN"
   else
     log "  WARNING: couldn't find the python3.X interpreter binary under $PAYLOAD_DIR/python/bin"
+  fi
+
+  # The standalone sidecar copy (see the comment above step 1) -- a
+  # separate file from $PYTHON_BIN above (freeze-daemon.sh `cp`s it), so it
+  # needs its own explicit sign here.
+  SIDECAR_BIN="$(find "$PAYLOAD_DIR" -maxdepth 1 -type f -perm -u+x -name 'personal-db-daemon-*' | head -1)"
+  if [[ -n "$SIDECAR_BIN" ]]; then
+    log "  codesign (sidecar copy): $SIDECAR_BIN"
+    codesign --force --timestamp --options runtime \
+      --entitlements "$ENTITLEMENTS" \
+      --sign "$IDENTITY" \
+      "$SIDECAR_BIN"
+  else
+    log "  WARNING: couldn't find the sidecar binary (personal-db-daemon-*) under $PAYLOAD_DIR"
   fi
 else
   log "no payload dir at $PAYLOAD_DIR -- skipping payload signing (sidecar not wired into this build yet)"

@@ -65,6 +65,17 @@ pub struct SidecarState(pub Mutex<Option<CommandChild>>);
 #[derive(Default)]
 pub struct HealthState(pub Mutex<Option<bool>>);
 
+/// The daemon `app_version` (as reported by the last health poll) that a
+/// stale-daemon restart has already been *attempted* for -- see
+/// `check_version_drift`. Guards against restart-looping: once we've tried
+/// once for a given stale version string, later polls that still see that
+/// same version only log, they don't try again. A version-drift *toward a
+/// newer* observed version (e.g. the restart worked, or the daemon updated
+/// itself independently) naturally clears this guard's relevance because the
+/// comparison is keyed on the exact version string, not a boolean latch.
+#[derive(Default)]
+pub struct VersionDriftState(pub Mutex<Option<String>>);
+
 #[derive(Debug, Deserialize)]
 struct OtcResponse {
     otc: String,
@@ -247,16 +258,54 @@ async fn try_start_sidecar(app: &AppHandle, base: &str) -> bool {
         }
     };
 
+    // The sidecar binary is now a copy of the frozen python3 Mach-O itself
+    // (see packaging/freeze-daemon.sh step 4), not a wrapper script -- a
+    // script's code signature is a detached xattr that Tauri's updater
+    // extraction drops, which is exactly the bug this whole arrangement
+    // fixes (a Mach-O's signature is embedded in the file and survives
+    // that extraction). The cost: a standalone python-build-standalone
+    // interpreter resolves its stdlib/site-packages from the *real path of
+    // the running executable* by default, which is wrong once this binary
+    // lives at Contents/MacOS/personal-db-daemon (bundle.externalBin) while
+    // the `python/` tree it needs lives at the sibling Contents/Resources/python
+    // (bundle.resources) -- so PYTHONHOME is set explicitly here rather than
+    // left for the binary to infer. `resource_dir()` is the same call
+    // `cli_install.rs::wrapper_path` uses to find `Contents/Resources/cli/`;
+    // `.join("python")` mirrors tauri.conf.json's
+    // `"../../packaging/build/payload/python": "python"` resource mapping.
+    // PYTHONHOME alone is sufficient -- python-build-standalone's site
+    // module finds `<PYTHONHOME>/lib/python3.11/site-packages` on its own;
+    // no PYTHONPATH needed (verified locally against the actual frozen
+    // payload). `-m personal_db` is prepended to the args since this binary
+    // is bare python3 now, with no wrapper script to supply it.
+    let python_home = match app.path().resource_dir() {
+        Ok(dir) => dir.join("python"),
+        Err(e) => {
+            eprintln!("failed to resolve bundle resource dir for PYTHONHOME, not spawning sidecar: {e}");
+            return false;
+        }
+    };
+
     let port = daemon_port(base);
     let root = root_dir();
     eprintln!(
-        "daemon unreachable at {base}; spawning sidecar (root={}, port={port})",
-        root.display()
+        "daemon unreachable at {base}; spawning sidecar (root={}, port={port}, PYTHONHOME={})",
+        root.display(),
+        python_home.display()
     );
 
     let sidecar = sidecar
         .env("PERSONAL_DB_ROOT", root.to_string_lossy().to_string())
-        .args(["dev", "daemon", "run", "--port", &port.to_string()]);
+        .env("PYTHONHOME", python_home.to_string_lossy().to_string())
+        .args([
+            "-m",
+            "personal_db",
+            "dev",
+            "daemon",
+            "run",
+            "--port",
+            &port.to_string(),
+        ]);
 
     let child = match sidecar.spawn() {
         Ok((mut rx, child)) => {
@@ -414,6 +463,184 @@ fn format_failing_names(names: &[String]) -> String {
     }
 }
 
+/// This shell binary's own version, compared against the daemon's reported
+/// `app_version` by `check_version_drift`. `CARGO_PKG_VERSION` (baked in at
+/// compile time from `Cargo.toml`'s `package.version`) rather than
+/// `app.package_info().version` -- same value, but a plain `&'static str`
+/// needs no `AppHandle` and no `.to_string()` at every call site.
+const SHELL_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// How long `restart_stale_daemon` waits for a shut-down-requested daemon to
+/// actually stop answering `/api/v1/health` before giving up and trying to
+/// spawn a fresh sidecar anyway.
+const SHUTDOWN_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
+const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(250);
+
+/// Parses the leading `major.minor.patch` out of a version string, ignoring
+/// any pre-release/build suffix on the patch component (e.g. `"0.1.2-dev3"`
+/// -> `(0, 1, 2)`). Deliberately lenient rather than pulling in a `semver`
+/// dependency for one comparison: `personal_db`'s Python package version and
+/// this shell's `Cargo.toml` version are both plain `x.y.z` in practice.
+/// Returns `None` on anything that doesn't parse as at least three numeric
+/// components -- callers treat that as "can't compare, skip" rather than
+/// guessing.
+fn parse_semver_lenient(s: &str) -> Option<(u64, u64, u64)> {
+    let mut parts = s.trim().split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch_raw = parts.next()?;
+    let patch_digits: String = patch_raw.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let patch = patch_digits.parse().ok()?;
+    Some((major, minor, patch))
+}
+
+/// `POST /api/v1/admin/shutdown` with the daemon token -- asks a daemon to
+/// exit itself cleanly (see `services/daemon/routes/admin.py`). Used only by
+/// `restart_stale_daemon` when this shell instance doesn't hold a
+/// `SidecarState` handle on the daemon it's talking to (i.e. it didn't spawn
+/// it -- the exact "old sidecar survived a self-update restart" case this
+/// whole mechanism exists for).
+async fn shutdown_daemon_via_route(base: &str, token: &str) -> Result<(), String> {
+    let client = http_client(HEALTH_TIMEOUT)?;
+    let resp = client
+        .post(format!("{base}/api/v1/admin/shutdown"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .map_err(|e| format!("shutdown request failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("shutdown request returned HTTP {}", resp.status()));
+    }
+    Ok(())
+}
+
+/// Polls `check_health` until it fails or `timeout` elapses, so callers that
+/// just asked a daemon to shut down can wait for the port to actually go
+/// quiet before spawning a replacement on top of it.
+async fn wait_until_unreachable(base: &str, timeout: Duration) {
+    let deadline = tokio::time::Instant::now() + timeout;
+    while tokio::time::Instant::now() < deadline {
+        if check_health(base).await.is_err() {
+            return;
+        }
+        tokio::time::sleep(SHUTDOWN_POLL_INTERVAL).await;
+    }
+}
+
+/// Replaces a daemon that `check_version_drift` has determined is running an
+/// older version than this shell: stop it (killing our own sidecar handle if
+/// we have one, otherwise asking it to shut down via the admin route with
+/// the on-disk token), wait briefly for it to actually go quiet, spawn a
+/// fresh sidecar, and reload the "main" window (if one is open) so its UI
+/// picks up routes that match the newly-spawned daemon's templates.
+async fn restart_stale_daemon(app: &AppHandle, base: &str) {
+    let had_own_sidecar = {
+        let state = app.state::<SidecarState>();
+        let mut guard = state.0.lock().unwrap();
+        if let Some(child) = guard.take() {
+            eprintln!("version drift: killing our own stale sidecar daemon");
+            let _ = child.kill();
+            true
+        } else {
+            false
+        }
+    };
+
+    if !had_own_sidecar {
+        match read_token() {
+            Some(token) => {
+                eprintln!(
+                    "version drift: daemon wasn't spawned by this shell instance (likely an old \
+                     sidecar that survived a self-update restart) -- requesting shutdown via \
+                     POST /api/v1/admin/shutdown"
+                );
+                if let Err(e) = shutdown_daemon_via_route(base, &token).await {
+                    eprintln!("version drift: shutdown route call failed: {e}");
+                }
+            }
+            None => {
+                eprintln!(
+                    "version drift: no daemon token on disk -- cannot request a graceful \
+                     shutdown of the stale daemon"
+                );
+            }
+        }
+    }
+
+    wait_until_unreachable(base, SHUTDOWN_WAIT_TIMEOUT).await;
+
+    if try_start_sidecar(app, base).await {
+        eprintln!("version drift: restarted daemon");
+    } else {
+        eprintln!(
+            "version drift: failed to restart the daemon after shutdown -- will leave it and \
+             keep polling health normally"
+        );
+    }
+
+    if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
+        let _ = window.eval("location.reload()");
+    }
+}
+
+/// Detects and (at most once per observed stale version) reacts to the
+/// "zombie daemon after self-update" bug: the Tauri shell spawns the daemon
+/// as a sidecar, but a self-update restarts the *shell* process, not the
+/// daemon, so an old sidecar can keep running and serving newly-updated
+/// on-disk templates against its stale Python routes.
+///
+/// SAFETY CASE: on a developer machine the daemon is often launchd-managed
+/// (`launchctl` `KeepAlive`) and intentionally runs ahead-of-release repo
+/// code, whose reported `app_version` may equal or exceed the shell's. Two
+/// separate guards keep this mechanism from ever fighting that setup or
+/// restart-looping in general:
+///   1. **Older-only**: a restart is only attempted when the daemon's
+///      version is *strictly older* than the shell's (or when either string
+///      fails to parse, `parse_semver_lenient` returns `None` and we skip
+///      entirely rather than guess). Equal or newer versions are always left
+///      alone -- for a launchd daemon that would just be killed and
+///      immediately relaunched by launchd running the exact same (still
+///      "newer-or-equal") code, an unproductive restart loop with no benefit
+///      to anyone.
+///   2. **Once per version**: `VersionDriftState` records the last stale
+///      version string a restart was attempted for. A later poll that still
+///      observes that exact version only logs; it does not try again. (A
+///      *different* stale version -- e.g. the shell itself updated again --
+///      gets its own single attempt.)
+async fn check_version_drift(app: &AppHandle, base: &str, daemon_version: &str) {
+    let Some(daemon_v) = parse_semver_lenient(daemon_version) else {
+        return;
+    };
+    let Some(shell_v) = parse_semver_lenient(SHELL_VERSION) else {
+        return;
+    };
+    if daemon_v >= shell_v {
+        // Equal or newer daemon: normal for a dev setup running ahead of the
+        // shell's own version -- see the safety case above. Nothing to do.
+        return;
+    }
+
+    let state = app.state::<VersionDriftState>();
+    {
+        let mut guard = state.0.lock().unwrap();
+        if guard.as_deref() == Some(daemon_version) {
+            eprintln!(
+                "version drift: daemon still reports stale v{daemon_version} (shell is \
+                 v{SHELL_VERSION}) after a prior restart attempt for this version -- leaving it \
+                 alone"
+            );
+            return;
+        }
+        *guard = Some(daemon_version.to_string());
+    }
+
+    eprintln!(
+        "version drift detected: daemon reports v{daemon_version}, shell is v{SHELL_VERSION} -- \
+         attempting one restart"
+    );
+    restart_stale_daemon(app, base).await;
+}
+
 /// `GET /api/v1/health` on a timer (see `HEALTH_POLL_INTERVAL` /
 /// `main.rs`'s setup-time poll loop) and updates the "main" tray icon's
 /// title/tooltip to reflect what it finds:
@@ -453,6 +680,17 @@ pub async fn poll_health_status(app: &AppHandle) {
             let state = app.state::<HealthState>();
             *state.0.lock().unwrap() = Some(true);
         }
+
+        // Runs regardless of whether a tray exists (tray is optional; a
+        // stale post-update daemon isn't). This same poll task's interval
+        // fires its first tick immediately (see main.rs's `setup`), so this
+        // also covers "check once ~5s after startup" without any extra
+        // wiring -- startup is the moment this matters most, right after a
+        // self-update relaunch.
+        if !payload.app_version.is_empty() {
+            check_version_drift(app, &base, &payload.app_version).await;
+        }
+
         let Some(tray) = tray else { return };
         if payload.repeated_sync_failures.is_empty() {
             let _ = tray.set_title(None::<String>);
