@@ -63,8 +63,8 @@ def _launch_browser_wizard(cfg: Config, port: int) -> None:
     base = f"http://127.0.0.1:{port}"
     typer.echo(f"Starting wizard at {base}/setup")
     typer.echo(
-        "When you click 'Finish setup' in the browser we'll wire up the daemon "
-        "and offer to install the MCP server into an agent."
+        "The 'Finish setup' page in the browser has buttons to install the "
+        "daemon and wire up the MCP server for an agent."
     )
     typer.echo("Press Ctrl+C in this terminal when you're done to stop the server.")
 

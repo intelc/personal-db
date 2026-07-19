@@ -9,7 +9,8 @@ Routes:
   POST /setup/<name>              → process setup form, run test sync
   POST /setup/install/<name>      → install a bundled tracker, redirect to /setup/<name>
   POST /setup/oauth/<name>        → start the web OAuth flow for an OAuth-based tracker
-  GET  /setup/finish              → finalize page (installs scheduler, MCP options)
+  GET  /setup/finish              → finalize page (status only)
+  POST /setup/finish/install-daemon → install launchd daemon, redirect to finish
   POST /setup/mcp/install/<tgt>   → install MCP into one target, redirect to finish
   POST /sync/<tracker>            → manual refresh button on viz pages
   POST /log_life_context          → form target for the life_context diary entry

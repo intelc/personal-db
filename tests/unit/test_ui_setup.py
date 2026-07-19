@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import urllib.parse
 
 import pytest
 from fastapi.testclient import TestClient
@@ -15,11 +16,14 @@ from tests._daemon_auth import auth_headers
 
 @pytest.fixture(autouse=True)
 def _no_scheduler(monkeypatch):
-    """Prevent /setup/finish from writing the GLOBAL launchd plist during tests.
+    """Defense-in-depth against writing the GLOBAL launchd plist during tests.
 
-    The plist lives at ~/Library/LaunchAgents/com.personal_db.daemon.plist
-    regardless of cfg.root, so tests would otherwise clobber the user's real
-    daemon install.
+    GET /setup/finish no longer installs anything on its own, but
+    POST /setup/finish/install-daemon still would (it writes the plist at
+    ~/Library/LaunchAgents/com.personal_db.daemon.plist regardless of
+    cfg.root), so tests would otherwise risk clobbering the user's real
+    daemon install. Individual tests that need to exercise the install path
+    override this with monkeypatch.delenv.
     """
     monkeypatch.setenv("PERSONAL_DB_NO_DAEMON", "1")
 
@@ -148,6 +152,62 @@ def test_setup_finish_get_renders(tmp_path):
     assert "FINISH SETUP" in r.text
     assert "PERIODIC SYNC" in r.text
     assert "CONNECT AN AGENT" in r.text
+    assert 'action="/setup/finish/install-daemon"' in r.text
+
+
+def test_setup_finish_get_has_no_install_side_effect(tmp_path, monkeypatch):
+    """GET /setup/finish must never call the daemon installer itself."""
+    monkeypatch.delenv("PERSONAL_DB_NO_DAEMON", raising=False)
+    calls = []
+    monkeypatch.setattr(
+        "personal_db.services.daemon.install.install", lambda root: calls.append(root)
+    )
+
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/setup/finish")
+    assert r.status_code == 200
+    assert calls == []
+
+
+def test_setup_daemon_install_post_redirects_with_flash(tmp_path, monkeypatch):
+    monkeypatch.delenv("PERSONAL_DB_NO_DAEMON", raising=False)
+    monkeypatch.setattr("sys.platform", "darwin")
+    calls = []
+    monkeypatch.setattr(
+        "personal_db.services.daemon.install.install",
+        lambda root: (calls.append(root), {"plist": "/fake/plist"})[1],
+    )
+
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.post("/setup/finish/install-daemon", follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"].startswith("/setup/finish?daemon_ok=1")
+    assert calls == [cfg.root]
+
+
+def test_setup_daemon_install_post_skipped_when_disabled(tmp_path):
+    """Relies on the autouse _no_scheduler fixture (PERSONAL_DB_NO_DAEMON=1)."""
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.post("/setup/finish/install-daemon", follow_redirects=False)
+    assert r.status_code == 303
+    loc = r.headers["location"]
+    assert "daemon_ok=1" in loc
+    assert "skipped" in loc
+
+
+def test_setup_finish_renders_daemon_flash(tmp_path):
+    import urllib.parse
+
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    msg = urllib.parse.quote("✓ daemon installed → /fake/plist")
+    r = client.get(f"/setup/finish?daemon_ok=1&daemon_msg={msg}")
+    assert r.status_code == 200
+    assert "daemon installed" in r.text
+    assert "setup-step-result" in r.text
 
 
 def test_setup_finish_lists_all_mcp_targets(tmp_path):
@@ -171,6 +231,7 @@ def test_setup_mcp_install_redirects_with_flash(tmp_path, monkeypatch):
     should redirect to /setup/finish?mcp=cursor&mcp_ok=1."""
     from personal_db.services.wizard import mcp_setup
 
+    monkeypatch.setenv("PERSONAL_DB_ALLOW_GLOBAL_WRITES", "1")
     monkeypatch.setattr(
         mcp_setup._TARGETS["cursor"], "auto", lambda: (True, "wrote ~/.cursor/mcp.json")
     )
@@ -179,6 +240,51 @@ def test_setup_mcp_install_redirects_with_flash(tmp_path, monkeypatch):
     r = client.post("/setup/mcp/install/cursor", follow_redirects=False)
     assert r.status_code == 303
     assert r.headers["location"] == "/setup/finish?mcp=cursor&mcp_ok=1"
+
+
+def test_setup_mcp_install_blocked_on_scratch_root(tmp_path, monkeypatch):
+    """Data root under tmp_path is a scratch root — the guard should refuse to
+    call the target's auto-installer at all."""
+    from personal_db.services.wizard import mcp_setup
+
+    calls = []
+    monkeypatch.setattr(mcp_setup._TARGETS["cursor"], "auto", lambda: (calls.append(1), (True, "x"))[1])
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.post("/setup/mcp/install/cursor", follow_redirects=False)
+    assert r.status_code == 303
+    loc = r.headers["location"]
+    assert "mcp_ok=0" in loc
+    assert "mcp_msg=" in loc
+    assert calls == []
+
+
+def test_setup_daemon_install_blocked_on_scratch_root(tmp_path, monkeypatch):
+    monkeypatch.delenv("PERSONAL_DB_NO_DAEMON", raising=False)
+    monkeypatch.setattr("sys.platform", "darwin")
+    # Defense-in-depth: even if the guard were broken, this test can't touch
+    # the real ~/Library/LaunchAgents.
+    monkeypatch.setattr(
+        "personal_db.services.daemon.install._LAUNCHAGENTS_DIR", tmp_path / "launchagents"
+    )
+
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.post("/setup/finish/install-daemon", follow_redirects=False)
+    assert r.status_code == 303
+    loc = r.headers["location"]
+    assert "daemon_ok=0" in loc
+    assert "temp" in urllib.parse.unquote(loc)
+
+
+def test_setup_finish_renders_mcp_flash_with_msg(tmp_path):
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    msg = urllib.parse.quote("blocked: scratch root")
+    r = client.get(f"/setup/finish?mcp=cursor&mcp_ok=0&mcp_msg={msg}")
+    assert r.status_code == 200
+    assert "✗ failed for" in r.text
+    assert "blocked: scratch root" in r.text
 
 
 def test_setup_finish_renders_mcp_flash(tmp_path):
