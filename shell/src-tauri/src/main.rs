@@ -231,6 +231,19 @@ fn main() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, event| {
+            // Menu-bar app: closing the last window must NOT quit the app.
+            // Without this, "Open Dashboard" (which closes any existing
+            // window before/while creating the new one) could race into a
+            // zero-window state and take the tray icon down with it. An
+            // explicit Quit (app.exit(0)) carries an exit code and is let
+            // through.
+            if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
+                if code.is_none() {
+                    api.prevent_exit();
+                }
+            }
+        });
 }

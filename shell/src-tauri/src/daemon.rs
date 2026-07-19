@@ -177,8 +177,18 @@ fn close_existing_window(app: &AppHandle) {
 }
 
 fn show_external(app: &AppHandle, url: &str) -> Result<(), String> {
-    close_existing_window(app);
     let parsed = url::Url::parse(url).map_err(|e| format!("bad url {url}: {e}"))?;
+    // Reuse an existing window instead of close-and-recreate: recreating
+    // raced through a zero-window state (see the ExitRequested handler in
+    // main.rs) and flickered. Navigation failure falls through to rebuild.
+    if let Some(existing) = app.get_webview_window(WINDOW_LABEL) {
+        if existing.navigate(parsed.clone()).is_ok() {
+            let _ = existing.show();
+            let _ = existing.set_focus();
+            return Ok(());
+        }
+        let _ = existing.close();
+    }
     WebviewWindowBuilder::new(app, WINDOW_LABEL, WebviewUrl::External(parsed))
         .title("PersonalDB")
         .inner_size(1180.0, 820.0)
