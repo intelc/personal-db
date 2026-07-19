@@ -142,6 +142,17 @@ log "step 2: freeze the daemon payload"
 
 # --- 3. tauri build (+ updater artifacts unless --dry-run) -------------------
 
+# The Tauri CLI shells out to a bare `cargo`, which isn't on PATH in shells
+# that only have rustup's shims (/opt/homebrew/bin/rustup). Resolve it once.
+if ! command -v cargo >/dev/null 2>&1; then
+  if command -v rustup >/dev/null 2>&1 && CARGO_BIN="$(rustup which cargo 2>/dev/null)"; then
+    export PATH="$(dirname "$CARGO_BIN"):$PATH"
+    log "cargo not on PATH -- using $(dirname "$CARGO_BIN") via rustup"
+  else
+    die "cargo not found -- install rust (rustup) or add cargo to PATH"
+  fi
+fi
+
 if [[ ! -d "$REPO_ROOT/shell/node_modules" ]]; then
   log "shell/node_modules missing -- running npm install"
   (cd "$REPO_ROOT/shell" && npm install)
