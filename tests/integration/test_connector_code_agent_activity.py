@@ -130,6 +130,8 @@ def test_install_hooks_action_via_daemon(env, tmp_path: Path, monkeypatch: pytes
     fake_home = tmp_path / "fake_home"
     fake_home.mkdir()
     monkeypatch.setenv("HOME", str(fake_home))
+    # The tmp-root guard would refuse the write; the redirected HOME makes it safe.
+    monkeypatch.setenv("PERSONAL_DB_ALLOW_GLOBAL_WRITES", "1")
 
     r = client.post("/api/v1/trackers/code_agent_activity/actions/install_hooks")
     assert r.status_code == 200, r.text
