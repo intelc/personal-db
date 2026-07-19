@@ -45,13 +45,14 @@ Status key: `[ ]` not started · `[~]` in progress · `[x]` done
 - [x] **10. Dashboard editing in the UI.** Replace hand-edited
   `dashboard.yaml` with a toggle-and-reorder viz picker (server-rendered,
   no framework).
-- [ ] **4. Data browser.** Read-only per-tracker table viewer (AG Grid is
+- [x] **4. Data browser.** Read-only per-tracker table viewer (AG Grid is
   already vendored) answering "what has it collected about me"; doubles as
   the debugging surface.
-- [ ] **11. Custom sources as a product feature.** In-app "Add your own
+- [x] **11. Custom sources as a product feature.** In-app "Add your own
   source" that scaffolds `dev tracker new` output + publish docs for the
   stable `personal_db.ui` SDK.
-- [ ] **12. Lead with the agent.** Ship the agent drawer enabled with a
+- [~] **12. Lead with the agent.** (agent-prompt nudge shipped in the
+  add-your-own-source flow; drawer-enabled-by-default + explainer remain) Ship the agent drawer enabled with a
   one-time explainer; make the "ask about this element" pointer
   discoverable; aim docs at "ask the agent to build you a tracker".
 
