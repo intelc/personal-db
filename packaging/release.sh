@@ -50,14 +50,12 @@
 # an empty password and fails against our protected key. So the build step
 # below runs with CI explicitly unset and requires a real TTY.
 #
-# Known limitation (deliberate, matches the current pipeline order): the
-# NOTE: step 4b re-creates the updater archive from the deep-signed app --
-# the archive `tauri build` produces is discarded because it predates the
-# archive's payload carries Tauri's top-level signatures but not the deep
-# re-sign/staple. Updater-installed copies bypass Gatekeeper quarantine in
-# practice, and disable-library-validation covers the adhoc payload modules,
-# but a future improvement is to re-tar the stapled .app and re-sign it with
-# `tauri signer sign` between steps 4 and 6.
+# Updater-archive signing: the archive `tauri build` produces predates
+# sign-and-notarize's deep re-sign of the frozen python payload, so step 4b
+# discards it, re-tars the stapled .app, and re-signs the tarball with
+# `tauri signer sign` (a second password prompt for the same updater key).
+# Without this, updater-delivered copies fail spctl with "no usable
+# signature" -- observed live on the v0.1.1 rollout.
 
 set -euo pipefail
 
