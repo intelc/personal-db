@@ -17,7 +17,7 @@ Status key: `[ ]` not started · `[~]` in progress · `[x]` done
   *why* it's empty and what to do next: "first sync backfills 90 days,
   check back shortly" vs "needs Full Disk Access → grant" vs "requires the
   Plaid tracker → install".
-- [ ] **3. Kill the terminal cliff in setup.** No tracker setup should require
+- [x] **3. Kill the terminal cliff in setup.** No tracker setup should require
   a terminal. Extend the daemon's browser OAuth flow (`/setup/oauth/{name}`)
   to cover every OAuth tracker (Whoop et al.).
 - [~] **5. Surface sync failures.** (a+b done; tray badge remains) Three tiers: (a) Health pane — last error
@@ -29,7 +29,7 @@ Status key: `[ ]` not started · `[~]` in progress · `[x]` done
 
 - [ ] **6. Daemon-down UX.** The Tauri shell shows "PersonalDB isn't running —
   Restart" instead of a failed white page; surface daemon version.
-- [ ] **7. Visible schedules.** Cards say "syncs every 6h · next in ~2h";
+- [x] **7. Visible schedules.** Cards say "syncs every 6h · next in ~2h";
   global pause toggle; "Sync all now".
 - [x] **8. No spooky global writes.** Any action that writes outside
   `<root>` (launchd, `~/.claude/settings.json`, MCP configs) is guarded
