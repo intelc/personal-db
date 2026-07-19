@@ -41,7 +41,7 @@
           <span class="status-chip {{ t.status_class }}">{{ t.status_label }}</span>
         {% endif %}
         {% if t.last_sync_age %}
-          <span class="sync-age">Synced {{ t.last_sync_age }}</span>
+          <span class="sync-age">Synced {{ t.last_sync_age }}{% if t.next_sync %} · {{ t.next_sync }}{% endif %}</span>
         {% endif %}
         {% if t.installed %}
           <a href="/setup/{{ t.name }}" class="btn-link">configure →</a>

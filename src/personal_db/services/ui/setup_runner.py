@@ -41,7 +41,7 @@ from personal_db.core.manifest import (
 )
 from personal_db.core.permissions import probe_sqlite_access
 from personal_db.core.sync import sync_one
-from personal_db.services.ui.builtin_viz import humanize_age
+from personal_db.services.ui.builtin_viz import compute_next_sync, humanize_age
 from personal_db.services.wizard.env_file import read_env, upsert_env
 from personal_db.services.wizard.runner import RunResult
 from personal_db.services.wizard.status import compute_icon, read_status, write_status
@@ -65,6 +65,7 @@ class TrackerOverview:
     status_label: str | None = None
     status_class: str | None = None  # "ok" | "warn"
     last_sync_age: str | None = None  # e.g. "38m ago"
+    next_sync: str | None = None  # e.g. "next in ~2h" -- only for `every` schedules
 
 
 @dataclass
@@ -111,10 +112,12 @@ def list_overview(cfg: Config) -> list[TrackerOverview]:
             summary = _summary_for_icon(icon, read_status(cfg).get(name))
             status_label, status_class = _status_chip(icon)
             last_sync_age = None
+            last_run_dt = None
             ts = last_runs.get(name)
             if ts:
                 try:
-                    age = now - datetime.fromisoformat(ts)
+                    last_run_dt = datetime.fromisoformat(ts)
+                    age = now - last_run_dt
                     last_sync_age = humanize_age(age)
                     # last_run.json is only written after a fully successful
                     # sync, so a recent entry outranks a stale wizard icon --
@@ -125,6 +128,10 @@ def list_overview(cfg: Config) -> list[TrackerOverview]:
                         status_label, status_class = "● Ready", "ok"
                 except ValueError:
                     last_sync_age = None
+                    last_run_dt = None
+            next_sync = None
+            if manifest.schedule and manifest.schedule.every:
+                next_sync = compute_next_sync(manifest.schedule, last_run_dt, now)
             out.append(
                 TrackerOverview(
                     name=name,
@@ -138,6 +145,7 @@ def list_overview(cfg: Config) -> list[TrackerOverview]:
                     status_label=status_label,
                     status_class=status_class,
                     last_sync_age=last_sync_age,
+                    next_sync=next_sync,
                 )
             )
         except Exception as e:
