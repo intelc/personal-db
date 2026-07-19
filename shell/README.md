@@ -23,6 +23,8 @@ whatever daemon is already running on the machine. The frozen/sidecar daemon
     a native notification.
   - **Status** — currently just opens the dashboard (there's no separate
     native status view yet; the dashboard itself is the status view).
+  - **Check for Updates…** — on-demand self-update check (see "Updates"
+    below).
   - **Start at Login** — a checkable item that toggles autostart via
     `tauri-plugin-autostart`. This is an **interim** mechanism; see
     `packaging/smappservice/RegisterAgent.swift` for the SMAppService-based
@@ -91,6 +93,40 @@ almost certainly **not survive a rebuild** — ad-hoc/unsigned binaries don't
 have a stable identity, so TCC treats every rebuild as a new app. This is
 exactly the pain the signed pipeline in `packaging/` exists to fix.
 
+## Updates
+
+The app self-updates via `tauri-plugin-updater` (Rust-side only — no JS
+updater API is exposed to the WebView):
+
+- **Check for Updates…** in the tray menu runs an on-demand check and
+  always reports a result — an Install/Later prompt with the release's
+  "What's new" notes, a "You're up to date (vX.Y.Z)" dialog, or an error
+  dialog. Install downloads, verifies the minisign signature, installs,
+  then offers a restart.
+- A **passive check runs ~60s after every launch** (delayed so it never
+  slows startup). It only surfaces UI when an update actually exists;
+  no-update results and errors are silent (logged to stderr).
+- The update feed is
+  `https://github.com/intelc/personal-db/releases/latest/download/latest.json`
+  (configured in `tauri.conf.json` → `plugins.updater.endpoints`, assembled
+  and uploaded by `packaging/release.sh`). Draft releases are invisible to
+  the updater — users only see an update once the GitHub release is
+  published.
+- Updater artifacts are signed with the minisign keypair at
+  `~/.tauri/personal-db-updater.key` (password-protected; only needed at
+  release time — the Tauri CLI prompts for the password during
+  `packaging/release.sh`, it never lives in env or on disk unencrypted).
+  The matching public key is embedded in `tauri.conf.json`
+  (`plugins.updater.pubkey`). Losing this key means shipped apps can never
+  accept another update; leaking it + the password means anyone can feed
+  them one. Guard it accordingly.
+- Dev builds are unaffected: `bundle.createUpdaterArtifacts` is deliberately
+  NOT set in `tauri.conf.json` (release.sh enables it via a `--config`
+  overlay), so a plain `npm run tauri build` never needs the key.
+
+The flow lives in `src-tauri/src/updater.rs`; prompts use
+`tauri-plugin-dialog` (actionable buttons), not notifications.
+
 ## Current limitations (this milestone only)
 
 - **Unsigned.** No Developer ID signature, no notarization, no hardened
@@ -150,4 +186,5 @@ shell/
     src/
       main.rs               tray menu, activation policy, autostart toggle
       daemon.rs             daemon HTTP client + window bootstrap flow
+      updater.rs            self-update checks + Install/Restart prompts
 ```

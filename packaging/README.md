@@ -251,38 +251,60 @@ itself ships. The bundle itself stays sealed; only `<root>/lib` grows.
 
 ## Release checklist
 
-1. Bump the version — single source is `pyproject.toml`'s `[project]
-   version`; propagate it into `shell/src-tauri/tauri.conf.json`'s
-   `"version"` field and its `Cargo.toml`'s `[package] version` at build
-   time (not automated yet — do this by hand until a build script wires it
-   up).
-2. **Bump `CFBundleVersion`** (the build number, not just the marketing
-   version) — macOS/Gatekeeper/Sparkle-style updaters use this to decide
-   "is this newer," and reusing one across two different signed builds
-   can confuse update checks and notarization's own ticket cache. Tauri
-   derives `CFBundleVersion` from `tauri.conf.json`'s `"version"` by
-   default; if you ever need them to diverge (e.g. multiple signed
-   respins of the same marketing version), that requires a build-time
-   `Info.plist` post-processing step — not needed yet, not covered by this
-   milestone.
-3. Run `packaging/freeze-daemon.sh --clean` fresh (don't reuse a stale
-   payload across a dependency bump).
-4. `npm run tauri build` (release profile) in `shell/`.
-5. `packaging/sign-and-notarize.sh` with the release identity — with
-   `KEYCHAIN_PROFILE` set so notarize+staple actually run (see below).
-6. `packaging/build-dmg.sh` with `IDENTITY` set — after stapling, so the
-   DMG wraps the stapled .app.
-7. Notarize + staple the DMG itself (the app's staple covers the copied
-   .app, but a stapled DMG is the clean download experience):
-   `xcrun notarytool submit <dmg> --keychain-profile personal-db-notary --wait`
-   then `xcrun stapler staple <dmg>`. Verify with
-   `spctl -a -vv -t open --context context:primary-signature <dmg>` →
-   `accepted, source=Notarized Developer ID`.
-8. Smoke-test on a **second Mac** (or fresh VM) per the Phase 4 plan's
+The whole flow is one command now — `packaging/release.sh` (run it yourself
+in a real terminal; it prompts for the updater key password during the
+build, and notarization is a real Apple submission):
+
+1. Bump `pyproject.toml`'s `[project] version` (the single source of truth
+   — `scripts/sync-version.py`, which release.sh runs as its first step,
+   propagates it into `shell/src-tauri/tauri.conf.json` and `Cargo.toml`;
+   CI can guard drift with `scripts/sync-version.py --check`). Tauri
+   derives `CFBundleVersion` from `tauri.conf.json`'s `"version"`, so the
+   build number bumps along with it.
+2. Commit, then:
+
+   ```bash
+   ./packaging/release.sh --notes "What's new in this release"
+   # or: --notes-file RELEASE_NOTES.md
+   ```
+
+   That runs, in order: version sync → `freeze-daemon.sh` →
+   `npm run tauri build` with a `--config` overlay enabling
+   `bundle.createUpdaterArtifacts` (this is where the Tauri CLI prompts
+   for the updater key password — the key lives at
+   `~/.tauri/personal-db-updater.key`, the password never goes into env)
+   → `sign-and-notarize.sh` (with `KEYCHAIN_PROFILE`, default
+   `personal-db-notary`, so notarize+staple actually run) →
+   `build-dmg.sh` → assembles `latest.json` (version, notes, RFC3339
+   pub_date, the updater archive's `.sig`) → `gh release create vX.Y.Z
+   --draft` with the DMG + updater archive + `.sig` + `latest.json`
+   attached.
+3. Review the draft release, then publish it (`gh release edit vX.Y.Z
+   --draft=false` or the web UI). The in-app updater fetches
+   `releases/latest/download/latest.json`, so nothing is visible to users
+   until the release is published.
+4. Smoke-test on a **second Mac** (or fresh VM) per the Phase 4 plan's
    verification criteria: FDA prompt names PersonalDB.app, `spctl -a -vv`
    and `codesign --verify --deep --strict` pass, and — the real test of
    signing stability — updating from a previous signed build preserves the
-   existing FDA grant.
+   existing FDA grant. For update releases, also verify the in-app flow:
+   an older installed build's "Check for Updates…" should offer, install,
+   and relaunch into the new version.
+
+`./packaging/release.sh --dry-run` validates the plumbing unattended
+(version sync + freeze + a real `tauri build` **without** updater
+artifacts, so no key password is needed; stops before
+notarization/DMG/gh). Note two dry-run caveats documented in the script
+header: it tolerates a dirty git tree, and it does not exercise the
+updater signing path itself.
+
+Optional extra polish after publishing: notarize + staple the DMG itself
+(the app's staple covers the copied .app, but a stapled DMG is the
+cleanest download experience):
+`xcrun notarytool submit <dmg> --keychain-profile personal-db-notary --wait`
+then `xcrun stapler staple <dmg>`. Verify with
+`spctl -a -vv -t open --context context:primary-signature <dmg>` →
+`accepted, source=Notarized Developer ID`.
 
 ## The one remaining manual step: notarization credentials
 

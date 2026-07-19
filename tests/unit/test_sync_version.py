@@ -1,0 +1,95 @@
+"""scripts/sync-version.py: propagates pyproject.toml's version into the
+Tauri shell's tauri.conf.json + Cargo.toml (see packaging/release.sh step 1).
+
+Exercised as a subprocess against a temp copy of the three files via the
+script's --root flag, exactly how release.sh / CI invoke it.
+"""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "sync-version.py"
+
+PYPROJECT = """\
+[project]
+name = "personal_db"
+version = "0.2.0"
+"""
+
+TAURI_CONF = """\
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "PersonalDB",
+  "version": "0.1.0",
+  "identifier": "com.personal-db.app"
+}
+"""
+
+CARGO_TOML = """\
+[package]
+name = "personal-db-shell"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+"""
+
+
+@pytest.fixture
+def repo(tmp_path: Path) -> Path:
+    (tmp_path / "pyproject.toml").write_text(PYPROJECT)
+    tauri_dir = tmp_path / "shell" / "src-tauri"
+    tauri_dir.mkdir(parents=True)
+    (tauri_dir / "tauri.conf.json").write_text(TAURI_CONF)
+    (tauri_dir / "Cargo.toml").write_text(CARGO_TOML)
+    return tmp_path
+
+
+def run(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(SCRIPT), "--root", str(root), *args],
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_sync_fixes_drift_and_is_idempotent(repo: Path) -> None:
+    result = run(repo)
+    assert result.returncode == 0, result.stderr
+    assert "0.1.0 -> 0.2.0" in result.stdout
+
+    conf = (repo / "shell" / "src-tauri" / "tauri.conf.json").read_text()
+    cargo = (repo / "shell" / "src-tauri" / "Cargo.toml").read_text()
+    assert '"version": "0.2.0"' in conf
+    assert 'version = "0.2.0"' in cargo
+    # Only the [package] version changed -- the dependency spec survives.
+    assert 'tauri = { version = "2", features = ["tray-icon"] }' in cargo
+
+    # Second run: no-op.
+    again = run(repo)
+    assert again.returncode == 0
+    assert "in sync" in again.stdout
+    assert (repo / "shell" / "src-tauri" / "tauri.conf.json").read_text() == conf
+    assert (repo / "shell" / "src-tauri" / "Cargo.toml").read_text() == cargo
+
+
+def test_check_mode_detects_drift_without_writing(repo: Path) -> None:
+    before_conf = (repo / "shell" / "src-tauri" / "tauri.conf.json").read_text()
+    result = run(repo, "--check")
+    assert result.returncode == 1
+    assert "DRIFT" in result.stdout
+    # --check never writes.
+    assert (repo / "shell" / "src-tauri" / "tauri.conf.json").read_text() == before_conf
+
+
+def test_check_mode_passes_when_in_sync(repo: Path) -> None:
+    assert run(repo).returncode == 0  # fix the drift first
+    result = run(repo, "--check")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "all versions in sync at 0.2.0" in result.stdout
