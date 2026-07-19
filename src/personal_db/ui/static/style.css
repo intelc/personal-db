@@ -117,13 +117,15 @@ body:has(.app-page) main {
   height: 100%;
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border);
-  overflow-y: auto;
   padding: 10px;
   display: flex;
   flex-direction: column;
   user-select: none;
   -webkit-user-select: none;
   cursor: default;
+}
+.sidebar-header {
+  flex-shrink: 0;
 }
 .sidebar-title {
   font-size: 13px;
@@ -161,9 +163,79 @@ body:has(.app-page) main {
   color: var(--accent);
   font-weight: 600;
 }
+/* Sidebar regions / status footer ---------------------------------------- */
+.sidebar-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0 -10px;
+  padding: 0 10px;
+}
 .sidebar-footer {
-  margin-top: auto;
-  padding-top: 10px;
+  flex-shrink: 0;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.sidebar-status {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  text-decoration: none;
+  font-size: 12.5px;
+}
+.sidebar-status:hover {
+  background: var(--bg-hover);
+}
+.sidebar-status[aria-current="page"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.sidebar-status-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--ok);
+}
+.sidebar-status-dot.is-danger {
+  background: var(--danger);
+}
+.sidebar-status-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-gear {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  color: var(--fg-secondary);
+  text-decoration: none;
+}
+.sidebar-gear:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.sidebar-gear[aria-current="page"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.sidebar-gear svg {
+  display: block;
 }
 
 /* Narrow-window sidebar: off-canvas, toggled via body.sidebar-open ------ */

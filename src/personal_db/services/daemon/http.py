@@ -69,7 +69,10 @@ from personal_db.services.daemon.routes.sync import (
     _db_user_version,
     register_sync_routes,
 )
-from personal_db.services.ui.builtin_viz import build_health_page_data
+from personal_db.services.ui.builtin_viz import (
+    build_health_page_data,
+    repeated_failure_trackers,
+)
 from personal_db.services.ui.viz import discover, list_trackers_with_viz, load_dashboard_slugs
 
 _HERE = Path(__file__).resolve().parents[2] / "ui"
@@ -283,7 +286,15 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
             ]
         except Exception:
             nav_apps = []
-        return {"nav_trackers": nav_trackers, "nav_apps": nav_apps}
+        try:
+            nav_failing = repeated_failure_trackers(cfg)
+        except Exception:
+            nav_failing = []
+        return {
+            "nav_trackers": nav_trackers,
+            "nav_apps": nav_apps,
+            "nav_failing": nav_failing,
+        }
 
     register_agent_routes(
         api_router,
