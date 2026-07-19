@@ -35,8 +35,11 @@ Status key: `[ ]` not started · `[~]` in progress · `[x]` done
   `<root>` (launchd, `~/.claude/settings.json`, MCP configs) is guarded
   from scratch roots (core/global_writes.py, merged) — remaining: say so
   on the button label/confirm in the UI.
-- [ ] **9. Update story.** Tauri auto-updater + "What's new"; DB migrations
-  logged visibly in Health.
+- [ ] **9. Update story.** BLOCKED on: (a) real notarization run (one-time
+  `notarytool store-credentials`, human step — see packaging/README.md), and
+  (b) a release-artifact host for the update manifest. Then:
+  tauri-plugin-updater + separate Ed25519 signing key + "What's new"; DB
+  migrations logged visibly in Health.
 
 ## P2 — extensibility as a feature
 
