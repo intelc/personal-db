@@ -253,6 +253,21 @@ def test_nav_context_lists_every_tracker_with_humanized_title(tmp_path):
     assert ">Daily Time Accounting<" in r.text
 
 
+def test_sidebar_footer_shows_status_row_and_setup_gear(tmp_path):
+    """Fixed sidebar footer: Health status row (dot + label) and a Setup
+    gear icon button, replacing the old plain text links."""
+    cfg = _setup(tmp_path)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/")
+    assert r.status_code == 200
+    assert 'id="sidebar-status"' in r.text
+    assert 'href="/health"' in r.text
+    assert "All sources syncing" in r.text
+    assert 'class="sidebar-status-dot is-ok"' in r.text
+    assert 'href="/setup"' in r.text
+    assert 'aria-label="Setup"' in r.text
+
+
 @pytest.mark.darwin_only  # installs every bundled tracker, including darwin-gated ones
 def test_nav_context_renders_every_bundled_tracker(tmp_path):
     """End-to-end: install every bundled tracker; every one should show up as
@@ -558,14 +573,14 @@ def test_base_uses_vendored_ag_assets(tmp_path):
     assert "/static/vendor/ag-charts-community/13.3.0/ag-charts-community.min.js" in r.text
     assert "/static/pdb-grid.js?v=7" in r.text
     assert "/static/pdb-chart.js?v=14" in r.text
-    assert "/static/style.css?v=ux-pass-1" in r.text
+    assert "/static/style.css?v=sidebar-2" in r.text
     assert "/static/pdb-app-state.js?v=3" in r.text
     assert "/static/apps/finance-burn-rate.js?v=4" in r.text
     assert "/static/apps/finance-categorize.js?v=1" in r.text
     assert "/static/apps/finance-rules.js?v=1" in r.text
     assert "/static/pdb-finance.js?v=10" in r.text
     assert "/static/pdb-sync.js?v=4" in r.text
-    assert "/static/pdb-nav.js?v=1" in r.text
+    assert "/static/pdb-nav.js?v=2" in r.text
     assert "/static/pdb-dashboard.js?v=1" in r.text
     assert "cdn.jsdelivr.net" not in r.text
 

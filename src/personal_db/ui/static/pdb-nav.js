@@ -133,6 +133,17 @@
     if (live && next) live.textContent = next.textContent;
   }
 
+  // The sidebar footer (#sidebar-status) holds the Health status dot/label
+  // and the Setup gear -- both server-rendered from the same `active` /
+  // `nav_failing` vars as the rest of the sidebar. Rather than re-deriving
+  // failing-tracker state client-side, just replace the whole footer's
+  // markup with the freshly-fetched version, same approach as updateSidebar.
+  function updateSidebarStatus(newDoc) {
+    var live = document.getElementById("sidebar-status");
+    var next = newDoc.getElementById("sidebar-status");
+    if (live && next) live.innerHTML = next.innerHTML;
+  }
+
   function applySwap(html) {
     var doc = new DOMParser().parseFromString(html, "text/html");
     var newMain = doc.querySelector(".content > main");
@@ -141,6 +152,7 @@
     liveMain.innerHTML = newMain.innerHTML;
     document.title = doc.title;
     updateSidebar(doc);
+    updateSidebarStatus(doc);
     updateTopbarTitle(doc);
     executeScripts(liveMain);
     document.dispatchEvent(new CustomEvent("pdb:navigate"));
