@@ -48,7 +48,10 @@
             <span class="health-ok">ok</span>
           {% endif %}
         </td>
-        <td class="health-row-action">{{ m.refresh_btn(row.slug) }}</td>
+        <td class="health-row-action">
+          {{ m.refresh_btn(row.slug) }}
+          <a href="/t/{{ row.slug }}/data" class="health-data-link" title="browse raw {{ row.slug }} tables">data</a>
+        </td>
       </tr>
       {% endfor %}
     </tbody>
