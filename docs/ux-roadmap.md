@@ -20,14 +20,14 @@ Status key: `[ ]` not started · `[~]` in progress · `[x]` done
 - [x] **3. Kill the terminal cliff in setup.** No tracker setup should require
   a terminal. Extend the daemon's browser OAuth flow (`/setup/oauth/{name}`)
   to cover every OAuth tracker (Whoop et al.).
-- [~] **5. Surface sync failures.** (a+b done; tray badge remains) Three tiers: (a) Health pane — last error
+- [x] **5. Surface sync failures.** (visual tray-badge check pending next app build) Three tiers: (a) Health pane — last error
   per tracker from `state/sync_errors.jsonl`, retry button, log tail;
   (b) inline error text under the Sync button instead of a hover tooltip;
   (c) menu-bar tray badge on repeated failures (Tauri side, later).
 
 ## P1 — calm and predictable
 
-- [ ] **6. Daemon-down UX.** The Tauri shell shows "PersonalDB isn't running —
+- [x] **6. Daemon-down UX.** The Tauri shell shows "PersonalDB isn't running —
   Restart" instead of a failed white page; surface daemon version.
 - [x] **7. Visible schedules.** Cards say "syncs every 6h · next in ~2h";
   global pause toggle; "Sync all now".
@@ -43,7 +43,7 @@ Status key: `[ ]` not started · `[~]` in progress · `[x]` done
 
 ## P2 — extensibility as a feature
 
-- [ ] **10. Dashboard editing in the UI.** Replace hand-edited
+- [x] **10. Dashboard editing in the UI.** Replace hand-edited
   `dashboard.yaml` with a toggle-and-reorder viz picker (server-rendered,
   no framework).
 - [ ] **4. Data browser.** Read-only per-tracker table viewer (AG Grid is
