@@ -97,7 +97,9 @@ TAURI_SIGNING_PRIVATE_KEY="${TAURI_SIGNING_PRIVATE_KEY:-$HOME/.tauri/personal-db
 IDENTITY="${IDENTITY:-Developer ID Application: Yiheng Chen (T78LM3Z7A5)}"
 export KEYCHAIN_PROFILE IDENTITY
 
-if [[ -n "$(git -C "$REPO_ROOT" status --porcelain)" ]]; then
+# -uno: untracked files (local .claude/ config, scratch dirs) don't taint a
+# release -- only modifications to tracked files do.
+if [[ -n "$(git -C "$REPO_ROOT" status --porcelain -uno)" ]]; then
   if [[ "$DRY_RUN" == "1" ]]; then
     log "WARNING: git tree is not clean (tolerated in --dry-run)"
   else
