@@ -114,7 +114,10 @@ def test_dashboard_shows_welcome_hero_with_no_trackers(tmp_path):
 def test_life_context_form_exposes_backdated_note_fields(tmp_path):
     cfg = _setup(tmp_path, "life_context")
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
-    r = client.get("/t/life_context")
+    # The form lives in the viz body, which the default (non-?full=1) tracker
+    # page defers to a placeholder -- ?full=1 restores the old synchronous
+    # render so this test can inspect the rendered form fields.
+    r = client.get("/t/life_context?full=1")
 
     assert r.status_code == 200
     assert 'action="/log_life_context"' in r.text
@@ -157,8 +160,110 @@ def test_unknown_tracker_returns_404(tmp_path):
     assert r.status_code == 404
 
 
+# ux-pass-4: progressive viz loading. The dashboard/tracker/viz page routes
+# default to a `data-viz-src` placeholder per block instead of rendering the
+# viz body inline (see http.py); pdb-lazy.js fetches each placeholder's
+# fragment client-side. `today_stack`'s render_today_stack (visualizations.py
+# above) returns "no data yet for today — run sync" for an empty DB, which
+# makes a reliable "the actual viz body rendered here" marker for these
+# tests -- it should be ABSENT from a default (placeholder) response and
+# PRESENT once fetched via ?full=1 or the fragment endpoint.
+_TODAY_STACK_BODY_MARKER = "no data yet for today"
+
+
+def test_dashboard_default_defers_viz_to_placeholders(tmp_path):
+    cfg = _setup(tmp_path, "daily_time_accounting")
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/")
+    assert r.status_code == 200
+    # Header (title link + slug tooltip) still server-rendered.
+    assert '<a href="/v/daily_time_accounting:today_stack" class="viz-title-link" title="daily_time_accounting:today_stack">' in r.text
+    # Body is a placeholder, not the rendered viz.
+    assert 'data-viz-src="/viz/daily_time_accounting:today_stack/html"' in r.text
+    assert 'class="viz-pending"' in r.text
+    assert _TODAY_STACK_BODY_MARKER not in r.text
+
+
+def test_dashboard_full_renders_viz_body_inline(tmp_path):
+    cfg = _setup(tmp_path, "daily_time_accounting")
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/?full=1")
+    assert r.status_code == 200
+    assert "viz-pending" not in r.text
+    assert _TODAY_STACK_BODY_MARKER in r.text
+
+
+def test_tracker_page_default_defers_viz_to_placeholders(tmp_path):
+    cfg = _setup(tmp_path, "daily_time_accounting")
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/t/daily_time_accounting")
+    assert r.status_code == 200
+    assert 'data-viz-src="/viz/daily_time_accounting:today_stack/html"' in r.text
+    assert _TODAY_STACK_BODY_MARKER not in r.text
+
+    full = client.get("/t/daily_time_accounting?full=1")
+    assert full.status_code == 200
+    assert "viz-pending" not in full.text
+    assert _TODAY_STACK_BODY_MARKER in full.text
+
+
+def test_viz_page_default_defers_to_placeholder(tmp_path):
+    cfg = _setup(tmp_path, "daily_time_accounting")
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/v/daily_time_accounting:today_stack")
+    assert r.status_code == 200
+    assert 'data-viz-src="/viz/daily_time_accounting:today_stack/html"' in r.text
+    assert _TODAY_STACK_BODY_MARKER not in r.text
+
+    full = client.get("/v/daily_time_accounting:today_stack?full=1")
+    assert full.status_code == 200
+    assert "viz-pending" not in full.text
+    assert _TODAY_STACK_BODY_MARKER in full.text
+
+
+def test_viz_fragment_endpoint_returns_rendered_body(tmp_path):
+    cfg = _setup(tmp_path, "daily_time_accounting")
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/viz/daily_time_accounting:today_stack/html")
+    assert r.status_code == 200
+    assert _TODAY_STACK_BODY_MARKER in r.text
+    # Just the fragment -- no page chrome.
+    assert "<html" not in r.text.lower()
+    assert 'id="pdb-sidebar"' not in r.text
+
+
+def test_viz_fragment_endpoint_unknown_slug_404s(tmp_path):
+    cfg = _setup(tmp_path, "daily_time_accounting")
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/viz/does_not:exist/html")
+    assert r.status_code == 404
+
+
+def test_viz_fragment_endpoint_isolates_render_error(tmp_path):
+    """A failing render is a 200 with inline error markup, not a 500 --
+    same isolation the ?full=1 page routes have always had, just reachable
+    per-viz through the fragment endpoint pdb-lazy.js actually calls."""
+    cfg = _setup(tmp_path, "daily_time_accounting")
+    bad = cfg.trackers_dir / "daily_time_accounting" / "visualizations.py"
+    bad.write_text(
+        "def list_visualizations():\n"
+        "    return [{'slug': 'broken', 'name': 'Broken', 'description': '',\n"
+        "             'render': lambda cfg: 1/0}]\n"
+    )
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/viz/daily_time_accounting:broken/html")
+    assert r.status_code == 200
+    assert "error rendering daily_time_accounting:broken" in r.text
+
+
 def test_broken_viz_does_not_kill_dashboard(tmp_path):
-    """If one viz raises, the others still render and the page returns 200."""
+    """If one viz raises, the others still render and the page returns 200.
+
+    The default (non-?full=1) dashboard defers every viz to a placeholder
+    (see http.py) so the broken render doesn't happen inline here -- fetch
+    it via its fragment endpoint to exercise the per-viz error isolation
+    directly. `?full=1` covers the old fully-synchronous behavior.
+    """
     cfg = _setup(tmp_path, "daily_time_accounting")
     # Overwrite the installed visualizations.py with a broken one
     bad = cfg.trackers_dir / "daily_time_accounting" / "visualizations.py"
@@ -170,7 +275,15 @@ def test_broken_viz_does_not_kill_dashboard(tmp_path):
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/")
     assert r.status_code == 200
-    assert "error rendering" in r.text
+    assert 'data-viz-src="/viz/daily_time_accounting:broken/html"' in r.text
+
+    frag = client.get("/viz/daily_time_accounting:broken/html")
+    assert frag.status_code == 200
+    assert "error rendering" in frag.text
+
+    full = client.get("/?full=1")
+    assert full.status_code == 200
+    assert "error rendering" in full.text
 
 
 def test_refresh_button_renders_on_tracker_page(tmp_path):
@@ -414,7 +527,9 @@ def test_health_viz_links_tracker_names(tmp_path):
         f'{{"daily_time_accounting": "{datetime.now(UTC).isoformat()}"}}'
     )
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
-    r = client.get("/v/_builtin:health")
+    # The link lives in the viz body, deferred to a placeholder by default;
+    # ?full=1 restores the synchronous render this test inspects.
+    r = client.get("/v/_builtin:health?full=1")
     assert r.status_code == 200
     # Human title links to /t/<name>; the raw slug stays as a tooltip
     assert (
@@ -573,14 +688,15 @@ def test_base_uses_vendored_ag_assets(tmp_path):
     assert "/static/vendor/ag-charts-community/13.3.0/ag-charts-community.min.js" in r.text
     assert "/static/pdb-grid.js?v=7" in r.text
     assert "/static/pdb-chart.js?v=14" in r.text
-    assert "/static/style.css?v=sidebar-2" in r.text
+    assert "/static/style.css?v=lazy-1" in r.text
     assert "/static/pdb-app-state.js?v=3" in r.text
     assert "/static/apps/finance-burn-rate.js?v=4" in r.text
     assert "/static/apps/finance-categorize.js?v=1" in r.text
     assert "/static/apps/finance-rules.js?v=1" in r.text
     assert "/static/pdb-finance.js?v=10" in r.text
     assert "/static/pdb-sync.js?v=4" in r.text
-    assert "/static/pdb-nav.js?v=2" in r.text
+    assert "/static/pdb-nav.js?v=3" in r.text
+    assert "/static/pdb-lazy.js?v=1" in r.text
     assert "/static/pdb-dashboard.js?v=1" in r.text
     assert "cdn.jsdelivr.net" not in r.text
 

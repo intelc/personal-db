@@ -11,8 +11,22 @@
 // Any failure here (network error, missing <main>, auth redirect, parse
 // error) falls back to a normal browser navigation so this is purely
 // progressive enhancement.
+//
+// Chrome (sidebar aria-current, topbar title, document title) updates
+// *optimistically* the instant a navigation starts -- see optimisticActivate
+// -- rather than waiting for the fetch, so a click feels instant even before
+// any response has arrived. If the fetch is still pending after
+// SKELETON_DELAY_MS, <main> gets a lightweight skeleton (buildSkeleton)
+// until the real content lands; applySwap (unchanged) is the source of
+// truth that corrects both once the response is in.
 (function () {
   "use strict";
+
+  // How long a navigation is allowed to sit "pending" before we replace
+  // <main> with a skeleton (see buildSkeleton/runNavigation below). Chosen
+  // to be imperceptible for the common fast-fetch case but short enough that
+  // a slow dashboard render doesn't leave the page looking dead.
+  var SKELETON_DELAY_MS = 200;
 
   function contentContainer() {
     return document.querySelector(".content");
@@ -158,7 +172,7 @@
     document.dispatchEvent(new CustomEvent("pdb:navigate"));
   }
 
-  async function fetchAndSwap(url) {
+  async function fetchHtml(url) {
     var response = await fetch(url, {
       headers: { "X-PDB-Nav": "swap" },
       credentials: "same-origin",
@@ -170,8 +184,7 @@
     if (finalUrl.pathname === "/auth" || finalUrl.pathname.indexOf("/auth/") === 0) {
       throw new Error("pdb-nav: redirected to auth");
     }
-    var html = await response.text();
-    applySwap(html);
+    return response.text();
   }
 
   function saveScrollIntoCurrentEntry() {
@@ -185,35 +198,133 @@
     );
   }
 
-  async function navigateTo(url) {
+  // Best-effort label for a link: prefer an explicit accessible name
+  // (aria-label/title -- the sidebar's Health status row and Setup gear only
+  // have one of these, not link text that matches the page title) and fall
+  // back to visible text otherwise.
+  function anchorLabel(anchor) {
+    if (!anchor) return "";
+    var label = anchor.getAttribute("aria-label") || anchor.getAttribute("title");
+    if (label) return label.trim();
+    var text = anchor.textContent && anchor.textContent.trim();
+    return text || "";
+  }
+
+  // Fires synchronously the instant a navigation starts (well before the
+  // fetch resolves) so a sidebar click feels instant instead of dead: mark
+  // the matching sidebar link(s) current and swap the topbar/document title
+  // to a best-effort guess. This is deliberately approximate -- `updateSidebar`
+  // / `updateTopbarTitle` (run from applySwap once the real response lands)
+  // are the source of truth and silently correct any mismatch, e.g. a body
+  // link with no sidebar counterpart just leaves the sidebar as it was until
+  // then.
+  function optimisticActivate(url, sourceAnchor) {
+    var path = url.pathname + url.search;
+    var sidebarLinks = document.querySelectorAll("#pdb-sidebar a[href]");
+    var match = null;
+    sidebarLinks.forEach(function (a) {
+      if (a.getAttribute("href") === path) match = a;
+    });
+    sidebarLinks.forEach(function (a) {
+      if (a === match) a.setAttribute("aria-current", "page");
+      else a.removeAttribute("aria-current");
+    });
+    var label = anchorLabel(sourceAnchor) || anchorLabel(match);
+    if (label) {
+      var topbarTitle = document.querySelector(".topbar-title");
+      if (topbarTitle) topbarTitle.textContent = label;
+      document.title = label + " · personal_db";
+    }
+  }
+
+  // Lightweight placeholder shown in <main> once a navigation has been
+  // pending for SKELETON_DELAY_MS. Built in JS (styled in style.css's
+  // .nav-skeleton rules) rather than shipped as server markup -- it's pure
+  // client-side loading chrome, never part of a real response.
+  function buildSkeleton() {
+    var wrap = document.createElement("div");
+    wrap.className = "nav-skeleton";
+    wrap.setAttribute("role", "status");
+    wrap.setAttribute("aria-label", "Loading");
+    var spinner = document.createElement("div");
+    spinner.className = "nav-skeleton-spinner";
+    wrap.appendChild(spinner);
+    for (var i = 0; i < 3; i++) {
+      var card = document.createElement("div");
+      card.className = "nav-skeleton-card";
+      ["nav-skeleton-line-h", "", "nav-skeleton-line-short"].forEach(function (extra) {
+        var line = document.createElement("div");
+        line.className = extra ? "nav-skeleton-line " + extra : "nav-skeleton-line";
+        card.appendChild(line);
+      });
+      wrap.appendChild(card);
+    }
+    return wrap;
+  }
+
+  // Shared by click-driven and popstate-driven navigation: optimistic chrome
+  // update happens synchronously, then the fetch races the skeleton timer.
+  // `onFailure` is the caller's fallback (full navigation vs. reload) --
+  // this never rejects, it always resolves once the outcome (success or
+  // fallback) has been handled.
+  function runNavigation(targetUrl, sourceAnchor, onFailure) {
+    optimisticActivate(targetUrl, sourceAnchor);
+    var liveMain = currentMain();
+    var timer = liveMain
+      ? window.setTimeout(function () {
+          liveMain.innerHTML = "";
+          liveMain.appendChild(buildSkeleton());
+        }, SKELETON_DELAY_MS)
+      : null;
+    return fetchHtml(targetUrl.href)
+      .then(function (html) {
+        if (timer) window.clearTimeout(timer);
+        applySwap(html);
+      })
+      .catch(function (error) {
+        if (timer) window.clearTimeout(timer);
+        onFailure(error);
+      });
+  }
+
+  function navigateTo(url, anchor) {
+    var targetUrl;
     try {
-      saveScrollIntoCurrentEntry();
-      await fetchAndSwap(url);
-      window.history.pushState({ scrollTop: 0 }, "", url);
-      var container = contentContainer();
-      if (container) container.scrollTop = 0;
+      targetUrl = new URL(url, window.location.href);
     } catch (_error) {
       window.location.href = url;
+      return;
     }
+    saveScrollIntoCurrentEntry();
+    // pushState happens immediately, before the fetch resolves -- if it
+    // ultimately fails, onFailure below does a real navigation to the same
+    // URL, which reloads regardless of the history entry already pointing
+    // there.
+    window.history.pushState({ scrollTop: 0 }, "", targetUrl.href);
+    runNavigation(targetUrl, anchor, function () {
+      window.location.href = targetUrl.href;
+    }).then(function () {
+      var container = contentContainer();
+      if (container) container.scrollTop = 0;
+    });
   }
 
   document.addEventListener("click", function (event) {
     var anchor = findAnchor(event.target);
     if (!shouldIntercept(event, anchor)) return;
     event.preventDefault();
-    navigateTo(anchor.href);
+    navigateTo(anchor.href, anchor);
   });
 
   window.addEventListener("popstate", function (event) {
     var state = event.state || {};
-    fetchAndSwap(window.location.href)
-      .then(function () {
-        var container = contentContainer();
-        if (container) container.scrollTop = state.scrollTop || 0;
-      })
-      .catch(function () {
-        window.location.reload();
-      });
+    var targetUrl = new URL(window.location.href);
+    runNavigation(targetUrl, null, function () {
+      window.location.reload();
+    }).then(function () {
+      var container = contentContainer();
+      if (container) container.scrollTop = state.scrollTop || 0;
+    });
   });
 
   // Give the initial entry a state object so the first Back press has a

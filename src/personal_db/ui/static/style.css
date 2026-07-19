@@ -2065,3 +2065,107 @@ body.pdb-agent-ask-mode * {
     align-self: flex-end;
   }
 }
+
+/* ==========================================================================
+   ux-pass-4: instant nav + progressive viz loading. Two pieces:
+     - .nav-skeleton: <main>'s placeholder while pdb-nav.js's optimistic
+       swap is waiting on a slow fetch (see pdb-nav.js's runNavigation).
+     - .viz-pending / .viz-fragment-error: the placeholder a deferred viz
+       block renders in (viz_pending macro, _macros.html) and its failure
+       state, both filled in by pdb-lazy.js fetching GET /viz/<slug>/html.
+   Everything below this marker is scoped to those, plus the shared
+   .sr-only utility and the pdb-shimmer/pdb-spin keyframes they use.
+   ========================================================================== */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@keyframes pdb-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0 0; }
+}
+@keyframes pdb-spin {
+  to { transform: rotate(360deg); }
+}
+
+.viz-pending {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 88px;
+  padding: 2px 0;
+}
+.viz-pending-line {
+  height: 12px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--bg-inset) 25%, var(--bg-hover) 37%, var(--bg-inset) 63%);
+  background-size: 400% 100%;
+  animation: pdb-shimmer 1.4s ease-in-out infinite;
+}
+.viz-pending-line-h { width: 40%; }
+.viz-pending-line-full { width: 100%; height: 56px; }
+.viz-pending-line-short { width: 60%; }
+
+.viz-fragment-error {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.viz-fragment-error a {
+  color: var(--accent);
+}
+
+.nav-skeleton {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--grid) * 2);
+  padding: calc(var(--grid) * 4) 0;
+}
+.nav-skeleton-spinner {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--fg-tertiary);
+  animation: pdb-spin 0.7s linear infinite;
+}
+.nav-skeleton-card {
+  width: 100%;
+  max-width: 640px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.nav-skeleton-line {
+  height: 11px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--bg-inset) 25%, var(--bg-hover) 37%, var(--bg-inset) 63%);
+  background-size: 400% 100%;
+  animation: pdb-shimmer 1.4s ease-in-out infinite;
+}
+.nav-skeleton-line-h { width: 45%; }
+.nav-skeleton-line-short { width: 65%; }
+
+@media (prefers-reduced-motion: reduce) {
+  .viz-pending-line,
+  .nav-skeleton-line {
+    animation: none;
+    background: var(--bg-inset);
+  }
+  .nav-skeleton-spinner {
+    animation: none;
+  }
+}
