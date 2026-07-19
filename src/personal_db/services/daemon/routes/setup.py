@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 
 from personal_db.core.config import Config
 from personal_db.core.db import apply_tracker_schema, init_db
+from personal_db.core.global_writes import blocked_reason
 from personal_db.core.installer import install_template
 from personal_db.core.manifest import OAuthStep, PlatformUnsupportedError, load_manifest
 from personal_db.core.migrations import apply_pending_migrations
@@ -36,6 +37,23 @@ def _install_daemon_safe(cfg: Config) -> str:
         return f"✓ daemon installed → {result['plist']} (long-running, KeepAlive)"
     except Exception as e:
         return f"⚠ daemon install failed: {e}"
+
+
+def _daemon_status(root) -> str:
+    """Report the current daemon install status with NO side effects."""
+    if os.environ.get("PERSONAL_DB_NO_DAEMON") == "1":
+        return "daemon disabled (PERSONAL_DB_NO_DAEMON=1)"
+    if sys.platform != "darwin":
+        return f"daemon is macOS-only (detected {sys.platform}); periodic sync unavailable"
+    reason = blocked_reason(root)
+    if reason:
+        return f"⚠ {reason}"
+    from personal_db.services.daemon import install as di
+
+    p = di.plist_path()
+    if p.exists():
+        return f"✓ daemon installed → {p}"
+    return "not installed yet"
 
 
 def register_setup_routes(
@@ -148,8 +166,14 @@ def register_setup_routes(
         return RedirectResponse(url=auth_url, status_code=303)
 
     @app.get("/setup/finish", response_class=HTMLResponse)
-    async def setup_finish(request: Request, mcp: str = "", mcp_ok: str = ""):
-        scheduler_msg = _install_daemon_safe(cfg)
+    async def setup_finish(
+        request: Request,
+        mcp: str = "",
+        mcp_ok: str = "",
+        mcp_msg: str = "",
+        daemon_msg: str = "",
+        daemon_ok: str = "",
+    ):
         reg = registry()
         targets = [{"key": key, "label": tgt.label} for key, tgt in _MCP_TARGETS.items()]
         return templates.TemplateResponse(
@@ -157,17 +181,33 @@ def register_setup_routes(
             name="setup_finish.html",
             context={
                 "active": "setup",
-                "scheduler_msg": scheduler_msg,
+                "daemon_status": _daemon_status(cfg.root),
+                "daemon_flash": {"msg": daemon_msg, "ok": daemon_ok == "1"} if daemon_msg else None,
                 "mcp_targets": targets,
-                "mcp_flash": {"target": mcp, "ok": mcp_ok == "1"} if mcp else None,
+                "mcp_flash": {"target": mcp, "ok": mcp_ok == "1", "msg": mcp_msg} if mcp else None,
                 **nav_context(reg, None),
             },
+        )
+
+    @app.post("/setup/finish/install-daemon")
+    async def setup_daemon_install():
+        msg = _install_daemon_safe(cfg)
+        ok = msg.startswith("✓")
+        return RedirectResponse(
+            url=f"/setup/finish?daemon_ok={'1' if ok else '0'}&daemon_msg={urllib.parse.quote(msg)}",
+            status_code=303,
         )
 
     @app.post("/setup/mcp/install/{target}")
     async def setup_mcp_install(target: str):
         if target not in _MCP_TARGETS:
             raise HTTPException(status_code=404, detail=f"unknown MCP target: {target}")
+        reason = blocked_reason(cfg.root)
+        if reason:
+            return RedirectResponse(
+                url=f"/setup/finish?mcp={target}&mcp_ok=0&mcp_msg={urllib.parse.quote(reason)}",
+                status_code=303,
+            )
         ok, _detail = _MCP_TARGETS[target].auto()
         return RedirectResponse(
             url=f"/setup/finish?mcp={target}&mcp_ok={'1' if ok else '0'}",

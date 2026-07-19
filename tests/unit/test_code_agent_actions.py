@@ -110,3 +110,19 @@ def test_install_refuses_malformed_settings(cfg: SimpleNamespace) -> None:
     assert "malformed" in result["message"].lower() or "parse" in result["message"].lower()
     # File untouched
     assert cfg.claude_settings_path.read_text() == "not json at all {"
+
+
+def test_install_hooks_blocked_on_scratch_root(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("PERSONAL_DB_ALLOW_GLOBAL_WRITES", raising=False)
+    cfg = SimpleNamespace(root=tmp_path)
+    result = actions.install_hooks(cfg)
+    assert result["ok"] is False
+    assert "temp" in result["message"]
+
+
+def test_uninstall_hooks_blocked_on_scratch_root(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("PERSONAL_DB_ALLOW_GLOBAL_WRITES", raising=False)
+    cfg = SimpleNamespace(root=tmp_path)
+    result = actions.uninstall_hooks(cfg)
+    assert result["ok"] is False
+    assert "temp" in result["message"]

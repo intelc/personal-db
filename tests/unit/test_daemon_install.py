@@ -21,6 +21,9 @@ def test_build_plist_contains_label_keepalive_and_args(tmp_path):
 
 
 def test_install_writes_and_loads_plist(tmp_path, monkeypatch):
+    # tmp_path is under the system temp dir, which the scratch-root guard
+    # would otherwise refuse; this test exercises the plist-writing path.
+    monkeypatch.setenv("PERSONAL_DB_ALLOW_GLOBAL_WRITES", "1")
     fake_la = tmp_path / "LaunchAgents"
     fake_la.mkdir()
     new_plist = fake_la / "com.personal_db.daemon.plist"
@@ -75,6 +78,7 @@ def test_build_plist_escapes_xml_special_chars(tmp_path):
 
 
 def test_install_raises_if_personal_db_not_on_path(tmp_path, monkeypatch):
+    monkeypatch.setenv("PERSONAL_DB_ALLOW_GLOBAL_WRITES", "1")  # get past the scratch-root guard
     fake_la = tmp_path / "LaunchAgents"
     fake_la.mkdir()
     monkeypatch.setattr(di, "_LAUNCHAGENTS_DIR", fake_la)
@@ -88,6 +92,7 @@ def test_install_raises_runtime_error_on_launchctl_load_failure(tmp_path, monkey
     with a clear message pointing the user to re-run after fixing the issue."""
     import subprocess as _sp
 
+    monkeypatch.setenv("PERSONAL_DB_ALLOW_GLOBAL_WRITES", "1")  # get past the scratch-root guard
     fake_la = tmp_path / "LaunchAgents"
     fake_la.mkdir()
     monkeypatch.setattr(di, "_LAUNCHAGENTS_DIR", fake_la)
@@ -109,3 +114,18 @@ def test_install_raises_runtime_error_on_launchctl_load_failure(tmp_path, monkey
 
     with pytest.raises(RuntimeError, match="launchctl failed to load"):
         di.install(root=tmp_path / "personal_db")
+
+
+def test_install_blocked_on_scratch_root(tmp_path, monkeypatch):
+    """A data root under the system temp dir must be refused before any
+    plist is written (scratch-root guard)."""
+    monkeypatch.delenv("PERSONAL_DB_ALLOW_GLOBAL_WRITES", raising=False)
+    fake_la = tmp_path / "la"
+    # Defense-in-depth: even if the guard were broken, this test can't touch
+    # the real ~/Library/LaunchAgents.
+    monkeypatch.setattr(di, "_LAUNCHAGENTS_DIR", fake_la)
+
+    with pytest.raises(RuntimeError, match="temp directory"):
+        di.install(root=tmp_path / "personal_db")
+
+    assert not fake_la.exists(), "guard must fire before anything is written"

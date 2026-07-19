@@ -67,6 +67,16 @@ def _managed_entry(command: str) -> dict:
 
 
 def install_hooks(cfg) -> dict:
+    # An explicit claude_settings_path override means the write stays wherever
+    # the caller pointed it (tests do this), so only the default
+    # ~/.claude/settings.json write needs the scratch-root guard.
+    if not getattr(cfg, "claude_settings_path", None):
+        from personal_db.core.global_writes import blocked_reason
+
+        reason = blocked_reason(getattr(cfg, "root", None))
+        if reason:
+            return {"ok": False, "message": reason}
+
     path = _settings_path(cfg)
     settings = _load_settings(path)
     if settings is None:
@@ -89,6 +99,14 @@ def install_hooks(cfg) -> dict:
 
 
 def uninstall_hooks(cfg) -> dict:
+    # See install_hooks: an explicit claude_settings_path override skips the guard.
+    if not getattr(cfg, "claude_settings_path", None):
+        from personal_db.core.global_writes import blocked_reason
+
+        reason = blocked_reason(getattr(cfg, "root", None))
+        if reason:
+            return {"ok": False, "message": reason}
+
     path = _settings_path(cfg)
     settings = _load_settings(path)
     if settings is None:

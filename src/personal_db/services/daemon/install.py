@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 from xml.sax.saxutils import escape
 
+from personal_db.core.global_writes import blocked_reason
+
 LABEL = "com.personal_db.daemon"
 
 # Module-level so tests can monkeypatch.
@@ -62,6 +64,9 @@ def install(root: Path) -> dict:
     Returns a dict with key ``plist``: :class:`~pathlib.Path` to the installed
     plist file.
     """
+    reason = blocked_reason(root)
+    if reason:
+        raise RuntimeError(reason)
     pdb_path = _resolve_cli_binary()
     if pdb_path is None:
         raise RuntimeError(
