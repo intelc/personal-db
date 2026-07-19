@@ -44,10 +44,10 @@ def page(
             links += f'<a href="{escape(href)}"{active_attr}{extra_attrs}>{escape(label)}</a>'
         nav_html = f'<nav class="app-tabs">{links}</nav>'
     subtitle_html = f'<p class="meta">{escape(subtitle)}</p>' if subtitle else ""
+    title_html = f'<div class="app-page-title"><h1>{escape(title)}</h1>{subtitle_html}</div>'
     return (
         '<article class="app-page">'
-        f'<header class="app-page-header"><div><h1>{escape(title)}</h1>{subtitle_html}</div></header>'
-        f"{header_extra}"
+        f'<header class="app-page-header">{title_html}{header_extra}</header>'
         f"{nav_html}"
         f'{join_html(list(children))}'
         "</article>"

@@ -34,20 +34,20 @@ _STYLE = """
 <style>
 .xhs-posts { display: flex; flex-direction: column; gap: 14px; }
 .xhs-post { display: flex; gap: 14px; align-items: stretch;
-            padding-bottom: 14px; border-bottom: 1px solid #eee; }
+            padding-bottom: 14px; border-bottom: 1px solid var(--border); }
 .xhs-post:last-child { border-bottom: none; padding-bottom: 0; }
 .xhs-thumb { flex: 0 0 120px; aspect-ratio: 3/4; border-radius: 6px;
-             overflow: hidden; background: #eee; display: block; }
+             overflow: hidden; background: var(--bg-inset); display: block; }
 .xhs-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .xhs-body { flex: 1; min-width: 0; display: flex; flex-direction: column;
             gap: 5px; font-size: 12px; }
 .xhs-title { margin: 0; font-size: 13px; line-height: 1.35; font-weight: 600;
              display: -webkit-box; -webkit-line-clamp: 2;
              -webkit-box-orient: vertical; overflow: hidden; }
-.xhs-desc { margin: 0; color: #555; line-height: 1.35;
+.xhs-desc { margin: 0; color: var(--chart-fg); line-height: 1.35;
             display: -webkit-box; -webkit-line-clamp: 2;
             -webkit-box-orient: vertical; overflow: hidden; }
-.xhs-meta { margin: 0; font-size: 11px; color: #888; }
+.xhs-meta { margin: 0; font-size: 11px; color: var(--chart-muted); }
 .xhs-stats { margin: 0; font-size: 12px; line-height: 1.4; }
 .xhs-stats strong { font-weight: 600; }
 .xhs-chart { height: 110px; margin-top: 2px; overflow: hidden; }
@@ -55,11 +55,11 @@ _STYLE = """
 .xhs-cmp { display: flex; flex-direction: column; gap: 18px; }
 .xhs-cmp-pane svg { width: 100% !important; height: 230px !important; display: block; }
 .xhs-cmp-title { margin: 0 0 4px; font-size: 13px; font-weight: 600;
-                 color: #555; text-transform: lowercase; }
-.xhs-account { padding: 10px 12px; border: 1px solid #eee; border-radius: 8px;
-               background: #fafafa; }
+                 color: var(--chart-fg); text-transform: lowercase; }
+.xhs-account { padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+               background: var(--bg-inset); }
 .xhs-account-main { margin: 0; font-size: 14px; font-weight: 600; }
-.xhs-account-meta { margin: 2px 0 0; font-size: 11px; color: #888; }
+.xhs-account-meta { margin: 2px 0 0; font-size: 11px; color: var(--chart-muted); }
 </style>
 """
 
@@ -134,7 +134,7 @@ def _render_post(con: sqlite3.Connection, post: tuple) -> str:
         chart = multi_line_chart(
             labels,
             series=[
-                ("views", [s[1] for s in snapshots], "#2878a8"),
+                ("views", [s[1] for s in snapshots], "var(--chart-accent)"),
                 ("likes", [s[2] for s in snapshots], "#c23b55"),
                 ("collects", [s[3] for s in snapshots], "#c27b2d"),
                 ("comments", [s[4] for s in snapshots], "#4f8f55"),
@@ -148,7 +148,7 @@ def _render_post(con: sqlite3.Connection, post: tuple) -> str:
         stats_html = f'<p class="xhs-stats">{stats}</p><div class="xhs-chart">{chart}</div>'
     else:
         snap_note = "no snapshots yet"
-        stats_html = '<p class="xhs-stats" style="color:#999">awaiting first status fetch</p>'
+        stats_html = '<p class="xhs-stats" style="color:var(--chart-muted)">awaiting first status fetch</p>'
 
     return (
         '<div class="xhs-post">'
@@ -244,7 +244,7 @@ def render_posts_compared(cfg: Config) -> str:
     labels = [f"{h}h" if h < 48 else f"{h // 24}d" for h in hours]
     palette = [
         "#c23b55",
-        "#2878a8",
+        "var(--chart-accent)",
         "#4f8f55",
         "#c27b2d",
         "#7057a8",

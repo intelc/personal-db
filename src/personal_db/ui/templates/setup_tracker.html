@@ -4,7 +4,21 @@
 {% block content %}
 <section class="block">
   <p class="meta"><a href="/setup">← back to setup</a></p>
-  <h1 class="block-h">{{ tracker_name|upper }}</h1>
+  <div class="page-head">
+    <div>
+      <h1 title="{{ tracker_name }}">{{ tracker_title }}</h1>
+      {% if manifest.platform or (manifest.permission_type and manifest.permission_type != 'none') %}
+      <div class="badge-row">
+        {% for p in (manifest.platform or []) %}
+          <span class="badge">{{ platform_label(p) }}</span>
+        {% endfor %}
+        {% if manifest.permission_type and manifest.permission_type != 'none' %}
+          <span class="badge{% if manifest.permission_type == 'full_disk_access' %} badge-fda{% endif %}">{{ permission_label(manifest.permission_type) }}</span>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
   <p class="meta">{{ manifest.description }}</p>
 </section>
 

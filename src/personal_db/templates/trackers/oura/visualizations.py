@@ -14,12 +14,12 @@ from personal_db.viz_helpers import meta
 
 def _zone_color(value: int | float) -> str:
     if not value or value <= 0:
-        return "#eee"
+        return "var(--chart-grid)"
     if value < 60:
-        return "#cc4040"
+        return "var(--chart-red)"
     if value < 80:
-        return "#cc9933"
-    return "#3a8a4a"
+        return "var(--chart-amber)"
+    return "var(--chart-green)"
 
 
 def render_readiness_60d(cfg: Config) -> str:
@@ -28,9 +28,9 @@ def render_readiness_60d(cfg: Config) -> str:
         return meta("oura_daily_readiness not synced yet")
     return (
         '<p class="meta">oura readiness · last 60 days · '
-        '<span style="color:#cc4040">red</span> &lt;60, '
-        '<span style="color:#cc9933">amber</span> 60-79, '
-        '<span style="color:#3a8a4a">green</span> &ge;80</p>'
+        '<span style="color:var(--chart-red)">red</span> &lt;60, '
+        '<span style="color:var(--chart-amber)">amber</span> 60-79, '
+        '<span style="color:var(--chart-green)">green</span> &ge;80</p>'
         + vertical_bars(items, color_fn=_zone_color, show_every_nth_label=10)
     )
 
@@ -51,7 +51,7 @@ def render_steps_30d(cfg: Config) -> str:
         return meta("oura_daily_activity not synced yet")
     return (
         '<p class="meta">oura steps · last 30 days</p>'
-        + vertical_bars(items, color="#1a3a5e", show_every_nth_label=5)
+        + vertical_bars(items, color="var(--chart-accent)", show_every_nth_label=5)
     )
 
 
@@ -82,7 +82,7 @@ def render_hrv_30d(cfg: Config) -> str:
         items.append((d[5:], rows.get(d, 0) or 0))
     return (
         '<p class="meta">oura sleep HRV (ms RMSSD) · last 30 days · higher is better</p>'
-        + vertical_bars(items, color="#3a8a4a", show_every_nth_label=5)
+        + vertical_bars(items, color="var(--chart-green)", show_every_nth_label=5)
     )
 
 

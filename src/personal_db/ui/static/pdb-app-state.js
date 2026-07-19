@@ -110,4 +110,5 @@
   } else {
     mountIslands();
   }
+  document.addEventListener('pdb:navigate', () => mountIslands());
 })();

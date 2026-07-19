@@ -87,7 +87,7 @@ def _render_overview(cfg) -> str:
     chart = horizontal_bars(
         [(r[0], abs(float(r[1] or 0))) for r in group_rows],
         value_fmt=_money,
-        color="#2364aa",
+        color="var(--chart-accent)",
     )
     return (
         "<h2>Monarch Overview</h2>"

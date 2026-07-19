@@ -141,7 +141,7 @@ def _render_overview(cfg) -> str:
         + "<h3>Net Worth</h3>"
         + line_chart(
             list(zip(labels, values, strict=False)),
-            color="#111111",
+            color="var(--chart-fg)",
             height_px=180,
             show_every_nth_label=max(len(labels) // 8, 1),
             value_attr="data-usd",
@@ -150,15 +150,15 @@ def _render_overview(cfg) -> str:
         + horizontal_bars(
             [(label, abs(value)) for label, value in account_breakdown if value],
             value_fmt=_money,
-            color="#2364aa",
+            color="var(--chart-accent)",
         )
         + "<h3>Daily Cashflow</h3>"
         + multi_line_chart(
             cf_labels,
             [
-                ("Income", income, "#167a3f"),
-                ("Spending", spending, "#b23a48"),
-                ("Net", net, "#111111", {"width": 2.2}),
+                ("Income", income, "var(--chart-green)"),
+                ("Spending", spending, "var(--chart-red)"),
+                ("Net", net, "var(--chart-fg)", {"width": 2.2}),
             ],
             height_px=180,
             show_every_nth_label=max(len(cf_labels) // 8, 1),
@@ -235,9 +235,9 @@ def _render_cashflow(cfg) -> str:
         + multi_line_chart(
             labels,
             [
-                ("Income", income, "#167a3f"),
-                ("Spending", spending, "#b23a48"),
-                ("Net", net, "#111111", {"width": 2.2}),
+                ("Income", income, "var(--chart-green)"),
+                ("Spending", spending, "var(--chart-red)"),
+                ("Net", net, "var(--chart-fg)", {"width": 2.2}),
             ],
             height_px=210,
             show_every_nth_label=max(len(labels) // 10, 1),
@@ -286,10 +286,10 @@ def _render_net_worth(cfg) -> str:
         + multi_line_chart(
             labels,
             [
-                ("Net worth", net, "#111111", {"width": 2.4}),
-                ("Investments", investments, "#2364aa"),
-                ("Cash", cash, "#167a3f"),
-                ("Credit cards", cards, "#b23a48"),
+                ("Net worth", net, "var(--chart-fg)", {"width": 2.4}),
+                ("Investments", investments, "var(--chart-accent)"),
+                ("Cash", cash, "var(--chart-green)"),
+                ("Credit cards", cards, "var(--chart-red)"),
             ],
             height_px=220,
             show_every_nth_label=max(len(labels) // 10, 1),

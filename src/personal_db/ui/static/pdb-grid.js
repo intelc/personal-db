@@ -211,4 +211,5 @@
   } else {
     initAll();
   }
+  document.addEventListener('pdb:navigate', initAll);
 })();

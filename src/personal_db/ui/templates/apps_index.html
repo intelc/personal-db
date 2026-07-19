@@ -1,7 +1,10 @@
 {% extends "base.html" %}
 {% block title %}apps · personal_db{% endblock %}
+{% block page_title %}Apps{% endblock %}
 {% block content %}
-  <h1>Apps</h1>
+  <header class="page-head">
+    <h1>Apps</h1>
+  </header>
   {% if apps %}
     <div class="app-list">
       {% for app in apps %}

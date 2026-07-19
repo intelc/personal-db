@@ -25,6 +25,56 @@ def platform_label(name: str) -> str:
     return _PLATFORM_LABELS.get(name, name)
 
 
+_WORD_CASING_OVERRIDES: dict[str, str] = {
+    "github": "GitHub",
+    "imessage": "iMessage",
+    "macos": "macOS",
+    "xhs": "XHS",
+    "omi": "Omi",
+    "oura": "Oura",
+    "whoop": "Whoop",
+    "spo2": "SpO2",
+    "url": "URL",
+    "api": "API",
+    "cli": "CLI",
+    "db": "DB",
+    "id": "ID",
+}
+
+
+def humanize_tracker_name(slug: str) -> str:
+    """Turn a tracker slug (e.g. `github_commits`) into a display title.
+
+    Splits on `_`, title-cases each word, and applies `_WORD_CASING_OVERRIDES`
+    for words with non-standard casing (acronyms, brand names). Purely
+    mechanical -- trackers that need a different display string set
+    `Manifest.title` instead (see `Manifest.display_title`).
+    """
+    words = slug.split("_")
+    out = []
+    for word in words:
+        lower = word.lower()
+        if lower in _WORD_CASING_OVERRIDES:
+            out.append(_WORD_CASING_OVERRIDES[lower])
+        else:
+            out.append(word.capitalize())
+    return " ".join(out)
+
+
+_PERMISSION_LABELS: dict[str, str] = {
+    "none": "No permissions",
+    "api_key": "API key",
+    "oauth": "OAuth",
+    "full_disk_access": "Full Disk Access",
+    "manual": "Manual",
+}
+
+
+def permission_label(value: str) -> str:
+    """Human-friendly name for a `PermissionType` value (falls back to the raw value)."""
+    return _PERMISSION_LABELS.get(value, value)
+
+
 def check_platform_supported(manifest: "Manifest", *, current: str | None = None) -> None:
     """Raise PlatformUnsupportedError if `manifest.platform` is set and excludes
     the current OS. `manifest.platform is None` means portable (no gate)."""
@@ -192,6 +242,10 @@ class Manifest(BaseModel):
 
     name: str
     description: str
+    # Optional human-friendly display name for the UI. Falls back to
+    # `humanize_tracker_name(name)` via `display_title()` when unset -- most
+    # trackers don't need to set this explicitly.
+    title: str | None = None
     permission_type: PermissionType
     setup_steps: list[SetupStep] = Field(default_factory=list)
     schedule: ScheduleSpec | None = None
@@ -229,6 +283,10 @@ class Manifest(BaseModel):
     # hashed) -- editing this list re-requires validation before sync, same
     # as any other manifest change.
     python_deps: list[str] = Field(default_factory=list)
+
+    def display_title(self) -> str:
+        """Human-friendly display name: explicit `title`, else humanized `name`."""
+        return self.title or humanize_tracker_name(self.name)
 
 
 def load_manifest(path: Path) -> Manifest:

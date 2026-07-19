@@ -11,9 +11,10 @@ from html import escape
 
 from personal_db.core.config import Config
 from personal_db.core.data_horizon import get_all as _get_all_horizons
+from personal_db.core.manifest import humanize_tracker_name
 
 
-def _humanize_age(d: timedelta) -> str:
+def humanize_age(d: timedelta) -> str:
     s = int(d.total_seconds())
     if s < 60:
         return f"{s}s ago"
@@ -39,14 +40,17 @@ def render_health(cfg: Config) -> str:
     rows = []
     for tracker, ts in sorted(last_runs.items()):
         try:
-            age = _humanize_age(now - datetime.fromisoformat(ts))
+            age = humanize_age(now - datetime.fromisoformat(ts))
         except ValueError:
             age = "?"
         horizon = horizons.get(tracker)
         horizon_cell = escape(horizon[:10]) if horizon else "—"
         # Tracker name links to its dedicated page so users can click straight
         # from "this looks stale" to the tracker's recent rows / viz.
-        name_link = f'<a href="/t/{escape(tracker)}">{escape(tracker)}</a>'
+        name_link = (
+            f'<a href="/t/{escape(tracker)}" title="{escape(tracker)}">'
+            f"{escape(humanize_tracker_name(tracker))}</a>"
+        )
         rows.append(
             f"<tr><td>{name_link}</td>"
             f"<td>{escape(age)}</td>"

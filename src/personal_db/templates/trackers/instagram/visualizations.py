@@ -249,17 +249,17 @@ _STYLE = """
 <style>
 .ig-reels { display: flex; flex-direction: column; gap: 14px; }
 .ig-reel  { display: flex; gap: 14px; align-items: stretch;
-            padding-bottom: 14px; border-bottom: 1px solid #eee; }
+            padding-bottom: 14px; border-bottom: 1px solid var(--border); }
 .ig-reel:last-child { border-bottom: none; padding-bottom: 0; }
 .ig-thumb { flex: 0 0 110px; aspect-ratio: 9/16; border-radius: 6px;
-            overflow: hidden; background: #eee; display: block; }
+            overflow: hidden; background: var(--bg-inset); display: block; }
 .ig-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .ig-body  { flex: 1; min-width: 0; display: flex; flex-direction: column;
             gap: 4px; font-size: 12px; }
 .ig-cap   { margin: 0; font-size: 13px; line-height: 1.35;
             display: -webkit-box; -webkit-line-clamp: 2;
             -webkit-box-orient: vertical; overflow: hidden; }
-.ig-meta  { font-size: 11px; color: #888; margin: 0; }
+.ig-meta  { font-size: 11px; color: var(--chart-muted); margin: 0; }
 .ig-stats { font-size: 12px; margin: 0; line-height: 1.4; }
 .ig-stats strong { font-weight: 600; }
 .ig-charts { display: flex; gap: 14px; margin-top: 4px; }
@@ -268,7 +268,7 @@ _STYLE = """
 .ig-chart-cell svg { width: 100% !important; height: 80px !important;
                      display: block; }
 .ig-chart-title { margin: 0 0 2px; font-size: 11px; font-weight: 600;
-                  color: #555; text-transform: lowercase; }
+                  color: var(--chart-fg); text-transform: lowercase; }
 .ig-cmp-stack { display: flex; flex-direction: column; gap: 18px; }
 .ig-cmp-pane  { width: 100%; }
 .ig-cmp-pane .ig-chart-title { font-size: 13px; margin-bottom: 4px; }
@@ -282,16 +282,16 @@ _STYLE = """
                  border-radius: 2px; flex: 0 0 10px; }
 .ig-cmp-cap    { flex: 1 1 auto; min-width: 0; overflow: hidden;
                  text-overflow: ellipsis; }
-.ig-cmp-term   { color: #888; font-variant-numeric: tabular-nums;
+.ig-cmp-term   { color: var(--chart-muted); font-variant-numeric: tabular-nums;
                  flex: 0 0 auto; }
-.ig-account { padding: 10px 12px; border: 1px solid #eee; border-radius: 8px;
-              background: #fafafa; }
+.ig-account { padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+              background: var(--bg-inset); }
 .ig-account-head { display: flex; justify-content: space-between; gap: 12px;
                    align-items: baseline; margin-bottom: 4px; }
-.ig-account-title { margin: 0; font-size: 12px; color: #666;
+.ig-account-title { margin: 0; font-size: 12px; color: var(--chart-muted);
                     text-transform: lowercase; }
 .ig-account-main { margin: 0; font-size: 14px; font-weight: 600; }
-.ig-account-meta { margin: 0; font-size: 11px; color: #888; }
+.ig-account-meta { margin: 0; font-size: 11px; color: var(--chart-muted); }
 .ig-account svg { width: 100% !important; height: 76px !important;
                   display: block; }
 </style>
@@ -336,7 +336,7 @@ def _render_account_followers(con: sqlite3.Connection) -> str:
     show_every = max(1, len(x_labels) // 6)
     chart = multi_line_chart(
         x_labels,
-        series=[("followers", follower_values, "#3a6ea8")],
+        series=[("followers", follower_values, "var(--chart-accent)")],
         x_values=x_ts,
         height_px=76,
         show_every_nth_label=show_every,
@@ -426,7 +426,7 @@ def _render_card(con: sqlite3.Connection, reel: tuple) -> str:
         reach_chart = multi_line_chart(
             x_labels,
             series=[
-                ("views", views_s, "#3a6ea8"),
+                ("views", views_s, "var(--chart-accent)"),
                 ("reach", reach_s, "#cc6644"),
             ],
             **chart_kwargs,
@@ -454,7 +454,7 @@ def _render_card(con: sqlite3.Connection, reel: tuple) -> str:
         )
     else:
         snap_note = "no snapshots yet"
-        stats_html = '<p class="ig-stats" style="color:#999">awaiting first insights fetch</p>'
+        stats_html = '<p class="ig-stats" style="color:var(--chart-muted)">awaiting first insights fetch</p>'
         chart_block = ""
 
     return (
@@ -597,7 +597,7 @@ def render_reels_compared(cfg: Config) -> str:
 
     # Hand-picked palette — distinct hues so 10 reels stay distinguishable.
     palette = [
-        "#3a6ea8", "#e0245e", "#17bf63", "#cc6644", "#1da1f2", "#f7b500",
+        "var(--chart-accent)", "#e0245e", "#17bf63", "#cc6644", "#1da1f2", "#f7b500",
         "#7a3aa8", "#a83a6e", "#3aa86e", "#a86e3a",
     ]
 

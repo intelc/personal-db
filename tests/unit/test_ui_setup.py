@@ -265,17 +265,16 @@ def test_setup_tracker_get_renders_authorize_button_for_oauth(tmp_path, monkeypa
 
 
 def test_setup_overview_marks_installed_with_icon(tmp_path):
-    """Trackers without setup_steps render with the '—' icon (e.g. habits has 1
-    instruction, but life_context with no steps shows '—'). Habits has 1 step,
-    so before any successful run it's '✗'."""
+    """Trackers without setup_steps render as ready (e.g. habits has 1
+    instruction, but life_context with no steps is always ready). Habits has
+    1 step, so before any successful test sync it needs attention."""
     cfg = _init(tmp_path)
     _install(cfg.root, "habits")
 
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/setup")
-    # Some indicator glyph is rendered for habits' status. Just confirm the
-    # tracker appears with a row containing its summary text.
-    assert "needs setup" in r.text or "configured" in r.text or "no setup needed" in r.text
+    # The overview card shows a status chip reflecting the tracker's state.
+    assert "Needs setup" in r.text or "Ready" in r.text
 
 
 @pytest.mark.darwin_only  # installs the darwin-gated code_agent_activity tracker

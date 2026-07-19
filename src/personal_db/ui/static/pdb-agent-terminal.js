@@ -136,7 +136,7 @@
       },
       visibleText: {
         headings: $all('h1, h2').slice(0, 20).map((el) => truncate(el.textContent, 180)),
-        activeNav: truncate($('.masthead nav a.active')?.textContent || ''),
+        activeNav: truncate($('.sidebar a[aria-current="page"]')?.textContent || ''),
         activeAppTab: truncate($('.app-tabs a.active')?.textContent || ''),
       },
       metrics,

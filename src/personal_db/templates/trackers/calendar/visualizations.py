@@ -45,7 +45,7 @@ def render_reality_labels(cfg: Config) -> str:
     items = [(row["reality_label"].replace("_", " "), float(row["n"])) for row in rows]
     return (
         '<p class="meta">past 14 days · planned calendar blocks grouped by actual activity pattern</p>'
-        + horizontal_bars(items, value_fmt=lambda v: f"{int(v)}", color="#2563eb")
+        + horizontal_bars(items, value_fmt=lambda v: f"{int(v)}", color="var(--chart-accent)")
     )
 
 
