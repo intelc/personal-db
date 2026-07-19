@@ -15,6 +15,7 @@ from personal_db.core.db import connection
 from personal_db.services.daemon._locks import backfill_locked, sync_due_locked, sync_one_locked
 from personal_db.services.daemon.routes.common import validate_name
 from personal_db.core.sync import sync_one
+from personal_db.services.ui.builtin_viz import repeated_failure_trackers
 
 _APP_VERSION_FALLBACK = "0.0.0-dev"
 
@@ -64,6 +65,7 @@ def register_sync_routes(
             "app_version": _app_version(),
             "api_version": 1,
             "db_user_version": _db_user_version(cfg),
+            "repeated_sync_failures": repeated_failure_trackers(cfg),
         }
 
     @router.post("/sync/{tracker}")

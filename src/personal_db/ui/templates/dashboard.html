@@ -19,7 +19,43 @@
       <span class="badge">Screen Time</span>
     </div>
   </section>
-{% elif rendered %}
+{% else %}
+<header class="page-head">
+  <h1>Dashboard</h1>
+  <button type="button" class="btn-link dash-edit-toggle" id="pdb-dash-edit-toggle" aria-expanded="false" aria-controls="pdb-dash-edit-panel">Edit dashboard</button>
+</header>
+{% endif %}
+
+{% if nav_trackers %}
+<section class="block dash-edit-panel" id="pdb-dash-edit-panel" hidden>
+  <h2 class="block-h">EDIT DASHBOARD</h2>
+  <p class="meta">
+    Choose which visualizations show on the dashboard, and reorder the enabled
+    ones with the arrow buttons. Newly-checked items are added to the end.
+  </p>
+  <form id="pdb-dash-edit-form" class="dash-edit-form" data-dash-edit-form>
+    <div class="dash-edit-rows" id="pdb-dash-edit-rows">
+      {% for v in edit_panel.enabled %}
+      {{ m.dash_edit_row(v, checked=true) }}
+      {% endfor %}
+      {% for group in edit_panel.groups %}
+      <div class="dash-edit-group-head">{{ group.title|upper }}</div>
+      {% for v in group.viz %}
+      {{ m.dash_edit_row(v, checked=false) }}
+      {% endfor %}
+      {% endfor %}
+    </div>
+    <div class="dash-edit-actions">
+      <button type="button" class="btn-link" id="pdb-dash-edit-cancel">Cancel</button>
+      <button type="submit" class="btn-primary" id="pdb-dash-edit-save">Save</button>
+    </div>
+    <p class="meta dash-edit-error" id="pdb-dash-edit-error" hidden></p>
+  </form>
+</section>
+{% endif %}
+
+{% if nav_trackers %}
+{% if rendered %}
   {% for entry in rendered %}
     <section class="block">
       <h2 class="block-h">
@@ -31,7 +67,7 @@
   {% endfor %}
 {% else %}
   <section class="block">
-    <h1 class="block-h">DASHBOARD</h1>
+    <h2 class="block-h">NOTHING ON THE DASHBOARD YET</h2>
     <p class="meta">
       Your trackers are installed — visualizations appear here as data syncs.
       Configure which ones show on the dashboard, or install a tracker that
@@ -41,16 +77,6 @@
   </section>
 {% endif %}
 
-{% if nav_trackers %}
-<details class="block">
-  <summary class="block-h">CONFIGURE</summary>
-  <p class="meta">
-    Edit <code>~/personal_db/.config/dashboard.yaml</code> with a
-    <code>viz:</code> list of slugs to control what shows here. Available slugs:
-  </p>
-  <ul class="slug-list">
-    {% for entry in rendered %}<li><code>{{ entry.viz.slug }}</code></li>{% endfor %}
-  </ul>
-</details>
+
 {% endif %}
 {% endblock %}

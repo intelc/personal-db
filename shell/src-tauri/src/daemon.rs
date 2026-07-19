@@ -36,6 +36,15 @@ const SIDECAR_NAME: &str = "personal-db-daemon";
 /// can run the app at all.
 const SIDECAR_START_TIMEOUT: Duration = Duration::from_secs(20);
 const SIDECAR_POLL_INTERVAL: Duration = Duration::from_millis(500);
+/// Tray icon id (see `main.rs`'s `TrayIconBuilder::with_id`) -- shares the
+/// string "main" with `WINDOW_LABEL` below by coincidence only; tray ids and
+/// window labels are separate Tauri namespaces.
+const TRAY_ID: &str = "main";
+/// How often `main.rs`'s setup-time poll loop calls `poll_health_status`.
+pub const HEALTH_POLL_INTERVAL: Duration = Duration::from_secs(120);
+/// Cap on how many failing tracker names get spelled out in the tray
+/// tooltip before collapsing the rest into a "+N more" suffix.
+const MAX_TOOLTIP_NAMES: usize = 4;
 
 /// Holds the sidecar daemon this app spawned (if any), so the `CommandChild`
 /// isn't silently dropped (that wouldn't kill the process -- Tauri's
@@ -46,9 +55,31 @@ const SIDECAR_POLL_INTERVAL: Duration = Duration::from_millis(500);
 #[derive(Default)]
 pub struct SidecarState(pub Mutex<Option<CommandChild>>);
 
+/// Last-known daemon reachability, as observed by `poll_health_status`.
+/// `None` means "no poll has completed yet"; `Some(true)`/`Some(false)`
+/// record the last observed state so a poll that finds the daemon
+/// unreachable can tell a fresh down-transition (worth auto-restarting and
+/// notifying about) from "still down since last time" (nothing new to do --
+/// avoids re-spawning a sidecar or re-popping the guidance window every
+/// poll tick while the daemon stays down).
+#[derive(Default)]
+pub struct HealthState(pub Mutex<Option<bool>>);
+
 #[derive(Debug, Deserialize)]
 struct OtcResponse {
     otc: String,
+}
+
+/// `GET /api/v1/health` response shape this client cares about. Every field
+/// is `#[serde(default)]` so an older daemon build (or a health payload from
+/// before this field existed) deserializes fine with empty/default values
+/// instead of failing the whole poll.
+#[derive(Debug, Deserialize, Default)]
+struct HealthPayload {
+    #[serde(default)]
+    app_version: String,
+    #[serde(default)]
+    repeated_sync_failures: Vec<String>,
 }
 
 /// Mirrors `services/daemon/client.py::base_url()`: `PERSONAL_DB_DAEMON_URL`
@@ -168,7 +199,7 @@ fn show_daemon_down(app: &AppHandle, base: &str, reason: &str) -> Result<(), Str
         url::form_urlencoded::byte_serialize(reason.as_bytes()).collect::<String>(),
     );
     WebviewWindowBuilder::new(app, WINDOW_LABEL, WebviewUrl::App(PathBuf::from(query)))
-        .title("PersonalDB — daemon not running")
+        .title("PersonalDB isn't running")
         .inner_size(560.0, 460.0)
         .resizable(true)
         .build()
@@ -358,5 +389,110 @@ fn summarize_results(results: &serde_json::Value) -> (usize, usize) {
 pub(crate) fn notify(app: &AppHandle, title: &str, body: &str) {
     if let Err(e) = app.notification().builder().title(title).body(body).show() {
         eprintln!("notification failed: {e}");
+    }
+}
+
+/// Joins failing tracker names for the tray tooltip, collapsing anything
+/// past `MAX_TOOLTIP_NAMES` into a "+N more" suffix so a bad afternoon with
+/// a dozen failing trackers doesn't produce an unreadable tooltip.
+fn format_failing_names(names: &[String]) -> String {
+    if names.len() <= MAX_TOOLTIP_NAMES {
+        names.join(", ")
+    } else {
+        let shown = names[..MAX_TOOLTIP_NAMES].join(", ");
+        format!("{shown}, +{} more", names.len() - MAX_TOOLTIP_NAMES)
+    }
+}
+
+/// `GET /api/v1/health` on a timer (see `HEALTH_POLL_INTERVAL` /
+/// `main.rs`'s setup-time poll loop) and updates the "main" tray icon's
+/// title/tooltip to reflect what it finds:
+///
+/// - healthy, no repeated failures: clear the "!" title, tooltip shows the
+///   daemon's reported `app_version`.
+/// - healthy, `repeated_sync_failures` non-empty: "!" title, tooltip names
+///   the failing trackers.
+/// - unreachable: only acts on the down-*transition* (last poll was
+///   healthy) to avoid spawn-looping a sidecar or repeatedly yanking focus
+///   back to the guidance window every tick while the daemon stays down --
+///   see `HealthState`'s doc comment. On a transition it tries
+///   `try_start_sidecar` once; if that doesn't bring the daemon back, it
+///   re-shows the bundled daemon-down page if a "main" window is currently
+///   open, or otherwise just badges the tray.
+pub async fn poll_health_status(app: &AppHandle) {
+    let base = base_url();
+    let tray = app.tray_by_id(TRAY_ID);
+
+    let client = match http_client(HEALTH_TIMEOUT) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("health poll: {e}");
+            return;
+        }
+    };
+
+    let response = client.get(format!("{base}/api/v1/health")).send().await;
+
+    let healthy_payload = match response {
+        Ok(resp) if resp.status().is_success() => resp.json::<HealthPayload>().await.ok(),
+        _ => None,
+    };
+
+    if let Some(payload) = healthy_payload {
+        {
+            let state = app.state::<HealthState>();
+            *state.0.lock().unwrap() = Some(true);
+        }
+        let Some(tray) = tray else { return };
+        if payload.repeated_sync_failures.is_empty() {
+            let _ = tray.set_title(None::<String>);
+            let tooltip = if payload.app_version.is_empty() {
+                "PersonalDB".to_string()
+            } else {
+                format!("PersonalDB — v{}", payload.app_version)
+            };
+            let _ = tray.set_tooltip(Some(tooltip));
+        } else {
+            let _ = tray.set_title(Some("!"));
+            let _ = tray.set_tooltip(Some(format!(
+                "Sync failing: {}",
+                format_failing_names(&payload.repeated_sync_failures)
+            )));
+        }
+        return;
+    }
+
+    // Unreachable (request failed, non-2xx, or an unparseable body). Only
+    // act on the transition from healthy -> unreachable; a poll that finds
+    // the daemon *still* down since the last tick is a no-op, both for the
+    // sidecar (try_start_sidecar's own SidecarState guard would refuse a
+    // second spawn anyway) and for the window/tray updates below.
+    let was_healthy = {
+        let state = app.state::<HealthState>();
+        let mut guard = state.0.lock().unwrap();
+        let was = guard.unwrap_or(false);
+        *guard = Some(false);
+        was
+    };
+    if !was_healthy {
+        return;
+    }
+
+    eprintln!("daemon health poll: was healthy, now unreachable at {base} -- attempting one restart");
+    if try_start_sidecar(app, &base).await {
+        let state = app.state::<HealthState>();
+        *state.0.lock().unwrap() = Some(true);
+        if let Some(tray) = tray {
+            let _ = tray.set_title(None::<String>);
+            let _ = tray.set_tooltip(Some("PersonalDB".to_string()));
+        }
+        return;
+    }
+
+    if app.get_webview_window(WINDOW_LABEL).is_some() {
+        let _ = show_daemon_down(app, &base, "daemon unreachable");
+    } else if let Some(tray) = tray {
+        let _ = tray.set_tooltip(Some("PersonalDB — daemon not running"));
+        let _ = tray.set_title(Some("!"));
     }
 }

@@ -134,6 +134,68 @@ def _last_errors_by_tracker(cfg: Config) -> dict[str, dict]:
     return latest
 
 
+def repeated_failure_trackers(
+    cfg: Config, *, min_count: int = 2, window_hours: int = 24
+) -> list[str]:
+    """Trackers with repeated, still-unresolved sync failures.
+
+    A tracker qualifies when it has at least `min_count` sync_errors.jsonl
+    records within the trailing `window_hours` AND its latest error is newer
+    than its last recorded success in state/last_run.json (or there's no
+    recorded success at all) -- mirrors the "still failing" check in
+    `build_health_page_data` above, but counts occurrences in a window
+    instead of just looking at the single latest record, so one-off blips
+    don't trip it.
+
+    Powers the daemon health payload's `repeated_sync_failures` field, which
+    the shell tray polls to badge itself when syncs are failing.
+    """
+    now = datetime.now(timezone.utc)
+    window_start = now - timedelta(hours=window_hours)
+
+    err_path = cfg.state_dir / "sync_errors.jsonl"
+    counts: dict[str, int] = {}
+    latest_error_ts: dict[str, datetime] = {}
+    if err_path.exists():
+        try:
+            with err_path.open() as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    tracker = rec.get("tracker")
+                    ts = _parse_ts(rec.get("ts"))
+                    if not tracker or ts is None or ts < window_start:
+                        continue
+                    counts[tracker] = counts.get(tracker, 0) + 1
+                    if tracker not in latest_error_ts or ts > latest_error_ts[tracker]:
+                        latest_error_ts[tracker] = ts
+        except OSError:
+            pass
+
+    last_run_path = cfg.state_dir / "last_run.json"
+    last_runs: dict[str, str] = {}
+    if last_run_path.exists():
+        try:
+            last_runs = json.loads(last_run_path.read_text())
+        except json.JSONDecodeError:
+            last_runs = {}
+
+    result = []
+    for tracker, count in counts.items():
+        if count < min_count:
+            continue
+        last_run_dt = _parse_ts(last_runs.get(tracker))
+        error_dt = latest_error_ts[tracker]
+        if last_run_dt is None or error_dt > last_run_dt:
+            result.append(tracker)
+    return sorted(result)
+
+
 def build_health_page_data(
     cfg: Config,
     *,

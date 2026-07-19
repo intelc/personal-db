@@ -87,6 +87,7 @@ fn main() {
         // see daemon.rs::try_start_sidecar.
         .plugin(tauri_plugin_shell::init())
         .manage(daemon::SidecarState::default())
+        .manage(daemon::HealthState::default())
         .invoke_handler(tauri::generate_handler![open_dashboard])
         .setup(|app| {
             // No dock icon / app switcher entry -- this is a menu-bar-only
@@ -148,7 +149,7 @@ fn main() {
 
             let start_login_item_for_toggle = start_login_item.clone();
             let install_cli_item_for_update = install_cli_item.clone();
-            let _tray = TrayIconBuilder::new()
+            let _tray = TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
                 .show_menu_on_left_click(true)
@@ -195,6 +196,20 @@ fn main() {
             // First launch: open the dashboard immediately, same as clicking
             // "Open Dashboard" from the tray.
             spawn_open_dashboard(&app.handle().clone());
+
+            // Standing health poll: badges the tray with "!" (and a
+            // tooltip naming the failing trackers) when the daemon reports
+            // `repeated_sync_failures`, and self-heals a daemon that drops
+            // off entirely -- see daemon::poll_health_status for the
+            // down-transition/no-spawn-loop logic.
+            let health_poll_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let mut interval = tokio::time::interval(daemon::HEALTH_POLL_INTERVAL);
+                loop {
+                    interval.tick().await;
+                    daemon::poll_health_status(&health_poll_handle).await;
+                }
+            });
 
             // One-time nudge toward the Set Up items above, if the user
             // hasn't touched either the CLI symlink or any MCP host yet
