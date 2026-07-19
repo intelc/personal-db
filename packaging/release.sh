@@ -206,7 +206,7 @@ APP_PATH="$BUNDLE_DIR/PersonalDB.app"
 [[ -d "$APP_PATH" ]] || die "signed app not found at $APP_PATH"
 rm -f "$UPDATER_ARCHIVE" "$UPDATER_SIG"
 tar -czf "$UPDATER_ARCHIVE" -C "$(dirname "$APP_PATH")" "$(basename "$APP_PATH")"
-(cd "$REPO_ROOT/shell" && env -u CI npx tauri signer sign \
+(cd "$REPO_ROOT/shell" && env -u CI -u TAURI_SIGNING_PRIVATE_KEY npx tauri signer sign \
   --private-key-path "$TAURI_SIGNING_PRIVATE_KEY" "$UPDATER_ARCHIVE")
 [[ -f "$UPDATER_SIG" ]] || die "tauri signer sign did not produce $UPDATER_SIG"
 
