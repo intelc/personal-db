@@ -8,19 +8,19 @@ Status key: `[ ]` not started · `[~]` in progress · `[x]` done
 
 ## P0 — a stranger's first ten minutes
 
-- [~] **1. First-run experience.** Land on Setup (or a welcome pane) until at
+- [x] **1. First-run experience.** Land on Setup (or a welcome pane) until at
   least one tracker is Ready; dashboard empty state becomes a real
   "connect your first source" CTA. State the local-first promise in one
   sentence ("everything lives in `~/personal_db` on this Mac; nothing
   leaves it") on first run.
-- [~] **2. Empty states that instruct.** Every viz/app "No data" should say
+- [x] **2. Empty states that instruct.** Every viz/app "No data" should say
   *why* it's empty and what to do next: "first sync backfills 90 days,
   check back shortly" vs "needs Full Disk Access → grant" vs "requires the
   Plaid tracker → install".
 - [ ] **3. Kill the terminal cliff in setup.** No tracker setup should require
   a terminal. Extend the daemon's browser OAuth flow (`/setup/oauth/{name}`)
   to cover every OAuth tracker (Whoop et al.).
-- [~] **5. Surface sync failures.** Three tiers: (a) Health pane — last error
+- [~] **5. Surface sync failures.** (a+b done; tray badge remains) Three tiers: (a) Health pane — last error
   per tracker from `state/sync_errors.jsonl`, retry button, log tail;
   (b) inline error text under the Sync button instead of a hover tooltip;
   (c) menu-bar tray badge on repeated failures (Tauri side, later).

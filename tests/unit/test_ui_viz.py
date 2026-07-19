@@ -1,8 +1,10 @@
 """Tests for the visualization registry, discovery, and dashboard config."""
 
+import json
 import sqlite3
 import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
 
 import pytest
 import yaml
@@ -95,6 +97,16 @@ def test_dashboard_route_renders_each_configured_viz(tmp_path):
     assert "TIME" in r.text  # title is "Today's Time" (apostrophe HTML-escaped)
     assert "DIARY" in r.text
     assert "TRACKER HEALTH" in r.text
+
+
+def test_dashboard_shows_welcome_hero_with_no_trackers(tmp_path):
+    """A fresh root with zero trackers installed gets a first-run welcome pane, not a bare fallback."""
+    cfg = _setup(tmp_path)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "Connect your first source" in r.text
+    assert "/setup" in r.text
 
 
 @pytest.mark.darwin_only  # installs the darwin-gated life_context tracker
@@ -545,12 +557,84 @@ def test_base_uses_vendored_ag_assets(tmp_path):
     assert "/static/vendor/ag-charts-community/13.3.0/ag-charts-community.min.js" in r.text
     assert "/static/pdb-grid.js?v=7" in r.text
     assert "/static/pdb-chart.js?v=14" in r.text
-    assert "/static/style.css?v=app-shell-2" in r.text
+    assert "/static/style.css?v=ux-pass-1" in r.text
     assert "/static/pdb-app-state.js?v=3" in r.text
     assert "/static/apps/finance-burn-rate.js?v=4" in r.text
     assert "/static/apps/finance-categorize.js?v=1" in r.text
     assert "/static/apps/finance-rules.js?v=1" in r.text
     assert "/static/pdb-finance.js?v=10" in r.text
-    assert "/static/pdb-sync.js?v=2" in r.text
+    assert "/static/pdb-sync.js?v=3" in r.text
     assert "/static/pdb-nav.js?v=1" in r.text
     assert "cdn.jsdelivr.net" not in r.text
+
+
+def test_health_page_lists_installed_tracker_with_humanized_title(tmp_path):
+    cfg = _setup(tmp_path, "daily_time_accounting")
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/health")
+    assert r.status_code == 200
+    assert "Daily Time Accounting" in r.text
+    assert 'title="daily_time_accounting"' in r.text
+    assert "every 1h" in r.text
+    # sidebar Health link present and marked current on this page
+    assert 'href="/health"' in r.text
+    assert 'aria-current="page"' in r.text
+
+
+def test_health_page_error_newer_than_success_renders(tmp_path):
+    cfg = _setup(tmp_path, "daily_time_accounting")
+    now = datetime.now(timezone.utc)
+    success_ts = (now - timedelta(hours=2)).isoformat()
+    error_ts = (now - timedelta(minutes=5)).isoformat()
+
+    (cfg.state_dir / "last_run.json").write_text(
+        json.dumps({"daily_time_accounting": success_ts})
+    )
+    with (cfg.state_dir / "sync_errors.jsonl").open("w") as f:
+        f.write(
+            json.dumps(
+                {
+                    "ts": error_ts,
+                    "tracker": "daily_time_accounting",
+                    "error": "boom: connection reset\nmore detail",
+                    "tb": "Traceback (most recent call last):\n  ...",
+                }
+            )
+            + "\n"
+        )
+
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/health")
+    assert r.status_code == 200
+    assert "boom: connection reset" in r.text
+    assert "health-row-error" in r.text
+
+
+def test_health_page_error_older_than_success_suppressed(tmp_path):
+    cfg = _setup(tmp_path, "daily_time_accounting")
+    now = datetime.now(timezone.utc)
+    error_ts = (now - timedelta(hours=2)).isoformat()
+    success_ts = (now - timedelta(minutes=5)).isoformat()
+
+    (cfg.state_dir / "last_run.json").write_text(
+        json.dumps({"daily_time_accounting": success_ts})
+    )
+    with (cfg.state_dir / "sync_errors.jsonl").open("w") as f:
+        f.write(
+            json.dumps(
+                {
+                    "ts": error_ts,
+                    "tracker": "daily_time_accounting",
+                    "error": "stale error: should not show",
+                    "tb": "",
+                }
+            )
+            + "\n"
+        )
+
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/health")
+    assert r.status_code == 200
+    assert "stale error: should not show" not in r.text
+    assert "health-row-error" not in r.text
+    assert "health-ok" in r.text

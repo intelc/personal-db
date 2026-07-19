@@ -7,6 +7,34 @@
 (function () {
   "use strict";
 
+  const MAX_ERROR_LEN = 140;
+
+  // The inline error span (.pdb-sync-error) is inserted as the button's next
+  // sibling within the form on failure, and removed on the next submit
+  // attempt (cleared eagerly) or successful sync (page reloads anyway, but
+  // clearing keeps state consistent if that ever changes).
+  function clearError(button) {
+    const span = button.nextElementSibling;
+    if (span && span.classList.contains("pdb-sync-error")) {
+      span.remove();
+    }
+  }
+
+  function showError(button, message) {
+    const truncated =
+      message.length > MAX_ERROR_LEN
+        ? `${message.slice(0, MAX_ERROR_LEN)}…`
+        : message;
+    let span = button.nextElementSibling;
+    if (!span || !span.classList.contains("pdb-sync-error")) {
+      span = document.createElement("span");
+      span.className = "pdb-sync-error";
+      button.insertAdjacentElement("afterend", span);
+    }
+    span.textContent = truncated;
+    span.title = message;
+  }
+
   async function handleSubmit(event) {
     const form = event.target.closest(".pdb-sync-form");
     if (!form) return; // not a sync form submit -- ignore
@@ -20,6 +48,7 @@
     button.textContent = "Syncing…";
     button.classList.remove("error");
     button.removeAttribute("title");
+    clearError(button);
 
     try {
       const r = await fetch(`/api/v1/sync/${encodeURIComponent(tracker)}`, {
@@ -39,7 +68,9 @@
       button.disabled = false;
       button.textContent = originalLabel;
       button.classList.add("error");
-      button.title = (err && err.message) || "sync failed";
+      const message = (err && err.message) || "sync failed";
+      button.title = message;
+      showError(button, message);
     }
   }
 

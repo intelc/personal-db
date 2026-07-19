@@ -784,21 +784,32 @@ def render_subscriptions(ctx: AppContext) -> str:
         }
         for row in rows
     ]
-    return c.page(
-        "Subscriptions",
-        _style(),
-        _notes_assets(),
-        c.section(
+    if not table:
+        body = c.section(
+            "Detected Subscriptions",
+            c.empty_state(
+                "No subscriptions detected yet",
+                hint="Subscriptions are inferred from synced finance transactions — sync finance first.",
+                action=("Go to Finance", "/a/finance"),
+            ),
+        )
+    else:
+        body = c.section(
             "Detected Subscriptions",
             c.data_grid(
                 table,
-                columns if table else ["label"],
+                columns,
                 page_size=25,
                 height_px=680,
                 html_columns={0, 10, 14},
             ),
             subtitle="Charges already categorized as Subscriptions in the finance layer, grouped by merchant/rule.",
-        ),
+        )
+    return c.page(
+        "Subscriptions",
+        _style(),
+        _notes_assets(),
+        body,
         nav=_nav(ctx, "subscriptions"),
     )
 
