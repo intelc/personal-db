@@ -22,6 +22,34 @@
   <p class="meta">{{ manifest.description }}</p>
 </section>
 
+{% if just_created %}
+  <section class="block created-notice" id="just-created-notice">
+    <button type="button" class="created-notice-dismiss" aria-label="Dismiss"
+            onclick="document.getElementById('just-created-notice').remove()">&times;</button>
+    <h2 class="block-h">Scaffolded</h2>
+    <p class="meta">Files live at <code>{{ tracker_root }}/</code>:</p>
+    <ul class="created-file-list">
+      <li><code>manifest.yaml</code> — name, schedule, setup steps, table schema metadata</li>
+      <li><code>schema.sql</code> — the actual <code>CREATE TABLE</code> statements</li>
+      <li><code>ingest.py</code> — your <code>sync()</code> and <code>backfill()</code> functions go here</li>
+      <li><code>visualizations.py</code> — optional dashboard charts (auto-synthesized if omitted)</li>
+    </ul>
+    <p class="meta">
+      Full guide, field reference, and the stable UI/data SDK:
+      <a href="https://github.com/intelc/personal-db/blob/main/docs/creating-trackers.md" target="_blank" rel="noopener">docs/creating-trackers.md</a>.
+    </p>
+    <p class="meta">Ask your AI agent to fill in <code>ingest.py</code> for you:</p>
+    <div class="agent-prompt-row">
+      <code id="agent-prompt-text">Fill in {{ tracker_root }}/ingest.py to sync {{ tracker_title }} — the SDK docs are in docs/creating-trackers.md</code>
+      <button type="button" class="copy-btn" onclick="
+        navigator.clipboard.writeText(document.getElementById('agent-prompt-text').textContent);
+        this.textContent = 'copied';
+        setTimeout(() => { this.textContent = 'copy'; }, 1500);
+      ">copy</button>
+    </div>
+  </section>
+{% endif %}
+
 {% if flash %}
   <section class="block setup-result {% if 'error' in flash|lower or 'fail' in flash|lower %}fail{% else %}ok{% endif %}">
     <p class="meta">{{ flash }}</p>

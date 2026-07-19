@@ -338,6 +338,92 @@ personal-db tracker setup downloads
 
 The setup wizard menu also detects bundled-but-not-installed trackers automatically and offers to install them.
 
+> **`tracker reinstall` doesn't apply to custom trackers.** `personal-db tracker reinstall <name>` overwrites the installed copy at `<root>/trackers/<name>/` from the *bundled* template at `src/personal_db/templates/trackers/<name>/` — that's how a maintainer's edit to a shipped tracker propagates to an already-installed root (see `CLAUDE.md`'s "editing a bundled tracker" SOP). A custom or agent-authored tracker has no bundled counterpart: its files live *only* at `<root>/trackers/<name>/`, so `reinstall` has nothing to copy from and errors with "unknown built-in tracker." Edit the installed files directly (or re-run `personal-db tracker validate <name>` after a hand edit so `sync` trusts the new content — see `core/validation.py`).
+
+## UI & data SDK
+
+Everything a tracker author needs — reading/writing your own tracker's data and rendering dashboard HTML — is re-exported through a small, stable set of top-level modules. Internals live under `personal_db.core`/`personal_db.services`, but those are implementation detail and can change; import from the flat surface below instead (each module is a one-line re-export shim — see `src/personal_db/manifest.py` for the pattern).
+
+| Import                     | What it's for                                                                 |
+|-----------------------------|--------------------------------------------------------------------------------|
+| `personal_db.tracker`      | `Tracker` — the object `sync()`/`backfill()` receive (cursor, upsert, log, entity resolution; see the table above). |
+| `personal_db.manifest`     | `Manifest`, `load_manifest()`, and the setup-step types (`EnvVarStep`, `OAuthStep`, …) used to hand-validate a `manifest.yaml` in a script or test. |
+| `personal_db.transforms`   | `@transform(writes=..., depends_on=...)` — declare a derived table computed from your tracker's own raw tables, run automatically after `sync()`. |
+| `personal_db.ingest_utils` | Small `ingest.py` helpers: `now_iso()`, `read_rows(t, sql, params)`, `execute(t, sql, params)`, `tracker_env(t, name, default=None)`, `coerce_float(value, default=0.0)`. |
+| `personal_db.ui.charts`    | Pure HTML/CSS charts (no JS) — bar/line/heatmap/calendar/word-cloud. |
+| `personal_db.ui.components`| Page chrome and layout: `page()`, `section()`, `metric_card()`/`metric_grid()`, `data_grid()`, `notice()`, `empty_state()`. |
+| `personal_db.ui.agcharts`  | Interactive AG Charts bridge — richer line/area/pie charts with zoom, tooltips, legends. |
+| `personal_db.ui.aggrid`    | Interactive AG Grid bridge — sortable/paginated tables for larger row counts than `components.data_grid` renders well as plain HTML. |
+
+Most-used signatures (read the module source for the rest — each function is short and documents itself):
+
+```python
+# personal_db.transforms
+def transform(*, writes: str, depends_on: list[str]):
+    """Decorator: mark an ingest.py function as a derived-table transform.
+    `writes` must be a table in schema.sql; `depends_on` lists tables it reads."""
+
+# personal_db.ingest_utils
+def read_rows(t: Tracker, sql: str, params: tuple = ()) -> list[dict]: ...
+def execute(t: Tracker, sql: str, params: tuple = ()) -> None: ...
+def tracker_env(t: Tracker, name: str, default: str | None = None) -> str | None: ...
+
+# personal_db.ui.charts
+def horizontal_bars(items: list[tuple[str, float]], *, value_fmt=..., color="var(--chart-fg)") -> str: ...
+def line_chart(items: list[tuple[str, float | None]], *, color="#000", height_px=180, ...) -> str: ...  # agcharts version (interactive)
+
+# personal_db.ui.components
+def page(title: str, *children: str, subtitle="", nav=None) -> str: ...       # wraps a whole app/viz page
+def section(title: str, *children: str, subtitle="") -> str: ...
+def metric_card(label: str, value: str, *, hint="") -> str: ...
+def data_grid(rows: list[dict] | list[tuple], columns: list, *, page_size=15) -> str: ...
+```
+
+### Worked mini-example: `visualizations.py`
+
+A minimal dashboard viz using the components + charts helpers — one metric card and one bar chart, no AG Grid/AG Charts JS needed:
+
+```python
+import sqlite3
+
+from personal_db.config import Config
+from personal_db.ui import charts, components
+
+
+def list_visualizations() -> list[dict]:
+    return [
+        {
+            "slug": "my_journal:entries_by_day",
+            "name": "Entries per day (last 14 days)",
+            "description": "How many journal entries you logged each of the last 14 days.",
+            "render": _render_entries_by_day,
+        },
+    ]
+
+
+def _render_entries_by_day(cfg: Config) -> str:
+    con = sqlite3.connect(cfg.db_path)
+    rows = con.execute(
+        """
+        SELECT date(ts) AS day, COUNT(*) AS n
+        FROM my_journal
+        WHERE ts >= datetime('now', '-14 days')
+        GROUP BY day
+        ORDER BY day
+        """
+    ).fetchall()
+    con.close()
+    if not rows:
+        return components.empty_state("No entries in the last 14 days.")
+    total = sum(n for _, n in rows)
+    return components.join_html([
+        components.metric_card("Entries (14d)", str(total)),
+        charts.vertical_bars([(day, n) for day, n in rows]),
+    ])
+```
+
+Trackers without a `visualizations.py` get a default `<name>:recent` viz auto-synthesized from the manifest's `time_column` + primary table — writing one is only needed once you want a custom chart.
+
 ## Testing
 
 Each bundled tracker has a test in `tests/integration/test_connector_<name>.py`. The conventional pattern:

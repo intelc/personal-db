@@ -7,62 +7,21 @@ from personal_db.core.installer import install_template, update_template
 from personal_db.core.manifest import PlatformUnsupportedError, load_manifest
 from personal_db.core.migrations import apply_pending_migrations
 from personal_db.core.pack_deps import DepsInstallError, install_tracker_deps, tracker_python_deps
+from personal_db.core.scaffold import scaffold_tracker
 from personal_db.core.validation import validate_tracker
 from personal_db.services.wizard.menu import run_menu
 from personal_db.services.wizard.runner import run_tracker
 
-_SCAFFOLD_MANIFEST = """\
-name: {name}
-description: TODO describe what this tracker captures
-permission_type: none
-setup_steps: []
-schedule:
-  every: 1h
-time_column: ts
-granularity: event
-schema:
-  tables:
-    {name}:
-      columns:
-        id:    {{type: TEXT,    semantic: "primary key"}}
-        ts:    {{type: TEXT,    semantic: "ISO-8601 event time (UTC)"}}
-        value: {{type: INTEGER, semantic: "the recorded value"}}
-related_entities: []
-"""
-
-_SCAFFOLD_SCHEMA = """\
-CREATE TABLE IF NOT EXISTS {name} (
-  id    TEXT PRIMARY KEY,
-  ts    TEXT NOT NULL,
-  value INTEGER
-);
-"""
-
-_SCAFFOLD_INGEST = """\
-from personal_db.core.tracker import Tracker
-
-def backfill(t: Tracker, start: str | None, end: str | None) -> None:
-    \"\"\"Historical import. Idempotent.\"\"\"
-    pass
-
-def sync(t: Tracker) -> None:
-    \"\"\"Incremental sync from cursor. Idempotent.\"\"\"
-    pass
-"""
-
 
 def new(name: str) -> None:
     """Scaffold a new tracker."""
-    root = get_root()
-    d = root / "trackers" / name
-    if d.exists():
-        typer.echo(f"already exists: {d}", err=True)
-        raise typer.Exit(1)
-    d.mkdir(parents=True)
-    (d / "manifest.yaml").write_text(_SCAFFOLD_MANIFEST.format(name=name))
-    (d / "schema.sql").write_text(_SCAFFOLD_SCHEMA.format(name=name))
-    (d / "ingest.py").write_text(_SCAFFOLD_INGEST)
-    typer.echo(f"Created tracker at {d}")
+    cfg = Config(root=get_root())
+    try:
+        dest = scaffold_tracker(cfg, name)
+    except FileExistsError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from e
+    typer.echo(f"Created tracker at {dest}")
 
 
 def list_cmd() -> None:
