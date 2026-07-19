@@ -2,6 +2,13 @@ name: withings
 description: Withings smart-scale body composition (weight, fat %, muscle, bone, etc.)
 permission_type: oauth
 setup_steps:
+  - type: instructions
+    text: |
+      Withings uses OAuth2. You need a developer app at https://developer.withings.com.
+
+        1. Create an application.
+        2. Set the Callback URI to exactly: http://localhost:9877/callback
+        3. Copy the Client ID and Client Secret into the env vars below.
   - type: env_var
     name: WITHINGS_CLIENT_ID
     prompt: "Withings OAuth client ID (from developer.withings.com)"

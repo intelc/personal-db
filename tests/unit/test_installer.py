@@ -37,6 +37,40 @@ def test_granola_manifest_loads():
     assert "granola_documents" in m.schema.tables
 
 
+def test_whoop_manifest_loads_with_instructions_step():
+    """The web setup wizard now shows the redirect URI to register before
+    the Authorize button, mirroring oura's instructions step."""
+    from pathlib import Path
+
+    from personal_db.core.manifest import InstructionsStep, OAuthStep, load_manifest
+
+    here = Path(__file__).resolve().parents[2]
+    m = load_manifest(here / "src/personal_db/templates/trackers/whoop/manifest.yaml")
+    assert m.name == "whoop"
+    assert m.permission_type == "oauth"
+    assert isinstance(m.setup_steps[0], InstructionsStep)
+    assert "http://localhost:9876/callback" in m.setup_steps[0].text
+    assert "developer.whoop.com" in m.setup_steps[0].text
+    oauth_step = next(s for s in m.setup_steps if isinstance(s, OAuthStep))
+    assert oauth_step.redirect_port == 9876
+
+
+def test_withings_manifest_loads_with_instructions_step():
+    from pathlib import Path
+
+    from personal_db.core.manifest import InstructionsStep, OAuthStep, load_manifest
+
+    here = Path(__file__).resolve().parents[2]
+    m = load_manifest(here / "src/personal_db/templates/trackers/withings/manifest.yaml")
+    assert m.name == "withings"
+    assert m.permission_type == "oauth"
+    assert isinstance(m.setup_steps[0], InstructionsStep)
+    assert "http://localhost:9877/callback" in m.setup_steps[0].text
+    assert "developer.withings.com" in m.setup_steps[0].text
+    oauth_step = next(s for s in m.setup_steps if isinstance(s, OAuthStep))
+    assert oauth_step.redirect_port == 9877
+
+
 def test_install_template_copies_tree(tmp_root):
     cfg = Config(root=tmp_root)
     dest = install_template(cfg, "habits")

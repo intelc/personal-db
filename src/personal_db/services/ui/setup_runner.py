@@ -2,10 +2,24 @@
 and process submitted form data through the same logical pipeline as the
 terminal wizard (`wizard.runner`) — minus the questionary prompts.
 
-OAuth is intentionally NOT executed via web in v0: the redirect dance between
-the dashboard's own browser tab and a freshly-spawned local callback server
-is fragile, and the terminal flow already works. Web wizard reports OAuth
-steps as "needs terminal" and keeps moving.
+OAuth IS executed in-browser: `list_step_views` renders an Authorize button
+for any `oauth` step whose manifest has both client_id/secret env vars set
+and a pinned `redirect_port`. Clicking it posts to the dedicated
+`POST /setup/oauth/{name}` route (`daemon/routes/setup.py`), which spawns a
+local callback server via `core.oauth.start_web_oauth` and 303-redirects the
+browser to the provider's authorize URL; the callback exchanges the code and
+saves the token, then bounces back to this page.
+
+`process_form` (the generic per-step form submit handler below) deliberately
+*skips* oauth steps — it only checks whether a token is already on disk and
+reports "skipped" otherwise, pointing the user at the Authorize button (or
+the terminal wizard) rather than trying to drive the OAuth dance itself.
+
+The only case that still falls back to terminal-only is a manifest whose
+`oauth` step doesn't pin a `redirect_port` — the web flow needs a fixed,
+pre-registered port to hand the provider, so a `None` port can't be started
+from the browser. None of the bundled trackers hit this; it only matters for
+custom/unpinned trackers.
 """
 
 from __future__ import annotations
