@@ -16,6 +16,10 @@ from personal_db.migrations import ensure_columns
 from personal_db.tracker import Tracker
 
 COCOA_EPOCH = datetime(2001, 1, 1, tzinfo=UTC)
+# Apple stores yearless birthdays (and some recurrence masters) with sentinel
+# start dates around year 1604; anything this old is a placeholder, not an
+# event. ISO-8601 strings compare lexically, so a plain string floor works.
+MIN_VALID_START = "1990-01-01"
 SOURCE = "macos_calendar"
 DEFAULT_ROOT = Path("~/Library/Group Containers/group.com.apple.calendar").expanduser()
 WINDOW_PAST_DAYS = 120
@@ -240,7 +244,7 @@ def _import_coredata_events(path: Path, con: sqlite3.Connection) -> list[dict[st
     for row in rows:
         start_at = _to_iso(row[start_col])
         end_at = _to_iso(row[end_col])
-        if not start_at or not end_at:
+        if not start_at or not end_at or start_at < MIN_VALID_START:
             continue
         source_pk = _text(row, pk_col)
         uid = _text(row, uid_col)
@@ -319,7 +323,7 @@ def _import_generic_events(path: Path, con: sqlite3.Connection) -> list[dict[str
         for row in rows:
             start_at = _to_iso(row[start_col])
             end_at = _to_iso(row[end_col])
-            if not start_at or not end_at:
+            if not start_at or not end_at or start_at < MIN_VALID_START:
                 continue
             source_pk = _text(row, pk_col)
             uid = _text(row, uid_col)

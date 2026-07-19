@@ -94,6 +94,48 @@ def test_sync_reads_coredata_calendar_and_hashes_notes(tmp_root, tmp_path, monke
     con.close()
 
 
+def test_sync_skips_sentinel_dated_events(tmp_root, tmp_path, monkeypatch):
+    """Yearless birthdays are stored with year-1604 sentinel start dates; they
+    must not be imported (they poison min(start_at) data horizons)."""
+    from personal_db.templates.trackers.calendar import ingest
+
+    source = tmp_path / "Calendar.sqlitedb"
+    _make_calendar_db(source)
+    con = sqlite3.connect(source)
+    con.execute(
+        """
+        INSERT INTO ZCALENDARITEM(
+          Z_PK, ZUUID, ZCALENDAR, ZTITLE, ZLOCATION, ZNOTES,
+          ZSTARTDATE, ZENDDATE, ZALLDAY, ZTIMEZONE
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            12,
+            "birthday-uuid",
+            1,
+            "Roman Ugarte",
+            None,
+            None,
+            _cocoa(datetime(1604, 1, 16, 0, 0, tzinfo=UTC)),
+            _cocoa(datetime(1604, 1, 16, 23, 59, 59, tzinfo=UTC)),
+            1,
+            None,
+        ),
+    )
+    con.commit()
+    con.close()
+    monkeypatch.setenv("PERSONAL_DB_CALENDAR_DB", str(source))
+
+    t = _tracker(tmp_root)
+    ingest.sync(t)
+
+    con = sqlite3.connect(t.cfg.db_path)
+    rows = con.execute("SELECT title, start_at FROM calendar_events").fetchall()
+    con.close()
+    assert [r[0] for r in rows] == ["Deep work"]
+    assert all(r[1] >= ingest.MIN_VALID_START for r in rows)
+
+
 def test_sync_materializes_reality_blocks_from_activity(tmp_root, tmp_path, monkeypatch):
     from personal_db.templates.trackers.calendar import ingest
 

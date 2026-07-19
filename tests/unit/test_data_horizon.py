@@ -44,6 +44,29 @@ def test_compute_horizon_for_local_only_tracker(tmp_path):
     assert get(cfg, "screen_time") == "2026-04-13T10:00:00+00:00"
 
 
+def test_horizon_ignores_sentinel_dates_before_floor(tmp_path):
+    """Apple's yearless-birthday sentinel (year 1604) must not become the
+    horizon; min() is taken over plausible rows only."""
+    cfg = Config(root=tmp_path / "personal_db")
+    cfg.trackers_dir.mkdir(parents=True)
+    _seed_table(cfg.db_path, "calendar_events", "start_at",
+                ["1604-01-16T00:00:00+00:00", "2020-02-01T10:00:00+00:00",
+                 "2026-04-13T10:00:00+00:00"])
+    m = _make_manifest("calendar", "start_at", "calendar_events", local_only=True)
+    assert compute_and_store(cfg, "calendar", m) == "2020-02-01T10:00:00+00:00"
+    assert get(cfg, "calendar") == "2020-02-01T10:00:00+00:00"
+
+
+def test_horizon_none_when_only_sentinel_rows(tmp_path):
+    cfg = Config(root=tmp_path / "personal_db")
+    cfg.trackers_dir.mkdir(parents=True)
+    _seed_table(cfg.db_path, "calendar_events", "start_at",
+                ["1604-01-16T00:00:00+00:00"])
+    m = _make_manifest("calendar", "start_at", "calendar_events", local_only=True)
+    assert compute_and_store(cfg, "calendar", m) is None
+    assert get(cfg, "calendar") is None
+
+
 def test_horizon_skipped_for_non_local_tracker(tmp_path):
     cfg = Config(root=tmp_path / "personal_db")
     cfg.trackers_dir.mkdir(parents=True)

@@ -18,6 +18,11 @@ from datetime import UTC, datetime
 from personal_db.core.config import Config
 from personal_db.core.manifest import Manifest
 
+# Rows older than this are treated as sentinel/corrupt timestamps (e.g. Apple's
+# year-1604 yearless-birthday placeholder) and never become a tracker's horizon.
+# time_column values are ISO-8601 strings, so lexical comparison is safe.
+HORIZON_FLOOR = "1990-01-01"
+
 _TABLE_DDL = """
 CREATE TABLE IF NOT EXISTS tracker_horizons (
   tracker     TEXT PRIMARY KEY,
@@ -52,7 +57,10 @@ def compute_and_store(cfg: Config, name: str, manifest: Manifest) -> str | None:
     try:
         ensure_table(con)
         try:
-            row = con.execute(f'SELECT MIN("{col}") FROM "{table}"').fetchone()
+            row = con.execute(
+                f'SELECT MIN("{col}") FROM "{table}" WHERE "{col}" >= ?',
+                (HORIZON_FLOOR,),
+            ).fetchone()
         except sqlite3.OperationalError:
             return None
         horizon = row[0] if row else None
