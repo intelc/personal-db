@@ -52,3 +52,19 @@
     </span>
   </div>
 {% endmacro %}
+
+{# Placeholder body for one deferred viz block (ux-pass-4: progressive viz
+   loading, see http.py's default non-?full=1 render path). The block's
+   *header* (title link, slug tooltip, sync button) is still rendered by the
+   caller -- this macro only stands in for the body, which pdb-lazy.js
+   fetches from GET /viz/<slug>/html and swaps in in place, in-DOM (see
+   pdb-lazy.js). The shimmer lines are decorative (aria-hidden); the sr-only
+   text is what a screen reader announces while it's pending. #}
+{% macro viz_pending(v) %}
+  <div class="viz-pending" data-viz-src="/viz/{{ v.slug }}/html" role="status" aria-live="polite">
+    <span class="sr-only">Loading {{ v.name }}…</span>
+    <div class="viz-pending-line viz-pending-line-h" aria-hidden="true"></div>
+    <div class="viz-pending-line viz-pending-line-full" aria-hidden="true"></div>
+    <div class="viz-pending-line viz-pending-line-short" aria-hidden="true"></div>
+  </div>
+{% endmacro %}

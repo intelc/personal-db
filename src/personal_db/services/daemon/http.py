@@ -4,6 +4,7 @@ Routes:
   GET  /                          → dashboard (configured viz list)
   GET  /v/<slug>                  → single viz on its own page
   GET  /t/<tracker>               → all viz for one tracker
+  GET  /viz/<slug>/html           → one viz's rendered fragment (pdb-lazy.js)
   GET  /health                    → sync health: last error/success per tracker
   GET  /setup                     → web wizard overview (tracker list + status)
   GET  /setup/<name>              → per-tracker setup form
@@ -15,6 +16,11 @@ Routes:
   POST /setup/mcp/install/<tgt>   → install MCP into one target, redirect to finish
   POST /sync/<tracker>            → manual refresh button on viz pages
   POST /log_life_context          → form target for the life_context diary entry
+
+`/`, `/v/<slug>`, and `/t/<tracker>` default to deferring every viz render —
+each block ships a placeholder that pdb-lazy.js fills in via GET
+`/viz/<slug>/html` after first paint — and accept `?full=1` to restore the
+old fully-synchronous render (used by tests, `<noscript>`, and curl).
 
 All programmatic endpoints live under the versioned `/api/v1/...` prefix
 (built as one `APIRouter`, see `_api_router` below); the routes above are
@@ -209,6 +215,22 @@ def _dashboard_edit_panel(reg: dict[str, Any], enabled_slugs: list[str]) -> dict
     return {"enabled": enabled, "groups": groups}
 
 
+def _render_viz_fragment(cfg: Config, viz: Any) -> str:
+    """Render one viz's body HTML, isolating a failing render as inline markup.
+
+    Backs the standalone fragment route (GET /viz/<slug>/html, fetched by
+    pdb-lazy.js to fill in the `data-viz-src` placeholders the dashboard/
+    tracker/viz pages leave in place of a synchronous render — see
+    `_dashboard_edit_panel`'s neighbors below). Same isolation the three page
+    routes have always done inline for their own `?full=1` path, just
+    factored out so the fragment route and any future caller share it.
+    """
+    try:
+        return viz.render(cfg)
+    except Exception as e:  # noqa: BLE001 — isolate one viz's failure from the rest
+        return f'<p class="meta">error rendering {viz.slug}: {e}</p>'
+
+
 def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
     app = FastAPI(title="personal_db", openapi_url=None, docs_url=None, redoc_url=None)
     templates = Jinja2Templates(directory=str(_HERE / "templates"))
@@ -357,7 +379,13 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
     register_dashboard_routes(api_router, cfg, registry=_registry)
 
     @app.get("/", response_class=HTMLResponse)
-    async def dashboard(request: Request):
+    async def dashboard(request: Request, full: bool = False):
+        # DEFAULT: don't render any viz synchronously — each block gets a
+        # `data-viz-src` placeholder (viz_pending macro) that pdb-lazy.js
+        # fills in concurrently after first paint. The live dashboard can be
+        # multiple seconds of blocking sqlite queries rendered inline; this
+        # is what gets the page to respond instantly. `?full=1` restores the
+        # old fully-synchronous render (tests, noscript, curl).
         reg = _registry()
         slugs = load_dashboard_slugs(cfg, reg)
         rendered = []
@@ -365,10 +393,12 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
             viz = reg.get(slug)
             if viz is None:
                 continue
-            try:
-                html = viz.render(cfg)
-            except Exception as e:
-                html = f'<p class="meta">error rendering {slug}: {e}</p>'
+            html = None
+            if full:
+                try:
+                    html = viz.render(cfg)
+                except Exception as e:
+                    html = f'<p class="meta">error rendering {slug}: {e}</p>'
             rendered.append({"viz": viz, "html": html})
         return templates.TemplateResponse(
             request=request,
@@ -376,21 +406,37 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
             context={
                 "active": "dashboard",
                 "rendered": rendered,
+                "full": full,
                 "edit_panel": _dashboard_edit_panel(reg, slugs),
                 **_nav_context(reg, active="dashboard"),
             },
         )
 
-    @app.get("/v/{slug:path}", response_class=HTMLResponse)
-    async def viz_page(request: Request, slug: str):
+    @app.get("/viz/{slug:path}/html", response_class=HTMLResponse)
+    async def viz_fragment(slug: str):
+        # Fragment endpoint pdb-lazy.js fetches to fill in one `data-viz-src`
+        # placeholder. Returns ONLY the rendered viz body (what the page
+        # routes used to inline directly) — same per-viz error isolation as
+        # the ?full=1 page routes (a failing render is a 200 with inline
+        # error markup, not a 500), unknown slug is a 404.
         reg = _registry()
         viz = reg.get(slug)
         if viz is None:
             raise HTTPException(status_code=404, detail=f"unknown viz: {slug}")
-        try:
-            html = viz.render(cfg)
-        except Exception as e:
-            html = f'<p class="meta">error rendering: {e}</p>'
+        return HTMLResponse(_render_viz_fragment(cfg, viz))
+
+    @app.get("/v/{slug:path}", response_class=HTMLResponse)
+    async def viz_page(request: Request, slug: str, full: bool = False):
+        reg = _registry()
+        viz = reg.get(slug)
+        if viz is None:
+            raise HTTPException(status_code=404, detail=f"unknown viz: {slug}")
+        html = None
+        if full:
+            try:
+                html = viz.render(cfg)
+            except Exception as e:
+                html = f'<p class="meta">error rendering: {e}</p>'
         return templates.TemplateResponse(
             request=request,
             name="viz_page.html",
@@ -398,12 +444,13 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
                 "active": viz.tracker,
                 "viz": viz,
                 "html": html,
+                "full": full,
                 **_nav_context(reg, active=viz.tracker),
             },
         )
 
     @app.get("/t/{tracker}", response_class=HTMLResponse)
-    async def tracker_page(request: Request, tracker: str):
+    async def tracker_page(request: Request, tracker: str, full: bool = False):
         reg = _registry()
         viz_list = [v for v in reg.values() if v.tracker == tracker]
         if not viz_list:
@@ -413,10 +460,12 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
             )
         rendered = []
         for v in viz_list:
-            try:
-                html = v.render(cfg)
-            except Exception as e:
-                html = f'<p class="meta">error: {e}</p>'
+            html = None
+            if full:
+                try:
+                    html = v.render(cfg)
+                except Exception as e:
+                    html = f'<p class="meta">error: {e}</p>'
             rendered.append({"viz": v, "html": html})
         return templates.TemplateResponse(
             request=request,
@@ -426,6 +475,7 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
                 "tracker": tracker,
                 "tracker_title": _tracker_title(cfg, tracker),
                 "rendered": rendered,
+                "full": full,
                 **_nav_context(reg, active=tracker),
             },
         )

@@ -56,13 +56,20 @@
 
 {% if nav_trackers %}
 {% if rendered %}
+  {% if not full %}
+    <noscript><p class="meta">Visualizations need JavaScript to load — <a href="?full=1">view the full page</a> instead.</p></noscript>
+  {% endif %}
   {% for entry in rendered %}
     <section class="block">
       <h2 class="block-h">
         <a href="/v/{{ entry.viz.slug }}" class="viz-title-link" title="{{ entry.viz.slug }}">{{ entry.viz.name|upper }}</a>
         {{ m.refresh_btn(entry.viz.tracker) }}
       </h2>
-      {{ entry.html|safe }}
+      {% if full %}
+        {{ entry.html|safe }}
+      {% else %}
+        {{ m.viz_pending(entry.viz) }}
+      {% endif %}
     </section>
   {% endfor %}
 {% else %}

@@ -12,6 +12,9 @@
   </div>
 </header>
 
+{% if rendered and not full %}
+  <noscript><p class="meta">Visualizations need JavaScript to load — <a href="?full=1">view the full page</a> instead.</p></noscript>
+{% endif %}
 {% for entry in rendered %}
   <section class="block">
     <h2 class="block-h">
@@ -20,7 +23,11 @@
     {% if entry.viz.description %}
       <p class="meta viz-desc">{{ entry.viz.description }}</p>
     {% endif %}
-    {{ entry.html|safe }}
+    {% if full %}
+      {{ entry.html|safe }}
+    {% else %}
+      {{ m.viz_pending(entry.viz) }}
+    {% endif %}
   </section>
 {% endfor %}
 {% endblock %}
