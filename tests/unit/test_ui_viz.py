@@ -538,7 +538,7 @@ def test_base_uses_vendored_ag_assets(tmp_path):
     assert "/static/vendor/ag-charts-community/13.3.0/ag-charts-community.min.js" in r.text
     assert "/static/pdb-grid.js?v=7" in r.text
     assert "/static/pdb-chart.js?v=14" in r.text
-    assert "/static/style.css?v=app-shell-1" in r.text
+    assert "/static/style.css?v=app-shell-2" in r.text
     assert "/static/pdb-app-state.js?v=3" in r.text
     assert "/static/apps/finance-burn-rate.js?v=4" in r.text
     assert "/static/apps/finance-categorize.js?v=1" in r.text

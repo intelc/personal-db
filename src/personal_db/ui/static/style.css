@@ -1672,3 +1672,40 @@ body.pdb-agent-ask-mode * {
   border-color: var(--danger);
   color: var(--danger);
 }
+
+/* App page head -----------------------------------------------------------
+   App pages (components.page(), plus app_page.html's fallback header for
+   apps that don't self-render) should read as part of the same app shell as
+   tracker pages: a compact title row matching .page-head, with the tabs row
+   underneath. These rules intentionally reuse the ".app-page-header" /
+   ".app-shell-header" / ".app-shell h1, .app-page h1" / ".app-tabs" selectors
+   declared earlier (see the "Apps" section above) and rely on source order
+   to win the cascade, so this section can be edited on its own without
+   touching those rules in place. */
+.app-page-header,
+.app-shell-header {
+  align-items: center;
+  margin-bottom: var(--grid);
+}
+.app-shell h1,
+.app-page h1 {
+  font-family: var(--font-ui);
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0;
+  text-transform: none;
+}
+.app-page-title {
+  min-width: 0;
+}
+.app-page-title .meta {
+  margin: 2px 0 0;
+}
+.app-page-header > .finance-app-controls {
+  border-bottom: none;
+  padding: 0;
+  flex-shrink: 0;
+}
+.app-tabs a {
+  font-size: 13px;
+}

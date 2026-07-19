@@ -5,7 +5,7 @@
   <div class="app-shell">
     {% if 'class="app-page"' not in html %}
       <header class="app-shell-header">
-        <div><h1>{{ app.manifest.title }}</h1></div>
+        <div class="app-page-title"><h1>{{ app.manifest.title }}</h1></div>
       </header>
     {% endif %}
     {% if 'app-tabs' not in html %}
