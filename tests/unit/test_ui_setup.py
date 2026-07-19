@@ -354,6 +354,189 @@ def test_setup_oauth_unknown_tracker_404(tmp_path):
     assert r.status_code == 404
 
 
+def test_setup_oauth_whoop_redirects_to_provider_when_creds_set(tmp_path, monkeypatch):
+    """Whoop is mechanically wired through the same generic browser flow as
+    oura (StandardAdapter, no oauth_adapter.py) -- creds set -> 303 to
+    Whoop's authorize endpoint with redirect_uri pinned to port 9876."""
+    cfg = _init(tmp_path)
+    _install(cfg.root, "whoop")
+    monkeypatch.setenv("WHOOP_CLIENT_ID", "fake_id")
+    monkeypatch.setenv("WHOOP_CLIENT_SECRET", "fake_secret")
+
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    try:
+        r = client.post(
+            "/setup/oauth/whoop",
+            data={"step_index": "0"},
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+        loc = r.headers["location"]
+        assert loc.startswith("https://api.prod.whoop.com/oauth/oauth2/auth?")
+        assert "redirect_uri=http%3A%2F%2Flocalhost%3A9876%2Fcallback" in loc
+        assert "client_id=fake_id" in loc
+    finally:
+        from personal_db.core.oauth import _shutdown_existing
+
+        _shutdown_existing("whoop")
+
+
+def test_setup_oauth_whoop_without_creds_redirects_back_with_message(tmp_path, monkeypatch):
+    cfg = _init(tmp_path)
+    _install(cfg.root, "whoop")
+    monkeypatch.delenv("WHOOP_CLIENT_ID", raising=False)
+    monkeypatch.delenv("WHOOP_CLIENT_SECRET", raising=False)
+
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.post(
+        "/setup/oauth/whoop",
+        data={"step_index": "0"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    loc = r.headers["location"]
+    assert loc.startswith("/setup/whoop?msg=")
+    assert "WHOOP_CLIENT_ID" in loc
+    assert "WHOOP_CLIENT_SECRET" in loc
+
+
+def test_setup_oauth_withings_redirects_to_provider_when_creds_set(tmp_path, monkeypatch):
+    """Withings uses a custom oauth_adapter.py (WithingsAdapter) -- the
+    installed tracker dir must carry that module along for
+    ensure_adapter_from_manifest to load it, and the flow should still 303
+    to the provider's authorize endpoint."""
+    cfg = _init(tmp_path)
+    _install(cfg.root, "withings")
+    monkeypatch.setenv("WITHINGS_CLIENT_ID", "fake_id")
+    monkeypatch.setenv("WITHINGS_CLIENT_SECRET", "fake_secret")
+
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    try:
+        r = client.post(
+            "/setup/oauth/withings",
+            data={"step_index": "0"},
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+        loc = r.headers["location"]
+        assert loc.startswith("https://account.withings.com/oauth2_user/authorize2?")
+        assert "redirect_uri=http%3A%2F%2Flocalhost%3A9877%2Fcallback" in loc
+        assert "client_id=fake_id" in loc
+    finally:
+        from personal_db.core.oauth import _shutdown_existing
+
+        _shutdown_existing("withings")
+
+
+def test_setup_oauth_withings_without_creds_redirects_back_with_message(tmp_path, monkeypatch):
+    cfg = _init(tmp_path)
+    _install(cfg.root, "withings")
+    monkeypatch.delenv("WITHINGS_CLIENT_ID", raising=False)
+    monkeypatch.delenv("WITHINGS_CLIENT_SECRET", raising=False)
+
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.post(
+        "/setup/oauth/withings",
+        data={"step_index": "0"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    loc = r.headers["location"]
+    assert loc.startswith("/setup/withings?msg=")
+    assert "WITHINGS_CLIENT_ID" in loc
+    assert "WITHINGS_CLIENT_SECRET" in loc
+
+
+def test_setup_oauth_instagram_redirects_to_provider_when_creds_set(tmp_path, monkeypatch):
+    """Instagram's OAuth step uses https + a self-signed localhost cert
+    (InstagramAdapter, scheme=https). start_web_oauth spins up the local
+    callback server -- including _get_ssl_context's openssl cert generation
+    -- before issuing the 303, so this test exercises that path as a side
+    effect. Skipped if openssl isn't on PATH."""
+    import shutil
+
+    if shutil.which("openssl") is None:
+        pytest.skip("openssl not available on PATH")
+
+    cfg = _init(tmp_path)
+    _install(cfg.root, "instagram")
+    monkeypatch.setenv("INSTAGRAM_APP_ID", "fake_id")
+    monkeypatch.setenv("INSTAGRAM_APP_SECRET", "fake_secret")
+
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    try:
+        r = client.post(
+            "/setup/oauth/instagram",
+            data={"step_index": "0"},
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+        loc = r.headers["location"]
+        assert loc.startswith("https://www.instagram.com/oauth/authorize?")
+        assert (
+            "redirect_uri=https%3A%2F%2Flocalhost%3A9876%2Finstagram%2Fcallback"
+            in loc
+        )
+        assert "client_id=fake_id" in loc
+        cert = cfg.state_dir / "oauth" / ".ssl" / "localhost.crt"
+        assert cert.exists()
+    finally:
+        from personal_db.core.oauth import _shutdown_existing
+
+        _shutdown_existing("instagram")
+
+
+def test_setup_oauth_instagram_without_creds_redirects_back_with_message(tmp_path, monkeypatch):
+    cfg = _init(tmp_path)
+    _install(cfg.root, "instagram")
+    monkeypatch.delenv("INSTAGRAM_APP_ID", raising=False)
+    monkeypatch.delenv("INSTAGRAM_APP_SECRET", raising=False)
+
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.post(
+        "/setup/oauth/instagram",
+        data={"step_index": "0"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    loc = r.headers["location"]
+    assert loc.startswith("/setup/instagram?msg=")
+    assert "INSTAGRAM_APP_ID" in loc
+    assert "INSTAGRAM_APP_SECRET" in loc
+
+
+def test_setup_oauth_port_in_use_shows_friendly_message(tmp_path, monkeypatch):
+    """If the callback port is already bound -- e.g. the user just ran
+    another tracker's authorization and its local server hasn't shut down
+    yet -- the redirect message should be actionable, not a raw
+    "Address already in use" OSError string."""
+    import socket
+
+    cfg = _init(tmp_path)
+    _install(cfg.root, "oura")
+    monkeypatch.setenv("OURA_CLIENT_ID", "fake_id")
+    monkeypatch.setenv("OURA_CLIENT_SECRET", "fake_secret")
+
+    blocker = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    blocker.bind(("localhost", 9877))
+    blocker.listen(1)
+    try:
+        client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+        r = client.post(
+            "/setup/oauth/oura",
+            data={"step_index": "0"},
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+        loc = r.headers["location"]
+        assert loc.startswith("/setup/oura?msg=")
+        msg = urllib.parse.unquote(loc.split("msg=", 1)[1])
+        assert "Port 9877 is in use" in msg
+        assert "wait for it to finish" in msg
+    finally:
+        blocker.close()
+
+
 def test_setup_tracker_get_renders_authorize_button_for_oauth(tmp_path, monkeypatch):
     """When CLIENT_ID + CLIENT_SECRET are set, the OAuth step block on the
     per-tracker setup page renders an Authorize button targeting

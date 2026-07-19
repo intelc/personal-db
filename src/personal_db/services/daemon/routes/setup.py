@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import os
 import sys
 import urllib.parse
@@ -158,7 +159,10 @@ def register_setup_routes(
                 scope_separator=step.scope_separator,
             )
         except OSError as e:
-            msg = f"could not bind callback port {step.redirect_port}: {e}"
+            if e.errno == errno.EADDRINUSE:
+                msg = str(e)
+            else:
+                msg = f"could not bind callback port {step.redirect_port}: {e}"
             return RedirectResponse(
                 url=f"/setup/{name}?msg={urllib.parse.quote(msg)}",
                 status_code=303,

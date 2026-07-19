@@ -11,7 +11,13 @@ from html import escape
 
 from personal_db.core.config import Config
 from personal_db.core.data_horizon import get_all as _get_all_horizons
-from personal_db.core.manifest import ManifestError, humanize_tracker_name, load_manifest
+from personal_db.core.intervals import parse_every as _parse_every
+from personal_db.core.manifest import (
+    ManifestError,
+    ScheduleSpec,
+    humanize_tracker_name,
+    load_manifest,
+)
 
 
 def humanize_age(d: timedelta) -> str:
@@ -38,6 +44,49 @@ def _format_duration(seconds: int) -> str:
         return f"{hours}h {minutes}m" if minutes else f"{hours}h"
     days, hours = divmod(hours, 24)
     return f"{days}d {hours}h" if hours else f"{days}d"
+
+
+def _humanize_delta(d: timedelta) -> str:
+    """Forward-looking sibling of `humanize_age` (no "ago" suffix) -- used to
+    render "next in ~2h" rather than "2h ago"."""
+    s = int(d.total_seconds())
+    if s < 60:
+        return f"{s}s"
+    if s < 3600:
+        return f"{s // 60}m"
+    if s < 86400:
+        return f"{s // 3600}h"
+    return f"{s // 86400}d"
+
+
+def compute_next_sync(
+    schedule: ScheduleSpec | None, last_run_dt: datetime | None, now: datetime
+) -> str | None:
+    """Human display for when a tracker's next sync will run.
+
+    Shared by the /health rows and the /setup overview cards so both surfaces
+    agree on what "next in ~2h" means.
+
+    - `every`-schedules: last_run + parsed(every), clamped to "due now" once
+      that instant is in the past (or there's no recorded last run at all --
+      nothing to count forward from, so it's due immediately).
+    - `cron`-schedules: launchd owns the cadence, not us -- we don't parse
+      cron expressions here, so we just say "on schedule" rather than fake a
+      precise countdown.
+    - no schedule at all: None (nothing to show).
+    """
+    if schedule is None:
+        return None
+    if schedule.every:
+        if last_run_dt is None:
+            return "due now"
+        remaining = (last_run_dt + _parse_every(schedule.every)) - now
+        if remaining <= timedelta(0):
+            return "due now"
+        return f"next in ~{_humanize_delta(remaining)}"
+    if schedule.cron:
+        return "on schedule"
+    return None
 
 
 def _parse_ts(value: str | None) -> datetime | None:
@@ -121,17 +170,22 @@ def build_health_page_data(
     rows = []
     for tracker in installed:
         title = humanize_tracker_name(tracker)
+        last_run_dt = _parse_ts(last_runs.get(tracker))
+        last_sync_age = humanize_age(now - last_run_dt) if last_run_dt else None
+
         schedule_text = None
         try:
             manifest = load_manifest(cfg.trackers_dir / tracker / "manifest.yaml")
             title = manifest.display_title()
             if manifest.schedule and manifest.schedule.every:
                 schedule_text = f"every {manifest.schedule.every}"
+                next_text = compute_next_sync(manifest.schedule, last_run_dt, now)
+                if next_text:
+                    schedule_text = f"{schedule_text} · {next_text}"
+            elif manifest.schedule and manifest.schedule.cron:
+                schedule_text = compute_next_sync(manifest.schedule, last_run_dt, now)
         except ManifestError:
             pass
-
-        last_run_dt = _parse_ts(last_runs.get(tracker))
-        last_sync_age = humanize_age(now - last_run_dt) if last_run_dt else None
 
         error_entry = None
         rec = last_errors.get(tracker)

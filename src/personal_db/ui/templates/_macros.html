@@ -19,3 +19,16 @@
     <a href="/setup/{{ tracker }}" class="refresh-btn setup-btn" title="configure {{ tracker }}">setup</a>
   {% endif %}
 {% endmacro %}
+
+{# "Sync all due" button: progressively enhanced by pdb-sync.js (the
+   [data-sync-all] case in its delegated submit handler) to fetch() POST
+   /api/v1/sync_due and reload the page in place. There's no dedicated
+   browser route for "sync everything due" the way single-tracker sync has
+   /sync/<tracker>, so the plain-form fallback posts straight at the JSON
+   API route -- without JS that renders the raw JSON response, which is a
+   degraded (but honest) fallback for a progressive-enhancement feature. #}
+{% macro sync_all_btn() %}
+  <form action="/api/v1/sync_due" method="post" class="refresh-form pdb-sync-all-form" data-sync-all>
+    <button type="submit" class="refresh-btn pdb-sync-all-btn" data-sync-all title="sync every due tracker now">Sync all due</button>
+  </form>
+{% endmacro %}

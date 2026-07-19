@@ -2,10 +2,24 @@
 and process submitted form data through the same logical pipeline as the
 terminal wizard (`wizard.runner`) — minus the questionary prompts.
 
-OAuth is intentionally NOT executed via web in v0: the redirect dance between
-the dashboard's own browser tab and a freshly-spawned local callback server
-is fragile, and the terminal flow already works. Web wizard reports OAuth
-steps as "needs terminal" and keeps moving.
+OAuth IS executed in-browser: `list_step_views` renders an Authorize button
+for any `oauth` step whose manifest has both client_id/secret env vars set
+and a pinned `redirect_port`. Clicking it posts to the dedicated
+`POST /setup/oauth/{name}` route (`daemon/routes/setup.py`), which spawns a
+local callback server via `core.oauth.start_web_oauth` and 303-redirects the
+browser to the provider's authorize URL; the callback exchanges the code and
+saves the token, then bounces back to this page.
+
+`process_form` (the generic per-step form submit handler below) deliberately
+*skips* oauth steps — it only checks whether a token is already on disk and
+reports "skipped" otherwise, pointing the user at the Authorize button (or
+the terminal wizard) rather than trying to drive the OAuth dance itself.
+
+The only case that still falls back to terminal-only is a manifest whose
+`oauth` step doesn't pin a `redirect_port` — the web flow needs a fixed,
+pre-registered port to hand the provider, so a `None` port can't be started
+from the browser. None of the bundled trackers hit this; it only matters for
+custom/unpinned trackers.
 """
 
 from __future__ import annotations
@@ -41,7 +55,7 @@ from personal_db.core.manifest import (
 )
 from personal_db.core.permissions import probe_sqlite_access
 from personal_db.core.sync import sync_one
-from personal_db.services.ui.builtin_viz import humanize_age
+from personal_db.services.ui.builtin_viz import compute_next_sync, humanize_age
 from personal_db.services.wizard.env_file import read_env, upsert_env
 from personal_db.services.wizard.runner import RunResult
 from personal_db.services.wizard.status import compute_icon, read_status, write_status
@@ -65,6 +79,7 @@ class TrackerOverview:
     status_label: str | None = None
     status_class: str | None = None  # "ok" | "warn"
     last_sync_age: str | None = None  # e.g. "38m ago"
+    next_sync: str | None = None  # e.g. "next in ~2h" -- only for `every` schedules
 
 
 @dataclass
@@ -111,10 +126,12 @@ def list_overview(cfg: Config) -> list[TrackerOverview]:
             summary = _summary_for_icon(icon, read_status(cfg).get(name))
             status_label, status_class = _status_chip(icon)
             last_sync_age = None
+            last_run_dt = None
             ts = last_runs.get(name)
             if ts:
                 try:
-                    age = now - datetime.fromisoformat(ts)
+                    last_run_dt = datetime.fromisoformat(ts)
+                    age = now - last_run_dt
                     last_sync_age = humanize_age(age)
                     # last_run.json is only written after a fully successful
                     # sync, so a recent entry outranks a stale wizard icon --
@@ -125,6 +142,10 @@ def list_overview(cfg: Config) -> list[TrackerOverview]:
                         status_label, status_class = "● Ready", "ok"
                 except ValueError:
                     last_sync_age = None
+                    last_run_dt = None
+            next_sync = None
+            if manifest.schedule and manifest.schedule.every:
+                next_sync = compute_next_sync(manifest.schedule, last_run_dt, now)
             out.append(
                 TrackerOverview(
                     name=name,
@@ -138,6 +159,7 @@ def list_overview(cfg: Config) -> list[TrackerOverview]:
                     status_label=status_label,
                     status_class=status_class,
                     last_sync_age=last_sync_age,
+                    next_sync=next_sync,
                 )
             )
         except Exception as e:

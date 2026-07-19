@@ -4,6 +4,10 @@
 // (see routes/sync.py's `post_sync`); with it, the button fetch()es the
 // JSON API instead (POST /api/v1/sync/<tracker>) and reloads on success, so
 // the page doesn't flash through an extra redirect hop.
+//
+// Also handles the page-level "Sync all due" button (sync_all_btn macro,
+// [data-sync-all]) on /health, which POSTs /api/v1/sync_due -- see
+// handleSyncAll below.
 (function () {
   "use strict";
 
@@ -35,7 +39,53 @@
     span.title = message;
   }
 
+  // "Sync all due" (health.html, [data-sync-all] via the sync_all_btn macro)
+  // -- POSTs the daemon's sync-everything-due route directly, since (unlike
+  // single-tracker sync) there's no plain-form browser route for it. In-flight
+  // state is "Syncing all…"; on success the page reloads and the tracker rows
+  // themselves show the per-tracker outcome, so there's no separate summary
+  // to render here.
+  async function handleSyncAll(form) {
+    const button = form.querySelector("[data-sync-all]");
+    if (!button) return;
+
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Syncing all…";
+    button.classList.remove("error");
+    button.removeAttribute("title");
+    clearError(button);
+
+    try {
+      const r = await fetch("/api/v1/sync_due", { method: "POST" });
+      let body = {};
+      try {
+        body = await r.json();
+      } catch {
+        // non-JSON error body -- fall through to the status-based message below
+      }
+      if (!r.ok) {
+        throw new Error((body && body.detail) || `sync all failed (${r.status})`);
+      }
+      window.location.reload();
+    } catch (err) {
+      button.disabled = false;
+      button.textContent = originalLabel;
+      button.classList.add("error");
+      const message = (err && err.message) || "sync all failed";
+      button.title = message;
+      showError(button, message);
+    }
+  }
+
   async function handleSubmit(event) {
+    const syncAllForm = event.target.closest("[data-sync-all]");
+    if (syncAllForm) {
+      event.preventDefault();
+      handleSyncAll(syncAllForm);
+      return;
+    }
+
     const form = event.target.closest(".pdb-sync-form");
     if (!form) return; // not a sync form submit -- ignore
     const tracker = form.dataset.tracker;

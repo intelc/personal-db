@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import http.server
 import importlib.util
 import json
@@ -407,7 +408,18 @@ def start_web_oauth(
         def log_message(self, *_: Any) -> None:
             pass
 
-    server = _ReusableTCPServer((redirect_host, redirect_port), _Handler)
+    try:
+        server = _ReusableTCPServer((redirect_host, redirect_port), _Handler)
+    except OSError as e:
+        if e.errno == errno.EADDRINUSE:
+            friendly = OSError(
+                f"Port {redirect_port} is in use — if you just ran another "
+                "tracker's authorization, wait for it to finish (or ~10 "
+                "minutes for it to expire) and try again."
+            )
+            friendly.errno = errno.EADDRINUSE
+            raise friendly from e
+        raise
     if scheme == "https":
         ctx = _get_ssl_context(cfg.state_dir)
         server.socket = ctx.wrap_socket(server.socket, server_side=True)

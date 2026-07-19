@@ -11,10 +11,6 @@
     permission grant — and then it syncs on its own from here on. Everything
     stays on this Mac.
   </p>
-  <p class="meta">
-    A few (like Whoop) need a quick sign-in from your terminal instead of the
-    browser: <code>personal-db tracker setup &lt;name&gt;</code>.
-  </p>
 </section>
 
 <section class="block">
@@ -41,7 +37,7 @@
           <span class="status-chip {{ t.status_class }}">{{ t.status_label }}</span>
         {% endif %}
         {% if t.last_sync_age %}
-          <span class="sync-age">Synced {{ t.last_sync_age }}</span>
+          <span class="sync-age">Synced {{ t.last_sync_age }}{% if t.next_sync %} · {{ t.next_sync }}{% endif %}</span>
         {% endif %}
         {% if t.installed %}
           <a href="/setup/{{ t.name }}" class="btn-link">configure →</a>

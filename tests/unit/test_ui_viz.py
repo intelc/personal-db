@@ -1,6 +1,7 @@
 """Tests for the visualization registry, discovery, and dashboard config."""
 
 import json
+import re
 import sqlite3
 import subprocess
 import sys
@@ -563,7 +564,7 @@ def test_base_uses_vendored_ag_assets(tmp_path):
     assert "/static/apps/finance-categorize.js?v=1" in r.text
     assert "/static/apps/finance-rules.js?v=1" in r.text
     assert "/static/pdb-finance.js?v=10" in r.text
-    assert "/static/pdb-sync.js?v=3" in r.text
+    assert "/static/pdb-sync.js?v=4" in r.text
     assert "/static/pdb-nav.js?v=1" in r.text
     assert "cdn.jsdelivr.net" not in r.text
 
@@ -579,6 +580,19 @@ def test_health_page_lists_installed_tracker_with_humanized_title(tmp_path):
     # sidebar Health link present and marked current on this page
     assert 'href="/health"' in r.text
     assert 'aria-current="page"' in r.text
+
+
+def test_health_page_sync_all_button_renders(tmp_path):
+    """Page-level "Sync all due" button (sync_all_btn macro): posts to the
+    daemon's sync-everything-due route, and carries [data-sync-all] so
+    pdb-sync.js's delegated handler can progressively enhance it."""
+    cfg = _setup(tmp_path, "daily_time_accounting")
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/health")
+    assert r.status_code == 200
+    assert 'action="/api/v1/sync_due"' in r.text
+    assert "data-sync-all" in r.text
+    assert "Sync all due" in r.text
 
 
 def test_health_page_error_newer_than_success_renders(tmp_path):
@@ -608,6 +622,63 @@ def test_health_page_error_newer_than_success_renders(tmp_path):
     assert r.status_code == 200
     assert "boom: connection reset" in r.text
     assert "health-row-error" in r.text
+
+
+def test_health_page_shows_next_sync_countdown_or_due_now(tmp_path):
+    """Roadmap item 7 ("Visible schedules"): every-schedule rows show a
+    computed next-due time next to the "every Xh" text, clamped to "due
+    now" once that instant has passed. daily_time_accounting ships with
+    `schedule.every: 1h` (see its manifest.yaml)."""
+    cfg = _setup(tmp_path, "daily_time_accounting")
+    now = datetime.now(timezone.utc)
+
+    # Synced 10m ago with an hourly schedule -- ~50m still left before due.
+    # Match the rendered "~Nm" and check a range rather than an exact value:
+    # compute_next_sync floors to the minute, so a request that lands a few
+    # milliseconds after `now` above can render 49m instead of 50m.
+    not_due_ts = (now - timedelta(minutes=10)).isoformat()
+    (cfg.state_dir / "last_run.json").write_text(
+        json.dumps({"daily_time_accounting": not_due_ts})
+    )
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/health")
+    assert r.status_code == 200
+    assert "every 1h" in r.text
+    match = re.search(r"next in ~(\d+)m", r.text)
+    assert match, r.text
+    assert 45 <= int(match.group(1)) <= 50
+
+    # Synced 2h ago with an hourly schedule -- clamps to "due now" rather
+    # than showing a negative countdown.
+    overdue_ts = (now - timedelta(hours=2)).isoformat()
+    (cfg.state_dir / "last_run.json").write_text(
+        json.dumps({"daily_time_accounting": overdue_ts})
+    )
+    r = client.get("/health")
+    assert r.status_code == 200
+    assert "due now" in r.text
+
+
+def test_setup_overview_card_shows_next_sync_for_every_schedule(tmp_path):
+    """The /setup overview card's sync-age line grows a "· next in ~Xh"
+    (or "due now") suffix for installed trackers with an `every` schedule,
+    matching the /health row's computation (services/ui/builtin_viz.py's
+    `compute_next_sync`)."""
+    cfg = _setup(tmp_path, "daily_time_accounting")
+    now = datetime.now(timezone.utc)
+    not_due_ts = (now - timedelta(minutes=10)).isoformat()
+    (cfg.state_dir / "last_run.json").write_text(
+        json.dumps({"daily_time_accounting": not_due_ts})
+    )
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/setup")
+    assert r.status_code == 200
+    assert "Synced" in r.text
+    # See the /health equivalent test for why this checks a range rather
+    # than an exact "~50m" -- compute_next_sync floors to the minute.
+    match = re.search(r"next in ~(\d+)m", r.text)
+    assert match, r.text
+    assert 45 <= int(match.group(1)) <= 50
 
 
 def test_health_page_error_older_than_success_suppressed(tmp_path):
