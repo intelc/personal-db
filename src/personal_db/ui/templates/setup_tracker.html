@@ -3,7 +3,7 @@
 
 {% block content %}
 <section class="block">
-  <p class="meta"><a href="/setup">← back to setup</a></p>
+  <p class="meta"><a href="/setup">← back to settings</a></p>
   <div class="page-head">
     <div>
       <h1 title="{{ tracker_name }}">{{ tracker_title }}</h1>
@@ -76,7 +76,7 @@
     <p class="meta">{{ run_result.detail }}</p>
     {% if run_result.success %}
       <p class="meta">
-        <a href="/setup">← back to setup</a> ·
+        <a href="/setup">← back to settings</a> ·
         <a href="/t/{{ tracker_name }}">view this tracker →</a>
       </p>
     {% endif %}

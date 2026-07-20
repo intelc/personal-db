@@ -18,8 +18,9 @@ from tests._daemon_auth import auth_headers
 def _no_scheduler(monkeypatch):
     """Defense-in-depth against writing the GLOBAL launchd plist during tests.
 
-    GET /setup/finish no longer installs anything on its own, but
-    POST /setup/finish/install-daemon still would (it writes the plist at
+    GET /setup (and the legacy GET /setup/finish redirect) never installs
+    anything on its own, but POST /setup/finish/install-daemon still would
+    (it writes the plist at
     ~/Library/LaunchAgents/com.personal_db.daemon.plist regardless of
     cfg.root), so tests would otherwise risk clobbering the user's real
     daemon install. Individual tests that need to exercise the install path
@@ -144,19 +145,34 @@ def test_setup_tracker_post_persists_env_var(tmp_path):
     assert "GITHUB_TOKEN=fake_test_token_value" in env_text
 
 
-def test_setup_finish_get_renders(tmp_path):
+def test_setup_finish_redirects_to_setup(tmp_path):
+    """The old standalone finish page's content lives on /setup now; the URL
+    is kept working (packaged app has no URL bar, old links/bookmarks) via a
+    303 redirect."""
     cfg = _init(tmp_path)
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
-    r = client.get("/setup/finish")
+    r = client.get("/setup/finish", follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"] == "/setup"
+
+
+def test_setup_overview_get_renders(tmp_path):
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/setup")
     assert r.status_code == 200
-    assert "FINISH SETUP" in r.text
-    assert "PERIODIC SYNC" in r.text
-    assert "CONNECT AN AGENT" in r.text
+    assert "SOURCES" in r.text
+    assert "BACKGROUND SYNC" in r.text
+    assert "CONNECT AN AI AGENT" in r.text
+    assert "TRY IT" in r.text
     assert 'action="/setup/finish/install-daemon"' in r.text
+    # numbered two-step framing is gone
+    assert "1. SOURCES" not in r.text
+    assert "2. FINISH" not in r.text
 
 
-def test_setup_finish_get_has_no_install_side_effect(tmp_path, monkeypatch):
-    """GET /setup/finish must never call the daemon installer itself."""
+def test_setup_overview_get_has_no_install_side_effect(tmp_path, monkeypatch):
+    """GET /setup must never call the daemon installer itself."""
     monkeypatch.delenv("PERSONAL_DB_NO_DAEMON", raising=False)
     calls = []
     monkeypatch.setattr(
@@ -165,7 +181,7 @@ def test_setup_finish_get_has_no_install_side_effect(tmp_path, monkeypatch):
 
     cfg = _init(tmp_path)
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
-    r = client.get("/setup/finish")
+    r = client.get("/setup")
     assert r.status_code == 200
     assert calls == []
 
@@ -183,7 +199,7 @@ def test_setup_daemon_install_post_redirects_with_flash(tmp_path, monkeypatch):
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.post("/setup/finish/install-daemon", follow_redirects=False)
     assert r.status_code == 303
-    assert r.headers["location"].startswith("/setup/finish?daemon_ok=1")
+    assert r.headers["location"].startswith("/setup?daemon_ok=1")
     assert calls == [cfg.root]
 
 
@@ -198,22 +214,22 @@ def test_setup_daemon_install_post_skipped_when_disabled(tmp_path):
     assert "skipped" in loc
 
 
-def test_setup_finish_renders_daemon_flash(tmp_path):
+def test_setup_renders_daemon_flash(tmp_path):
     import urllib.parse
 
     cfg = _init(tmp_path)
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     msg = urllib.parse.quote("✓ daemon installed → /fake/plist")
-    r = client.get(f"/setup/finish?daemon_ok=1&daemon_msg={msg}")
+    r = client.get(f"/setup?daemon_ok=1&daemon_msg={msg}")
     assert r.status_code == 200
     assert "daemon installed" in r.text
     assert "setup-step-result" in r.text
 
 
-def test_setup_finish_lists_all_mcp_targets(tmp_path):
+def test_setup_lists_all_mcp_targets(tmp_path):
     cfg = _init(tmp_path)
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
-    r = client.get("/setup/finish")
+    r = client.get("/setup")
     assert "claude_code" in r.text
     assert "claude_desktop" in r.text
     assert "cursor" in r.text
@@ -228,7 +244,7 @@ def test_setup_mcp_install_unknown_404(tmp_path):
 
 def test_setup_mcp_install_redirects_with_flash(tmp_path, monkeypatch):
     """Mock the cursor target's auto-installer to return success; the route
-    should redirect to /setup/finish?mcp=cursor&mcp_ok=1."""
+    should redirect to /setup?mcp=cursor&mcp_ok=1."""
     from personal_db.services.wizard import mcp_setup
 
     monkeypatch.setenv("PERSONAL_DB_ALLOW_GLOBAL_WRITES", "1")
@@ -239,7 +255,7 @@ def test_setup_mcp_install_redirects_with_flash(tmp_path, monkeypatch):
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.post("/setup/mcp/install/cursor", follow_redirects=False)
     assert r.status_code == 303
-    assert r.headers["location"] == "/setup/finish?mcp=cursor&mcp_ok=1"
+    assert r.headers["location"] == "/setup?mcp=cursor&mcp_ok=1"
 
 
 def test_setup_mcp_install_blocked_on_scratch_root(tmp_path, monkeypatch):
@@ -277,20 +293,20 @@ def test_setup_daemon_install_blocked_on_scratch_root(tmp_path, monkeypatch):
     assert "temp" in urllib.parse.unquote(loc)
 
 
-def test_setup_finish_renders_mcp_flash_with_msg(tmp_path):
+def test_setup_renders_mcp_flash_with_msg(tmp_path):
     cfg = _init(tmp_path)
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     msg = urllib.parse.quote("blocked: scratch root")
-    r = client.get(f"/setup/finish?mcp=cursor&mcp_ok=0&mcp_msg={msg}")
+    r = client.get(f"/setup?mcp=cursor&mcp_ok=0&mcp_msg={msg}")
     assert r.status_code == 200
     assert "✗ failed for" in r.text
     assert "blocked: scratch root" in r.text
 
 
-def test_setup_finish_renders_mcp_flash(tmp_path):
+def test_setup_renders_mcp_flash(tmp_path):
     cfg = _init(tmp_path)
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
-    r = client.get("/setup/finish?mcp=cursor&mcp_ok=1")
+    r = client.get("/setup?mcp=cursor&mcp_ok=1")
     assert "✓ installed for" in r.text
     assert "cursor" in r.text
 
@@ -305,20 +321,20 @@ def test_setup_finish_renders_mcp_flash(tmp_path):
 # installed yet".
 
 
-def test_setup_finish_app_managed_hides_install_button_and_shows_status(tmp_path, monkeypatch):
+def test_setup_app_managed_hides_install_button_and_shows_status(tmp_path, monkeypatch):
     monkeypatch.delenv("PERSONAL_DB_NO_DAEMON", raising=False)
     monkeypatch.setattr("sys.platform", "darwin")
     monkeypatch.setattr("personal_db.services.daemon.routes.setup.is_app_bundle", lambda: True)
 
     cfg = _init(tmp_path)
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
-    r = client.get("/setup/finish")
+    r = client.get("/setup")
     assert r.status_code == 200
     assert "managed by the PersonalDB app" in r.text
     assert 'action="/setup/finish/install-daemon"' not in r.text
 
 
-def test_setup_finish_launchd_installed_state_shown(tmp_path, monkeypatch):
+def test_setup_launchd_installed_state_shown(tmp_path, monkeypatch):
     """Headless/CLI install with the plist already present: not app-managed,
     so the page should say installed, not 'not installed yet'."""
     monkeypatch.delenv("PERSONAL_DB_NO_DAEMON", raising=False)
@@ -334,13 +350,13 @@ def test_setup_finish_launchd_installed_state_shown(tmp_path, monkeypatch):
 
     cfg = _init(tmp_path)
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
-    r = client.get("/setup/finish")
+    r = client.get("/setup")
     assert r.status_code == 200
     assert "daemon installed" in r.text
     assert 'action="/setup/finish/install-daemon"' in r.text
 
 
-def test_setup_finish_not_installed_state_shown(tmp_path, monkeypatch):
+def test_setup_not_installed_state_shown(tmp_path, monkeypatch):
     monkeypatch.delenv("PERSONAL_DB_NO_DAEMON", raising=False)
     monkeypatch.setattr("sys.platform", "darwin")
     monkeypatch.setattr("personal_db.services.daemon.routes.setup.is_app_bundle", lambda: False)
@@ -352,13 +368,13 @@ def test_setup_finish_not_installed_state_shown(tmp_path, monkeypatch):
 
     cfg = _init(tmp_path)
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
-    r = client.get("/setup/finish")
+    r = client.get("/setup")
     assert r.status_code == 200
     assert "not installed yet" in r.text
     assert 'action="/setup/finish/install-daemon"' in r.text
 
 
-def test_setup_finish_app_managed_with_legacy_plist_shows_conflict_warning(tmp_path, monkeypatch):
+def test_setup_app_managed_with_legacy_plist_shows_conflict_warning(tmp_path, monkeypatch):
     monkeypatch.delenv("PERSONAL_DB_NO_DAEMON", raising=False)
     monkeypatch.setattr("sys.platform", "darwin")
     monkeypatch.setattr("personal_db.services.daemon.routes.setup.is_app_bundle", lambda: True)
@@ -371,13 +387,13 @@ def test_setup_finish_app_managed_with_legacy_plist_shows_conflict_warning(tmp_p
 
     cfg = _init(tmp_path)
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
-    r = client.get("/setup/finish")
+    r = client.get("/setup")
     assert r.status_code == 200
     assert "legacy background service" in r.text
     assert 'action="/setup/finish/remove-daemon"' in r.text
 
 
-def test_setup_finish_app_managed_without_legacy_plist_no_conflict_warning(tmp_path, monkeypatch):
+def test_setup_app_managed_without_legacy_plist_no_conflict_warning(tmp_path, monkeypatch):
     monkeypatch.delenv("PERSONAL_DB_NO_DAEMON", raising=False)
     monkeypatch.setattr("sys.platform", "darwin")
     monkeypatch.setattr("personal_db.services.daemon.routes.setup.is_app_bundle", lambda: True)
@@ -388,7 +404,7 @@ def test_setup_finish_app_managed_without_legacy_plist_no_conflict_warning(tmp_p
 
     cfg = _init(tmp_path)
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
-    r = client.get("/setup/finish")
+    r = client.get("/setup")
     assert r.status_code == 200
     assert "legacy background service" not in r.text
     assert 'action="/setup/finish/remove-daemon"' not in r.text
@@ -498,7 +514,7 @@ def test_setup_mcp_install_flashes_instead_of_500_on_resolution_failure(tmp_path
     assert "not found on PATH" in urllib.parse.unquote(loc)
 
 
-def test_setup_overview_reflects_app_managed_finish_copy(tmp_path, monkeypatch):
+def test_setup_overview_reflects_app_managed_status(tmp_path, monkeypatch):
     monkeypatch.delenv("PERSONAL_DB_NO_DAEMON", raising=False)
     monkeypatch.setattr("sys.platform", "darwin")
     monkeypatch.setattr("personal_db.services.daemon.routes.setup.is_app_bundle", lambda: True)
@@ -507,7 +523,7 @@ def test_setup_overview_reflects_app_managed_finish_copy(tmp_path, monkeypatch):
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/setup")
     assert r.status_code == 200
-    assert "sync runs with the app" in r.text.lower()
+    assert "managed by the personaldb app" in r.text.lower()
 
 
 def test_setup_oauth_redirects_to_provider_when_creds_set(tmp_path, monkeypatch):

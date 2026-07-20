@@ -138,15 +138,28 @@ def register_setup_routes(
     validate_name: Callable[[str], None],
 ) -> None:
     @app.get("/setup", response_class=HTMLResponse)
-    async def setup_overview(request: Request):
+    async def setup_overview(
+        request: Request,
+        mcp: str = "",
+        mcp_ok: str = "",
+        mcp_msg: str = "",
+        daemon_msg: str = "",
+        daemon_ok: str = "",
+    ):
         reg = registry()
+        targets = [{"key": key, "label": tgt.label} for key, tgt in _MCP_TARGETS.items()]
+        daemon_status = _daemon_status(cfg.root)
         return templates.TemplateResponse(
             request=request,
             name="setup.html",
             context={
                 "active": "setup",
                 "trackers": list_overview(cfg),
-                "daemon_status": _daemon_status(cfg.root),
+                "daemon_status": daemon_status,
+                "app_managed": daemon_status["state"] == "app_managed",
+                "daemon_flash": {"msg": daemon_msg, "ok": daemon_ok == "1"} if daemon_msg else None,
+                "mcp_targets": targets,
+                "mcp_flash": {"target": mcp, "ok": mcp_ok == "1", "msg": mcp_msg} if mcp else None,
                 **nav_context(reg, None),
             },
         )
@@ -241,38 +254,19 @@ def register_setup_routes(
             )
         return RedirectResponse(url=auth_url, status_code=303)
 
-    @app.get("/setup/finish", response_class=HTMLResponse)
-    async def setup_finish(
-        request: Request,
-        mcp: str = "",
-        mcp_ok: str = "",
-        mcp_msg: str = "",
-        daemon_msg: str = "",
-        daemon_ok: str = "",
-    ):
-        reg = registry()
-        targets = [{"key": key, "label": tgt.label} for key, tgt in _MCP_TARGETS.items()]
-        daemon_status = _daemon_status(cfg.root)
-        return templates.TemplateResponse(
-            request=request,
-            name="setup_finish.html",
-            context={
-                "active": "setup",
-                "daemon_status": daemon_status,
-                "app_managed": daemon_status["state"] == "app_managed",
-                "daemon_flash": {"msg": daemon_msg, "ok": daemon_ok == "1"} if daemon_msg else None,
-                "mcp_targets": targets,
-                "mcp_flash": {"target": mcp, "ok": mcp_ok == "1", "msg": mcp_msg} if mcp else None,
-                **nav_context(reg, None),
-            },
-        )
+    @app.get("/setup/finish")
+    async def setup_finish():
+        # The finish page's content was folded into /setup itself -- keep this
+        # route around (bookmarks, packaged-app links with no URL bar) as a
+        # redirect rather than removing it.
+        return RedirectResponse(url="/setup", status_code=303)
 
     @app.post("/setup/finish/install-daemon")
     async def setup_daemon_install():
         msg = _install_daemon_safe(cfg)
         ok = msg.startswith("✓")
         return RedirectResponse(
-            url=f"/setup/finish?daemon_ok={'1' if ok else '0'}&daemon_msg={urllib.parse.quote(msg)}",
+            url=f"/setup?daemon_ok={'1' if ok else '0'}&daemon_msg={urllib.parse.quote(msg)}",
             status_code=303,
         )
 
@@ -281,7 +275,7 @@ def register_setup_routes(
         msg = _remove_legacy_daemon_safe(cfg)
         ok = msg.startswith("✓") or msg.startswith("no legacy")
         return RedirectResponse(
-            url=f"/setup/finish?daemon_ok={'1' if ok else '0'}&daemon_msg={urllib.parse.quote(msg)}",
+            url=f"/setup?daemon_ok={'1' if ok else '0'}&daemon_msg={urllib.parse.quote(msg)}",
             status_code=303,
         )
 
@@ -292,18 +286,18 @@ def register_setup_routes(
         reason = blocked_reason(cfg.root)
         if reason:
             return RedirectResponse(
-                url=f"/setup/finish?mcp={target}&mcp_ok=0&mcp_msg={urllib.parse.quote(reason)}",
+                url=f"/setup?mcp={target}&mcp_ok=0&mcp_msg={urllib.parse.quote(reason)}",
                 status_code=303,
             )
         try:
             ok, _detail = _MCP_TARGETS[target].auto()
         except Exception as e:
             return RedirectResponse(
-                url=f"/setup/finish?mcp={target}&mcp_ok=0&mcp_msg={urllib.parse.quote(str(e))}",
+                url=f"/setup?mcp={target}&mcp_ok=0&mcp_msg={urllib.parse.quote(str(e))}",
                 status_code=303,
             )
         return RedirectResponse(
-            url=f"/setup/finish?mcp={target}&mcp_ok={'1' if ok else '0'}",
+            url=f"/setup?mcp={target}&mcp_ok={'1' if ok else '0'}",
             status_code=303,
         )
 

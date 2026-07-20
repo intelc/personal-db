@@ -7,14 +7,14 @@ Routes:
   GET  /t/<tracker>/data          → read-only data browser (raw tracker tables)
   GET  /viz/<slug>/html           → one viz's rendered fragment (pdb-lazy.js)
   GET  /health                    → sync health: last error/success per tracker
-  GET  /setup                     → web wizard overview (tracker list + status)
+  GET  /setup                     → settings: source list + background sync + connect-agent
   GET  /setup/<name>              → per-tracker setup form
   POST /setup/<name>              → process setup form, run test sync
   POST /setup/install/<name>      → install a bundled tracker, redirect to /setup/<name>
   POST /setup/oauth/<name>        → start the web OAuth flow for an OAuth-based tracker
-  GET  /setup/finish              → finalize page (status only)
-  POST /setup/finish/install-daemon → install launchd daemon, redirect to finish
-  POST /setup/mcp/install/<tgt>   → install MCP into one target, redirect to finish
+  GET  /setup/finish              → 303 redirect to /setup (legacy URL, kept for old links)
+  POST /setup/finish/install-daemon → install launchd daemon, redirect to /setup
+  POST /setup/mcp/install/<tgt>   → install MCP into one target, redirect to /setup
   POST /sync/<tracker>            → manual refresh button on viz pages
   POST /log_life_context          → form target for the life_context diary entry
 

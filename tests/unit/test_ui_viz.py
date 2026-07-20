@@ -274,7 +274,7 @@ def test_nav_context_lists_every_tracker_with_humanized_title(tmp_path):
 
 
 def test_sidebar_footer_shows_status_row_and_setup_gear(tmp_path):
-    """Fixed sidebar footer: Health status row (dot + label) and a Setup
+    """Fixed sidebar footer: Health status row (dot + label) and a Settings
     gear icon button, replacing the old plain text links."""
     cfg = _setup(tmp_path)
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
@@ -285,7 +285,7 @@ def test_sidebar_footer_shows_status_row_and_setup_gear(tmp_path):
     assert "All sources syncing" in r.text
     assert 'class="sidebar-status-dot is-ok"' in r.text
     assert 'href="/setup"' in r.text
-    assert 'aria-label="Setup"' in r.text
+    assert 'aria-label="Settings"' in r.text
 
 
 @pytest.mark.darwin_only  # installs every bundled tracker, including darwin-gated ones

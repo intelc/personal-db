@@ -88,7 +88,7 @@
     }
     var setupLink = sidebar.querySelector(".sidebar-gear[href]");
     if (setupLink) {
-      add(accessibleLabel(setupLink) || "Setup", setupLink.getAttribute("href"), "Pages");
+      add(accessibleLabel(setupLink) || "Settings", setupLink.getAttribute("href"), "Pages");
     }
 
     return entries;

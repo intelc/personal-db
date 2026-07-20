@@ -8,7 +8,7 @@ After the terminal wizard exits, runs three finalize steps:
   2. Offer to install the MCP server into an agent (Claude Code / Desktop / Cursor)
   3. Optionally launch the menu bar + dashboard
 
-The browser wizard handles its own finalize via the /setup/finish web route.
+The browser wizard handles its own finalize inline on the /setup page.
 """
 
 from __future__ import annotations
