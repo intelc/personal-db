@@ -25,8 +25,8 @@ def _style() -> str:
       .places-leaflet-map {
         height: 620px;
         width: 100%;
-        border: 1px solid #000;
-        background: #f8fafc;
+        border: 1px solid var(--border);
+        background: var(--bg-inset);
       }
       .places-two-col {
         display: grid;
@@ -47,12 +47,12 @@ def _style() -> str:
         display: grid;
         gap: 2px;
         font-size: 11px;
-        color: #555;
+        color: var(--fg-secondary);
       }
       .places-settings-form input,
       .places-alias-form input {
         min-height: 26px;
-        border: 1px solid #000;
+        border: 1px solid var(--border);
         padding: 2px 6px;
         font: inherit;
         font-size: 12px;
@@ -60,14 +60,14 @@ def _style() -> str:
       .places-settings-form button,
       .places-alias-form button {
         min-height: 26px;
-        border: 1px solid #000;
-        background: #fff;
+        border: 1px solid var(--border);
+        background: var(--bg);
         font: inherit;
         font-size: 12px;
         cursor: pointer;
       }
       .places-settings-form button:hover,
-      .places-alias-form button:hover { background: #000; color: #fff; }
+      .places-alias-form button:hover { background: var(--fg); color: var(--bg); }
       .places-checkbox {
         display: flex !important;
         grid-template-columns: none !important;
@@ -75,8 +75,8 @@ def _style() -> str:
         align-items: center;
         min-height: 26px;
         padding: 2px 6px;
-        border: 1px solid #000;
-        color: #000 !important;
+        border: 1px solid var(--border);
+        color: var(--fg) !important;
       }
       .places-checkbox input { min-height: auto; }
       @media (max-width: 860px) {
@@ -594,6 +594,10 @@ function initPlacesHeatMap() {{
     }});
   }}
   markers.forEach(function(m) {{
+    // Leaflet marker colors are fixed hex, not var() -- they draw over
+    // always-light OpenStreetMap tile imagery, not the app chrome, so the
+    // UI color theme doesn't apply here. Amber fill / dark outline reads
+    // fine on the light basemap regardless of app theme.
     L.circleMarker([m.lat, m.lon], {{
       radius: Math.min(18, 6 + Math.sqrt(m.count)),
       fillColor: '#f59e0b',
@@ -751,6 +755,10 @@ function initPlacesMovementMap() {{
     attribution: '&copy; OpenStreetMap contributors',
     maxZoom: 19
   }}).addTo(map);
+  // Leaflet path/marker colors below are fixed hex, not var() -- they draw
+  // over always-light OpenStreetMap tile imagery, not the app chrome, so
+  // the UI color theme doesn't apply. Blue path / red stop dots read fine
+  // on the light basemap regardless of app theme.
   if (data.path.length > 1) {{
     L.polyline(data.path, {{
       color: '#2563eb',
@@ -905,6 +913,7 @@ def render_overview(ctx: AppContext) -> str:
     daily_chart = c.chart(
         {
             "data": list(reversed(chart_rows)),
+            # AG Charts canvas option -- can't consume var(), stays fixed hex.
             "series": [
                 {"type": "bar", "xKey": "date", "yKey": "visits", "yName": "Visits", "fill": "#2563eb"}
             ],
@@ -1039,6 +1048,8 @@ def render_rhythm(ctx: AppContext) -> str:
     scatter = agcharts.chart(
         {
             "data": place_data,
+            # AG Charts canvas option -- can't consume var(); the "#000" stroke
+            # is auto-remapped to a light gray in dark mode by pdb-chart.js.
             "series": [
                 {
                     "type": "scatter",

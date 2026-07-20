@@ -92,15 +92,15 @@ def _style() -> str:
       .cr-label {
         display: inline-block;
         padding: 2px 8px;
-        border: 1px solid #000;
-        background: #f8fafc;
+        border: 1px solid var(--border-strong);
+        background: var(--bg-inset);
         font-size: 12px;
         line-height: 1.5;
       }
-      .cr-focused { background: #dcfce7; }
-      .cr-fragmented { background: #fee2e2; }
-      .cr-light-activity { background: #fef9c3; }
-      .cr-no-activity, .cr-calendar-only { background: #f3f4f6; }
+      .cr-focused { background: color-mix(in srgb, var(--ok) 18%, transparent); }
+      .cr-fragmented { background: color-mix(in srgb, var(--danger) 15%, transparent); }
+      .cr-light-activity { background: color-mix(in srgb, var(--warn) 20%, transparent); }
+      .cr-no-activity, .cr-calendar-only { background: var(--bg-hover); }
     </style>
     """
 
@@ -169,6 +169,7 @@ def render_overview(ctx: AppContext) -> str:
                 }
                 for r in daily
             ],
+            # AG Charts canvas options -- can't consume var(), stay fixed categorical hexes.
             "series": [
                 {"type": "bar", "xKey": "date", "yKey": "planned", "yName": "Planned hours", "fill": "#94a3b8"},
                 {"type": "bar", "xKey": "date", "yKey": "actual", "yName": "Observed hours", "fill": "#2563eb"},

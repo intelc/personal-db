@@ -63,16 +63,16 @@ def _style() -> str:
         display: inline-block;
         padding: 2px 8px;
         border-radius: 999px;
-        background: #eef2ff;
-        color: #1e3a8a;
+        background: color-mix(in srgb, var(--accent) 12%, transparent);
+        color: var(--accent);
         font-size: 12px;
         line-height: 1.6;
       }
-      .attention-impact.impact-ignored { background: #f3f4f6; color: #374151; }
-      .attention-impact.impact-glanced { background: #ecfeff; color: #155e75; }
-      .attention-impact.impact-batched { background: #fef9c3; color: #854d0e; }
-      .attention-impact.impact-acted-on { background: #dcfce7; color: #166534; }
-      .attention-impact.impact-derailed { background: #fee2e2; color: #991b1b; }
+      .attention-impact.impact-ignored { background: var(--bg-hover); color: var(--fg-secondary); }
+      .attention-impact.impact-glanced { background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--accent); }
+      .attention-impact.impact-batched { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
+      .attention-impact.impact-acted-on { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+      .attention-impact.impact-derailed { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
     </style>
     """
 
@@ -169,6 +169,7 @@ def render_overview(ctx: AppContext) -> str:
                 }
                 for row in daily
             ],
+            # AG Charts canvas options -- can't consume var(), stay fixed categorical hexes.
             "series": [
                 {"type": "bar", "xKey": "day", "yKey": "notifications", "yName": "Sent", "fill": "#94a3b8"},
                 {"type": "bar", "xKey": "day", "yKey": "acted", "yName": "Acted", "fill": "#2563eb"},
@@ -190,6 +191,7 @@ def render_overview(ctx: AppContext) -> str:
                 }
                 for row in hourly
             ],
+            # AG Charts canvas options -- can't consume var(), stay fixed categorical hexes.
             "series": [
                 {"type": "bar", "xKey": "hour", "yKey": "acted", "yName": "Acted", "fill": "#2563eb"},
                 {"type": "bar", "xKey": "hour", "yKey": "derailed", "yName": "Derailed", "fill": "#dc2626"},

@@ -174,9 +174,9 @@ def _notes_assets() -> str:
         right: calc(var(--grid) * 20);
         bottom: calc(var(--grid) * 2);
         z-index: 80;
-        border: 2px solid #000;
-        background: #fff;
-        color: #000;
+        border: 2px solid var(--border-strong);
+        background: var(--bg);
+        color: var(--fg);
         font: inherit;
         font-size: 12px;
         font-weight: 700;
@@ -191,40 +191,40 @@ def _notes_assets() -> str:
       .pdb-note-toggle:hover,
       .pdb-note-toggle.active,
       .pdb-note-toggle[aria-pressed="true"] {
-        background: #000;
-        color: #fff;
+        background: var(--fg);
+        color: var(--bg);
       }
       .pdb-note-popover button {
-        border: 1px solid #000;
+        border: 1px solid var(--border-strong);
         font: inherit;
         font-size: 11px;
         padding: 3px 8px;
         cursor: pointer;
       }
       .pdb-note-popover button:hover {
-        background: #000;
-        color: #fff;
+        background: var(--fg);
+        color: var(--bg);
       }
       .pdb-note-list time,
       .pdb-note-form span,
       .pdb-note-message {
-        color: #666;
+        color: var(--fg-secondary);
         font-size: 11px;
       }
       .pdb-note-mode [data-note-target] {
         cursor: cell;
-        outline: 1px dashed #999;
+        outline: 1px dashed var(--fg-tertiary);
         outline-offset: 2px;
       }
       .pdb-note-mode [data-note-target][data-note-count]:not([data-note-count="0"]) {
-        background: #fff3bf;
-        outline: 2px solid #000;
+        background: color-mix(in srgb, var(--warn) 25%, transparent);
+        outline: 2px solid var(--fg);
       }
       .pdb-note-mode [data-note-target]:hover,
       .pdb-note-mode [data-note-target].pdb-note-active {
-        background: #000;
-        color: #fff;
-        outline: 2px solid #000;
+        background: var(--fg);
+        color: var(--bg);
+        outline: 2px solid var(--fg);
       }
       .pdb-note-mode [data-note-target][data-note-count]:not([data-note-count="0"])::after {
         content: attr(data-note-count);
@@ -239,9 +239,9 @@ def _notes_assets() -> str:
         position: fixed;
         z-index: 120;
         width: min(360px, calc(100vw - 16px));
-        border: 2px solid #000;
-        background: #fff;
-        color: #000;
+        border: 2px solid var(--border-strong);
+        background: var(--bg);
+        color: var(--fg);
       }
       .pdb-note-popover[hidden] { display: none; }
       .pdb-note-popover-head {
@@ -250,7 +250,7 @@ def _notes_assets() -> str:
         justify-content: space-between;
         gap: 8px;
         padding: 8px;
-        border-bottom: 1px solid #000;
+        border-bottom: 1px solid var(--border-strong);
       }
       .pdb-note-popover-head strong {
         min-width: 0;
@@ -272,7 +272,7 @@ def _notes_assets() -> str:
         overflow: auto;
       }
       .pdb-note-list li {
-        border-bottom: 1px solid #ddd;
+        border-bottom: 1px solid var(--border);
         padding: 0 0 8px;
         margin: 0 0 8px;
       }
@@ -286,7 +286,7 @@ def _notes_assets() -> str:
       .pdb-note-form textarea {
         width: 100%;
         resize: vertical;
-        border: 1px solid #000;
+        border: 1px solid var(--border-strong);
         padding: 6px;
         font: inherit;
       }
@@ -558,16 +558,16 @@ def _style() -> str:
       .sub-label {
         display: inline-block;
         padding: 2px 8px;
-        border: 1px solid #111827;
-        background: #f8fafc;
+        border: 1px solid var(--border-strong);
+        background: var(--bg-inset);
         font-size: 12px;
         line-height: 1.5;
       }
-      .sub-high { background: #dcfce7; }
-      .sub-medium { background: #dbeafe; }
-      .sub-low { background: #fef9c3; }
-      .sub-no-observed-usage { background: #fee2e2; }
-      .sub-unknown { background: #f3f4f6; }
+      .sub-high { background: color-mix(in srgb, var(--ok) 18%, transparent); }
+      .sub-medium { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+      .sub-low { background: color-mix(in srgb, var(--warn) 20%, transparent); }
+      .sub-no-observed-usage { background: color-mix(in srgb, var(--danger) 15%, transparent); }
+      .sub-unknown { background: var(--bg-hover); }
     </style>
     """
 
@@ -719,6 +719,8 @@ def render_overview(ctx: AppContext) -> str:
                 }
                 for r in utilization
             ],
+            # AG Charts renders to canvas via c.chart() -- these series fills can't
+            # consume CSS var() strings, so they stay fixed categorical hexes.
             "series": [
                 {"type": "bar", "xKey": "label", "yKey": "cost", "yName": "Cost", "fill": "#475569"},
                 {"type": "bar", "xKey": "label", "yKey": "hours", "yName": "Usage hours", "fill": "#2563eb"},
