@@ -32,7 +32,14 @@ except ImportError as exc:
         "pip install 'personal_db[xhs]'"
     ) from exc
 
-from personal_db.core.browser_bridge import BrowserBridgeError, browser_collect
+from personal_db.core.browser_bridge import (
+    BrowserBridgeError,
+    BrowserBridgeRuntimeUnavailable,
+    BrowserBridgeUnavailable,
+    browser_collect,
+    browser_connector_capabilities,
+    browser_connector_collect,
+)
 from personal_db.migrations import ensure_columns
 from personal_db.tracker import Tracker
 
@@ -565,6 +572,11 @@ def _collect_creator_manager_notes_bridge(
     except BrowserBridgeError as exc:
         raise RuntimeError(f"xhs: browser collection degraded: {exc}") from exc
     data = result.get("data")
+    return _creator_rows_from_bridge_data(data)
+
+
+def _creator_rows_from_bridge_data(data: Any) -> list[dict[str, Any]]:
+    """Validate a v1 or v2 extension creator result without changing semantics."""
     if not isinstance(data, dict):
         raise RuntimeError("xhs: browser bridge returned no creator collection data")
     rows = data.get("rows")
@@ -615,6 +627,31 @@ def _collect_creator_manager_notes_bridge(
     )
 
 
+def _collect_creator_manager_notes_bridge_v2(
+    *,
+    max_scrolls: int,
+    scroll_delay_ms: int,
+    state_dir: Path,
+) -> list[dict[str, Any]]:
+    """Run the app-updatable v2 creator connector through the stable runtime."""
+    capabilities = browser_connector_capabilities(state_dir=state_dir)
+    if (
+        capabilities.get("runtime") != 2
+        or "xhs.creator.v2" not in capabilities.get("connectors", [])
+        or capabilities.get("userScriptsAvailable") is not True
+    ):
+        raise BrowserBridgeRuntimeUnavailable(
+            "Personal DB browser connector runtime is unavailable or User Scripts is disabled"
+        )
+    result = browser_connector_collect(
+        "xhs.creator.v2",
+        {"maxScrolls": max_scrolls, "delayMs": scroll_delay_ms},
+        timeout_ms=CREATOR_COLLECT_TIMEOUT_S * 1000,
+        state_dir=state_dir,
+    )
+    return _creator_rows_from_bridge_data(result.get("data"))
+
+
 def _collect_creator_manager_notes(
     *,
     max_scrolls: int,
@@ -628,6 +665,17 @@ def _collect_creator_manager_notes(
             max_scrolls=max_scrolls,
             scroll_delay_ms=scroll_delay_ms,
         )
+    # v2 is optional because Chrome 138+ requires the user to enable the
+    # per-extension Allow User Scripts toggle. Only a missing/unavailable
+    # runtime falls back: a real collector/data error must remain visible.
+    try:
+        return _collect_creator_manager_notes_bridge_v2(
+            max_scrolls=max_scrolls,
+            scroll_delay_ms=scroll_delay_ms,
+            state_dir=state_dir,
+        )
+    except (BrowserBridgeUnavailable, BrowserBridgeRuntimeUnavailable):
+        pass
     return _collect_creator_manager_notes_bridge(
         max_scrolls=max_scrolls,
         scroll_delay_ms=scroll_delay_ms,

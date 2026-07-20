@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Personal DB XHS Collector",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Collect your Xiaohongshu creator and saved-note feeds for Personal DB in an unfocused Chrome window.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAv09oZCBQoBL2W01pgIDVRHJZeADIyzkzCDCcEPMeqfISJbmzwFIpGaARSHQdiaP8elkxrrgfmv/VcgfeXvbfmsdezLwQhl7Sl6MiEp6/X/32PLNrWyvrtGCF+o9MgBkvBykXXAvCjuCpvJyy19PnDQIDLkCpQtqpa57gX4ubTaKkE+RkJBBUglHjqneH2sf/IgNDfJ8mQW7FKc52x7lgLoKNYHaoLaB7RdCDZOs6fcNFTercusv8wZ5i6zLqrsWIW2SuOljSWTojauCMIHQS/14PpE+8hWESFvQSOZyw2UW/LFhcEfQAi/bK5xfpufhNv+34cb/5Ao1eeX9KGvFj4QIDAQAB",
-  "permissions": ["tabs", "scripting", "storage", "tabGroups", "nativeMessaging", "alarms"],
+  "permissions": ["tabs", "scripting", "userScripts", "storage", "tabGroups", "nativeMessaging", "alarms"],
   "host_permissions": ["https://www.xiaohongshu.com/*", "https://xiaohongshu.com/*", "https://creator.xiaohongshu.com/*"],
   "background": {"service_worker": "background.js"},
   "action": {"default_popup": "popup.html", "default_title": "Personal DB XHS Collector"}

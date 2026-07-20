@@ -101,4 +101,5 @@ include = [
   "src/personal_db/ui/templates/**/*",
   "src/personal_db/ui/static/**/*",
   "src/personal_db/browser_extension/chrome/**/*",
+  "src/personal_db/browser_extension/connectors/**/*",
 ]

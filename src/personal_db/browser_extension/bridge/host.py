@@ -21,6 +21,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from personal_db.browser_extension.bridge.catalog import (
+    ConnectorCatalogError,
+    load_connector_bundle,
+)
+
 DEFAULT_TIMEOUT_MS = 660_000  # XHS collectors may legitimately run for 10 min.
 # A historical saved-feed sync can send many known IDs for overlap detection.
 # Keep a finite bound without rejecting an ordinary large personal collection.
@@ -54,6 +59,68 @@ class RequestError(ValueError):
     """A socket request was outside the narrow browser-collection contract."""
 
 
+class RuntimeUnavailableError(RequestError):
+    """The connected extension cannot execute the v2 connector runtime."""
+
+
+class ExtensionCommandError(RuntimeError):
+    """A typed error returned by the stable extension runtime."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+_V2_MAX_SCROLLS = 100
+_V2_DELAY_MS_MAX = 5_000
+_V2_CAPABILITIES = {"v", "op"}
+_V2_COLLECT = {"v", "op", "connector", "input", "timeoutMs"}
+
+
+def _v2_input(value: Any) -> dict[str, int]:
+    if not isinstance(value, dict) or set(value) - {"maxScrolls", "delayMs"}:
+        raise RequestError("v2 connector input contains unsupported fields")
+    output: dict[str, int] = {}
+    for name, maximum in (("maxScrolls", _V2_MAX_SCROLLS), ("delayMs", _V2_DELAY_MS_MAX)):
+        if name not in value:
+            continue
+        item = value[name]
+        if not isinstance(item, int) or isinstance(item, bool) or not 1 <= item <= maximum:
+            raise RequestError(f"v2 {name} must be an integer between 1 and {maximum}")
+        output[name] = item
+    return output
+
+
+def _validate_v2_request(request: dict[str, Any]) -> dict[str, Any]:
+    if request.get("v") != 2:
+        raise RequestError("unsupported browser bridge protocol version")
+    operation = request.get("op")
+    if operation == "capabilities":
+        if set(request) != _V2_CAPABILITIES:
+            raise RequestError("v2 capabilities does not accept additional fields")
+        return {"v": 2, "op": "capabilities"}
+    if operation != "collect" or set(request) != _V2_COLLECT:
+        raise RequestError("v2 supports only capabilities and logical connector collect")
+    connector = request.get("connector")
+    if not isinstance(connector, str):
+        raise RequestError("v2 connector must be a string")
+    # Resolve now rather than letting the extension see an arbitrary id/source.
+    try:
+        load_connector_bundle(connector)
+    except ConnectorCatalogError as exc:
+        raise RequestError(str(exc)) from exc
+    timeout_ms = request.get("timeoutMs", 600_000)
+    if not isinstance(timeout_ms, int) or isinstance(timeout_ms, bool) or not 1 <= timeout_ms <= 600_000:
+        raise RequestError("v2 timeoutMs must be between 1 and 600000")
+    return {
+        "v": 2,
+        "op": "collect",
+        "connector": connector,
+        "input": _v2_input(request.get("input", {})),
+        "timeoutMs": timeout_ms,
+    }
+
+
 def _socket_path() -> Path:
     configured = os.environ.get("PDB_BROWSER_BRIDGE_SOCK")
     if configured:
@@ -73,6 +140,8 @@ def validate_request(request: Any) -> dict[str, Any]:
     """Return a sanitized request or raise for anything outside the allowlist."""
     if not isinstance(request, dict):
         raise RequestError("request must be an object")
+    if "v" in request:
+        return _validate_v2_request(request)
     command = request.get("cmd")
     if command == "ping":
         if set(request) != {"cmd"}:
@@ -132,6 +201,52 @@ def validate_request(request: Any) -> dict[str, Any]:
             "timeoutMs": timeout_ms,
         },
     }
+
+
+def _raise_for_extension_error(reply: dict[str, Any], *, runtime_command: bool) -> None:
+    error = reply.get("error")
+    if not error:
+        return
+    if isinstance(error, dict):
+        code = error.get("code") if isinstance(error.get("code"), str) else "extension_error"
+        message = error.get("message") if isinstance(error.get("message"), str) else code
+    else:
+        code = "runtime_unavailable" if runtime_command else "collector_error"
+        message = str(error)
+    raise ExtensionCommandError(code, message)
+
+
+def _run_v2_request(bridge: NativeBridge, request: dict[str, Any]) -> dict[str, Any]:
+    """Resolve an app-owned bundle, then invoke only native-internal commands."""
+    if request["op"] == "capabilities":
+        reply = bridge.ask({"cmd": "capabilities_v2"})
+        _raise_for_extension_error(reply, runtime_command=True)
+        result = reply.get("result")
+        if not isinstance(result, dict):
+            raise ExtensionCommandError("runtime_unavailable", "extension returned invalid v2 capabilities")
+        return result
+
+    bundle = load_connector_bundle(request["connector"])
+    bundle_reply = bridge.ask({"cmd": "load_user_script_bundle", "bundle": bundle.native_payload()})
+    _raise_for_extension_error(bundle_reply, runtime_command=True)
+    loaded = bundle_reply.get("result")
+    if not isinstance(loaded, dict) or loaded.get("loaded") is not True:
+        raise ExtensionCommandError("runtime_unavailable", "extension did not load connector bundle")
+    collect_reply = bridge.ask(
+        {
+            "cmd": "collect_v2",
+            "request": {
+                "connector": request["connector"],
+                "input": request["input"],
+                "timeoutMs": request["timeoutMs"],
+            },
+        }
+    )
+    _raise_for_extension_error(collect_reply, runtime_command=False)
+    result = collect_reply.get("result")
+    if not isinstance(result, dict):
+        raise ExtensionCommandError("collector_error", "extension returned invalid v2 collector data")
+    return result
 
 
 def _read_exact(stream: Any, length: int) -> bytes | None:
@@ -277,11 +392,14 @@ class UnixRequestServer:
                 if not line or len(line) > MAX_REQUEST_BYTES:
                     raise RequestError("request is empty or too large")
                 request = validate_request(json.loads(line))
-                reply = self.bridge.ask(request)
-                if reply.get("error"):
-                    response = {"ok": False, "error": str(reply["error"])}
+                if request.get("v") == 2:
+                    response = {"ok": True, "result": _run_v2_request(self.bridge, request)}
                 else:
+                    reply = self.bridge.ask(request)
+                    _raise_for_extension_error(reply, runtime_command=False)
                     response = {"ok": True, "result": reply.get("result")}
+            except ExtensionCommandError as exc:
+                response = {"ok": False, "code": exc.code, "error": str(exc)}
             except (OSError, ValueError, TimeoutError, RuntimeError) as exc:
                 response = {"ok": False, "error": str(exc)}
             with suppress(OSError):

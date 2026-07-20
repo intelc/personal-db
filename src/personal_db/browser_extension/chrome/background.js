@@ -13,6 +13,24 @@ const CREATOR_API_TAP_ID = 'personal-db-xhs-creator-api-tap'
 const CREATOR_API_STATE = '__personalDbXhsCreatorApiTap'
 const CREATOR_API_EMPTY_GRACE_MS = 8_000
 const CREATOR_API_OBSERVATION_GRACE_MS = 20_000
+const USER_SCRIPT_BUNDLE_PREFIX = 'personal-db-user-script-'
+const XHS_CREATOR_V2_ID = 'xhs.creator.v2'
+// This static policy constrains only stable browser authority. The installed
+// Personal DB app is the trust root for the bundle source, so version/hash stay
+// app-owned and can change without reloading this unpacked extension.
+const USER_SCRIPT_POLICIES = {
+  [XHS_CREATOR_V2_ID]: {
+    id: XHS_CREATOR_V2_ID,
+    minRuntime: 2,
+    maxRuntime: 2,
+    startUrl: 'https://creator.xiaohongshu.com/new/note-manager',
+    runAt: 'document_start',
+    world: 'MAIN',
+    resultGlobal: CREATOR_API_STATE,
+    maxSourceBytes: 250_000,
+  },
+}
+const loadedUserScriptBundles = new Map()
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const COLLECTORS = {
@@ -79,7 +97,100 @@ async function executeMain(tabId, func, args = []) {
   return result?.result
 }
 
-async function installCreatorApiTap() {
+function codedError(code, message) {
+  const error = new Error(message)
+  error.code = code
+  return error
+}
+
+function userScriptsAvailable() {
+  return Boolean(chrome.userScripts
+    && typeof chrome.userScripts.register === 'function'
+    && typeof chrome.userScripts.unregister === 'function'
+    && typeof chrome.userScripts.getScripts === 'function')
+}
+
+async function userScriptsEnabled() {
+  if (!userScriptsAvailable()) return false
+  try {
+    // Chrome 138+ can leave the API object present after the per-extension
+    // toggle is revoked; an actual API call is the authoritative check.
+    await chrome.userScripts.getScripts()
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function requireUserScripts() {
+  if (!(await userScriptsEnabled())) {
+    throw codedError('user_scripts_disabled', 'Chrome User Scripts are unavailable or disabled; enable Allow User Scripts for this extension')
+  }
+}
+
+async function sha256Hex(value) {
+  const bytes = new TextEncoder().encode(value)
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+async function validateUserScriptBundle(rawBundle) {
+  if (!rawBundle || typeof rawBundle !== 'object' || Array.isArray(rawBundle)) {
+    throw new Error('user-script bundle must be an object')
+  }
+  const allowed = new Set(['id', 'version', 'runtime', 'startUrl', 'runAt', 'world', 'resultGlobal', 'source', 'sha256'])
+  if (Object.keys(rawBundle).some((key) => !allowed.has(key))) throw new Error('user-script bundle contains unsupported fields')
+  const policy = USER_SCRIPT_POLICIES[rawBundle.id]
+  if (!policy) throw new Error('user-script bundle is not allowlisted')
+  for (const key of ['id', 'startUrl', 'runAt', 'world', 'resultGlobal']) {
+    if (rawBundle[key] !== policy[key]) throw new Error(`user-script bundle ${key} does not match policy`)
+  }
+  if (typeof rawBundle.version !== 'string' || !/^[0-9]+(?:\.[0-9]+){0,2}(?:[-+][A-Za-z0-9.-]+)?$/.test(rawBundle.version)) {
+    throw new Error('user-script bundle version is invalid')
+  }
+  if (!Number.isInteger(rawBundle.runtime) || rawBundle.runtime < policy.minRuntime || rawBundle.runtime > policy.maxRuntime) {
+    throw new Error('user-script bundle runtime is outside policy')
+  }
+  if (typeof rawBundle.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(rawBundle.sha256)) {
+    throw new Error('user-script bundle SHA-256 is invalid')
+  }
+  if (typeof rawBundle.source !== 'string' || !rawBundle.source.length || new TextEncoder().encode(rawBundle.source).length > policy.maxSourceBytes) {
+    throw new Error('user-script bundle source is invalid')
+  }
+  const digest = await sha256Hex(rawBundle.source)
+  if (digest !== rawBundle.sha256) throw new Error('user-script bundle SHA-256 does not match supplied hash')
+  return { ...rawBundle }
+}
+
+async function loadUserScriptBundle(rawBundle) {
+  // This path is reachable only from the native-messaging port below. There is
+  // deliberately no runtime.onMessage API or page-facing loader for scripts.
+  await requireUserScripts()
+  const bundle = await validateUserScriptBundle(rawBundle)
+  loadedUserScriptBundles.set(bundle.id, bundle)
+  return { loaded: true, id: bundle.id, version: bundle.version, runtime: bundle.runtime }
+}
+
+async function installCreatorApiTap(bundle = null) {
+  if (bundle) {
+    await requireUserScripts()
+    const id = `${USER_SCRIPT_BUNDLE_PREFIX}${bundle.id}`
+    await chrome.userScripts.unregister({ ids: [id] }).catch(() => {})
+    try {
+      await chrome.userScripts.register([{
+        id,
+        js: [{ code: bundle.source }],
+        matches: [`${new URL(bundle.startUrl).origin}${new URL(bundle.startUrl).pathname}*`],
+        runAt: bundle.runAt,
+        world: bundle.world,
+      }])
+    } catch (error) {
+      // Chrome reports the disabled per-extension toggle as a registration
+      // failure on versions which expose the API object regardless of toggle.
+      throw codedError('user_scripts_disabled', `Chrome User Scripts could not be registered: ${String(error?.message || error)}`)
+    }
+    return
+  }
   // Dynamic registration is done before creating the collection window so the
   // MAIN-world tap sees the page's initial authenticated request. It is removed
   // in finally below and is constrained both by page URL and endpoint path.
@@ -94,8 +205,23 @@ async function installCreatorApiTap() {
   }])
 }
 
-async function removeCreatorApiTap() {
+async function removeCreatorApiTap(bundle = null) {
+  if (bundle) {
+    await chrome.userScripts.unregister({ ids: [`${USER_SCRIPT_BUNDLE_PREFIX}${bundle.id}`] }).catch(() => {})
+    return
+  }
   await chrome.scripting.unregisterContentScripts({ ids: [CREATOR_API_TAP_ID] }).catch(() => {})
+}
+
+async function cleanupUserScriptOrphans() {
+  // Chrome documents clearing registered user scripts on extension update, not
+  // on a service-worker/browser crash. Remove every runtime-owned policy ID at
+  // startup before accepting a bridge job so an orphan cannot observe a later
+  // manually opened XHS creator page.
+  const ids = Object.keys(USER_SCRIPT_POLICIES).map((id) => `${USER_SCRIPT_BUNDLE_PREFIX}${id}`)
+  loadedUserScriptBundles.clear()
+  if (!ids.length || !userScriptsAvailable()) return
+  await chrome.userScripts.unregister({ ids }).catch(() => {})
 }
 
 function creatorApiRows(value) {
@@ -205,12 +331,12 @@ async function withCollectionWindow(url, cfg, fn) {
   }
 }
 
-async function runCollectJob(rawJob) {
+async function runCollectJob(rawJob, creatorApiBundle = null) {
   const job = validateJob(rawJob)
   const startedAt = Date.now()
   await setStatus({ source: job.source, phase: 'opening', startedAt, note: job.url })
   const useCreatorApiTap = job.collectorFile === 'collectors/xhs/creator.js'
-  if (useCreatorApiTap) await installCreatorApiTap()
+  if (useCreatorApiTap) await installCreatorApiTap(creatorApiBundle)
   let data
   try {
     data = await withCollectionWindow(job.url, job.cfg, async (tabId) => {
@@ -264,12 +390,60 @@ async function runCollectJob(rawJob) {
       throw new Error('timed out before collector reported completion')
     })
   } finally {
-    if (useCreatorApiTap) await removeCreatorApiTap()
+    if (useCreatorApiTap) await removeCreatorApiTap(creatorApiBundle)
   }
   const result = { source: job.source, collectedAt: new Date(startedAt).toISOString(), durationMs: Date.now() - startedAt, data }
   await chrome.storage.local.set({ [`last_${job.source}`]: result })
   await setStatus({ phase: 'done', durationMs: result.durationMs, count: data.count ?? data.rows?.length ?? data.notes?.length ?? 0 })
   return result
+}
+
+function validateCollectV2Request(request) {
+  if (!request || typeof request !== 'object' || Array.isArray(request)) throw new Error('v2 collect request must be an object')
+  const allowed = new Set(['connector', 'input', 'timeoutMs'])
+  if (Object.keys(request).some((key) => !allowed.has(key))) throw new Error('v2 collect request contains unsupported fields')
+  if (request.connector !== XHS_CREATOR_V2_ID) throw new Error('v2 connector is not allowlisted')
+  const input = request.input || {}
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('v2 connector input must be an object')
+  const inputAllowed = new Set(['maxScrolls', 'delayMs'])
+  if (Object.keys(input).some((key) => !inputAllowed.has(key))) throw new Error('v2 connector input contains unsupported fields')
+  for (const key of inputAllowed) {
+    if (key in input && (!Number.isInteger(input[key]) || input[key] < 0)) throw new Error(`${key} must be a non-negative integer`)
+  }
+  const timeoutMs = request.timeoutMs == null ? MAX_COLLECT_TIMEOUT_MS : request.timeoutMs
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_COLLECT_TIMEOUT_MS) throw new Error('invalid v2 collection timeout')
+  return { input, timeoutMs }
+}
+
+async function runCollectV2(rawRequest) {
+  const request = validateCollectV2Request(rawRequest)
+  const bundle = loadedUserScriptBundles.get(XHS_CREATOR_V2_ID)
+  if (!bundle) throw codedError('user_script_bundle_missing', 'XHS creator v2 bundle has not been loaded by the native host')
+  try {
+    await requireUserScripts()
+    // The logical v2 request cannot select a URL, collector source, global, or
+    // script. Those remain the same constrained creator collection performed by
+    // v1; only the API observer is supplied through the vetted bundle channel.
+    return await runCollectJob({
+      source: 'xhs',
+      url: bundle.startUrl,
+      collectorFile: 'collectors/xhs/creator.js',
+      globalName: '__personalDbXhsCreator',
+      cfg: request.input,
+      timeoutMs: request.timeoutMs,
+    }, bundle)
+  } finally {
+    // The native host reloads a vetted bundle before every v2 collection.
+    loadedUserScriptBundles.delete(XHS_CREATOR_V2_ID)
+  }
+}
+
+async function v2Capabilities() {
+  return {
+    runtime: 2,
+    connectors: [XHS_CREATOR_V2_ID],
+    userScriptsAvailable: await userScriptsEnabled(),
+  }
 }
 
 let jobChain = Promise.resolve()
@@ -309,18 +483,33 @@ function connectBridge() {
       let result
       if (message.cmd === 'ping') result = { pong: true }
       else if (message.cmd === 'collect') result = await runSerialized(() => runCollectJob(message.job))
+      // These commands are intentionally accepted only on Chrome's
+      // native-messaging port. Do not add an extension message listener: web
+      // pages and other extensions must never be able to supply executable JS.
+      else if (message.cmd === 'capabilities_v2') result = await v2Capabilities()
+      else if (message.cmd === 'load_user_script_bundle') result = await loadUserScriptBundle(message.bundle)
+      else if (message.cmd === 'collect_v2') result = await runSerialized(() => runCollectV2(message.request))
       else throw new Error('unsupported bridge command')
       port.postMessage({ id: message.id, result })
     } catch (error) {
       const text = String(error?.message || error)
       await setStatus({ phase: 'error', error: text })
-      port.postMessage({ id: message.id, error: text })
+      port.postMessage({ id: message.id, error: error?.code ? { code: error.code, message: text } : text })
     }
   })
   port.onDisconnect.addListener(() => { bridgePort = null; scheduleReconnect() })
 }
 
-function startup() { sweepWindows().finally(connectBridge) }
+let startupPromise = null
+function startup() {
+  // Chrome can invoke this eagerly, via onInstalled, and via onStartup in one
+  // worker lifetime. Make the cleanup/sweep/connect sequence single-flight so
+  // a delayed duplicate cleanup cannot unregister a newly loaded connector.
+  if (!startupPromise) {
+    startupPromise = cleanupUserScriptOrphans().finally(() => sweepWindows().finally(connectBridge))
+  }
+  return startupPromise
+}
 chrome.runtime.onInstalled.addListener(startup)
 chrome.runtime.onStartup.addListener(startup)
 startup()

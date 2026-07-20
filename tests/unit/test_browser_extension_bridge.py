@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from personal_db.browser_extension.bridge import host
+from personal_db.browser_extension.bridge import catalog, host
 from personal_db.browser_extension.bridge import install as bridge_install
 
 
@@ -18,6 +18,7 @@ def test_manifest_is_personal_db_only_and_has_a_stable_distinct_id():
     manifest = json.loads(manifest_path.read_text())
 
     assert manifest["name"] == "Personal DB XHS Collector"
+    assert manifest["version"] == "0.2.0"
     assert manifest["key"]
     assert bridge_install.extension_id() == "domgbmjbfpbdalanafmgkgjakdhmgphb"
     assert bridge_install.extension_id() != "kaaokpiflaikgaglkmiichebgamelpce"
@@ -200,6 +201,102 @@ def test_socket_server_creates_owner_only_socket_and_parent():
     finally:
         server.close()
         path.parent.rmdir()
+
+
+def test_v2_request_never_accepts_code_paths_world_or_urls():
+    valid = host.validate_request(
+        {
+            "v": 2,
+            "op": "collect",
+            "connector": "xhs.creator.v2",
+            "input": {"maxScrolls": 12, "delayMs": 900},
+            "timeoutMs": 180_000,
+        }
+    )
+    assert valid["connector"] == "xhs.creator.v2"
+    assert valid["input"] == {"maxScrolls": 12, "delayMs": 900}
+
+    for hostile_field in ("code", "source", "collectorFile", "globalName", "world", "url", "headers"):
+        hostile = {
+            "v": 2, "op": "collect", "connector": "xhs.creator.v2",
+            "input": {}, "timeoutMs": 180_000, hostile_field: "hostile",
+        }
+        with pytest.raises(host.RequestError):
+            host.validate_request(hostile)
+    with pytest.raises(host.RequestError, match="unknown connector"):
+        host.validate_request({"v": 2, "op": "collect", "connector": "anything.v2", "input": {}, "timeoutMs": 1})
+    with pytest.raises(host.RequestError, match="maxScrolls"):
+        host.validate_request({"v": 2, "op": "collect", "connector": "xhs.creator.v2", "input": {"maxScrolls": 101}, "timeoutMs": 1})
+
+
+def test_connector_catalog_rejects_tampered_source(tmp_path, monkeypatch):
+    source_root = Path(catalog._catalog_root())
+    copied = tmp_path / "xhs"
+    shutil.copytree(source_root, copied)
+    (copied / "creator_api_tap.js").write_text("tampered")
+    monkeypatch.setattr(catalog, "_catalog_root", lambda: copied)
+
+    with pytest.raises(catalog.ConnectorCatalogError, match="sha256"):
+        catalog.load_connector_bundle("xhs.creator.v2")
+
+
+@pytest.mark.parametrize("source, error", [(b"", "empty"), (b"x" * 250_001, "maximum size")])
+def test_connector_catalog_rejects_empty_or_oversized_source_before_hashing(tmp_path, monkeypatch, source, error):
+    source_root = Path(catalog._catalog_root())
+    copied = tmp_path / "xhs"
+    shutil.copytree(source_root, copied)
+    (copied / "creator_api_tap.js").write_bytes(source)
+    monkeypatch.setattr(catalog, "_catalog_root", lambda: copied)
+
+    with pytest.raises(catalog.ConnectorCatalogError, match=error):
+        catalog.load_connector_bundle("xhs.creator.v2")
+
+
+def test_v2_host_loads_internal_bundle_then_collects():
+    class FakeBridge:
+        def __init__(self):
+            self.requests = []
+
+        def ask(self, request):
+            self.requests.append(request)
+            if request["cmd"] == "load_user_script_bundle":
+                return {"result": {"loaded": True}}
+            return {"result": {"source": "xhs", "data": {"rows": []}}}
+
+    bridge = FakeBridge()
+    result = host._run_v2_request(
+        bridge,
+        {"v": 2, "op": "collect", "connector": "xhs.creator.v2", "input": {"maxScrolls": 12}, "timeoutMs": 180_000},
+    )
+
+    assert result["data"] == {"rows": []}
+    assert [request["cmd"] for request in bridge.requests] == ["load_user_script_bundle", "collect_v2"]
+    bundle = bridge.requests[0]["bundle"]
+    assert bundle["id"] == "xhs.creator.v2"
+    assert bundle.get("source")
+    assert bridge.requests[1] == {
+        "cmd": "collect_v2",
+        "request": {"connector": "xhs.creator.v2", "input": {"maxScrolls": 12}, "timeoutMs": 180_000},
+    }
+
+
+def test_extension_runtime_policy_allows_app_hash_updates_without_reload():
+    background = (bridge_install.extension_dir() / "background.js").read_text()
+    catalog_data = json.loads((Path(catalog._catalog_root()) / "catalog.json").read_text())
+    digest = catalog_data["connectors"][0]["sha256"]
+
+    assert digest not in background
+    assert "rawBundle.sha256" in background
+    assert "policy.maxSourceBytes" in background
+    assert "chrome.userScripts.getScripts()" in background
+    assert "user_scripts_disabled" in background
+    assert "unregister({ ids: [`${USER_SCRIPT_BUNDLE_PREFIX}${bundle.id}`] })" in background
+    assert "async function cleanupUserScriptOrphans()" in background
+    assert "Object.keys(USER_SCRIPT_POLICIES).map" in background
+    assert "let startupPromise = null" in background
+    assert "if (!startupPromise)" in background
+    assert "startupPromise = cleanupUserScriptOrphans().finally(() => sweepWindows().finally(connectBridge))" in background
+    assert "loadedUserScriptBundles.delete(XHS_CREATOR_V2_ID)" in background
 
 
 def test_old_socket_server_close_does_not_unlink_replacement_host_socket():

@@ -5,7 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from personal_db.core.browser_bridge import BrowserBridgeUnavailable
+from personal_db.core.browser_bridge import (
+    BrowserBridgeRuntimeUnavailable,
+    BrowserBridgeUnavailable,
+)
 from personal_db.core.installer import list_bundled
 from personal_db.core.manifest import load_manifest
 from personal_db.templates.trackers.xhs import ingest, visualizations
@@ -211,6 +214,63 @@ def test_xhs_creator_bridge_uses_personal_db_collector_contract(tmp_path, monkey
         "cfg": {"maxScrolls": 7, "delayMs": 900},
         "timeoutMs": ingest.CREATOR_COLLECT_TIMEOUT_S * 1000,
     }
+
+
+def test_xhs_creator_prefers_logical_v2_connector_when_runtime_is_ready(tmp_path, monkeypatch):
+    seen = {}
+    monkeypatch.delenv("XHS_BROWSER_MODE", raising=False)
+    monkeypatch.setattr(
+        ingest,
+        "browser_connector_capabilities",
+        lambda **kwargs: {"runtime": 2, "connectors": ["xhs.creator.v2"], "userScriptsAvailable": True},
+    )
+    monkeypatch.setattr(
+        ingest,
+        "browser_connector_collect",
+        lambda connector, input, **kwargs: seen.update(connector=connector, input=input, kwargs=kwargs) or {"data": {"rows": [{"note_id": "v2"}]}},
+    )
+    monkeypatch.setattr(ingest, "browser_collect", lambda *args, **kwargs: pytest.fail("v1 must not run"))
+
+    assert ingest._collect_creator_manager_notes(max_scrolls=8, scroll_delay_ms=900, state_dir=tmp_path / "state") == [{"note_id": "v2"}]
+    assert seen == {
+        "connector": "xhs.creator.v2",
+        "input": {"maxScrolls": 8, "delayMs": 900},
+        "kwargs": {"timeout_ms": ingest.CREATOR_COLLECT_TIMEOUT_S * 1000, "state_dir": tmp_path / "state"},
+    }
+
+
+def test_xhs_creator_uses_v1_only_when_v2_runtime_is_unavailable(tmp_path, monkeypatch):
+    monkeypatch.delenv("XHS_BROWSER_MODE", raising=False)
+    monkeypatch.setattr(
+        ingest,
+        "browser_connector_capabilities",
+        lambda **kwargs: (_ for _ in ()).throw(BrowserBridgeRuntimeUnavailable("toggle disabled")),
+    )
+    monkeypatch.setattr(
+        ingest,
+        "browser_collect",
+        lambda *args, **kwargs: {"data": {"rows": [{"note_id": "v1"}]}},
+    )
+
+    assert ingest._collect_creator_manager_notes(max_scrolls=1, scroll_delay_ms=250, state_dir=tmp_path / "state") == [{"note_id": "v1"}]
+
+
+def test_xhs_creator_v2_collector_error_does_not_fall_back_to_v1(tmp_path, monkeypatch):
+    monkeypatch.delenv("XHS_BROWSER_MODE", raising=False)
+    monkeypatch.setattr(
+        ingest,
+        "browser_connector_capabilities",
+        lambda **kwargs: {"runtime": 2, "connectors": ["xhs.creator.v2"], "userScriptsAvailable": True},
+    )
+    monkeypatch.setattr(
+        ingest,
+        "browser_connector_collect",
+        lambda *args, **kwargs: (_ for _ in ()).throw(ingest.BrowserBridgeError("creator failed")),
+    )
+    monkeypatch.setattr(ingest, "browser_collect", lambda *args, **kwargs: pytest.fail("must not fall back to v1"))
+
+    with pytest.raises(ingest.BrowserBridgeError, match="creator failed"):
+        ingest._collect_creator_manager_notes(max_scrolls=1, scroll_delay_ms=250, state_dir=tmp_path / "state")
 
 
 def test_xhs_creator_bridge_rejects_ambiguous_empty_result_with_safe_diagnostics(tmp_path, monkeypatch):

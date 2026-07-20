@@ -9,10 +9,13 @@ from uuid import uuid4
 import pytest
 
 from personal_db.core.browser_bridge import (
+    BrowserBridgeRuntimeUnavailable,
     BrowserBridgeUnavailable,
     browser_bridge_request,
     browser_bridge_socket_path,
     browser_collect,
+    browser_connector_capabilities,
+    browser_connector_collect,
 )
 
 
@@ -95,3 +98,52 @@ def test_browser_bridge_unavailable_has_extension_guidance(tmp_path):
         browser_bridge_request(
             {"cmd": "ping"}, socket_path=tmp_path / "missing.sock", timeout_s=0.1
         )
+
+
+def test_v2_client_uses_logical_connector_contract_only():
+    socket_path = _short_socket_path()
+    seen: list[dict] = []
+    thread = _serve_one_unix_reply(
+        socket_path,
+        {"ok": True, "result": {"source": "xhs", "data": {"rows": []}}},
+        seen,
+    )
+
+    result = browser_connector_collect(
+        "xhs.creator.v2", {"maxScrolls": 12, "delayMs": 900}, timeout_ms=180_000, socket_path=socket_path
+    )
+
+    thread.join(timeout=1)
+    assert result["data"] == {"rows": []}
+    assert seen == [{
+        "v": 2, "op": "collect", "connector": "xhs.creator.v2",
+        "input": {"maxScrolls": 12, "delayMs": 900}, "timeoutMs": 180_000,
+    }]
+
+
+def test_v2_runtime_unavailable_is_distinguished_from_collector_error():
+    socket_path = _short_socket_path()
+    seen: list[dict] = []
+    thread = _serve_one_unix_reply(
+        socket_path,
+        {"ok": False, "code": "user_scripts_disabled", "error": "Allow User Scripts is disabled"},
+        seen,
+    )
+
+    with pytest.raises(BrowserBridgeRuntimeUnavailable, match="Allow User Scripts"):
+        browser_connector_capabilities(socket_path=socket_path)
+    thread.join(timeout=1)
+
+
+def test_v2_capabilities_treats_an_old_host_error_as_runtime_unavailable():
+    socket_path = _short_socket_path()
+    seen: list[dict] = []
+    thread = _serve_one_unix_reply(
+        socket_path,
+        {"ok": False, "error": "only ping and allowlisted collect requests are supported"},
+        seen,
+    )
+
+    with pytest.raises(BrowserBridgeRuntimeUnavailable, match="allowlisted collect"):
+        browser_connector_capabilities(socket_path=socket_path)
+    thread.join(timeout=1)

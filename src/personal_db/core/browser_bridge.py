@@ -31,6 +31,10 @@ class BrowserBridgeProtocolError(BrowserBridgeError):
     """The native host returned an invalid reply."""
 
 
+class BrowserBridgeRuntimeUnavailable(BrowserBridgeError):
+    """The extension is connected but cannot run an optional v2 connector."""
+
+
 def browser_bridge_socket_path(state_dir: Path | None = None) -> Path:
     """Return the bridge socket path, respecting the explicit environment override.
 
@@ -106,9 +110,14 @@ def browser_bridge_request(
     if not isinstance(reply, dict):
         raise BrowserBridgeProtocolError("Personal DB browser bridge returned a non-object reply")
     if reply.get("ok") is False or reply.get("error"):
-        raise BrowserBridgeError(
-            str(reply.get("error") or "Personal DB browser bridge request failed")
-        )
+        message = str(reply.get("error") or "Personal DB browser bridge request failed")
+        code = reply.get("code")
+        if code in {
+            "runtime_unavailable", "user_scripts_disabled", "user_script_bundle_missing",
+            "bundle_missing", "unsupported_protocol",
+        }:
+            raise BrowserBridgeRuntimeUnavailable(message)
+        raise BrowserBridgeError(message)
     if "result" not in reply:
         raise BrowserBridgeProtocolError("Personal DB browser bridge reply is missing result")
     return reply["result"]
@@ -137,4 +146,55 @@ def browser_collect(
         raise BrowserBridgeProtocolError(
             "Personal DB browser collector returned a non-object result"
         )
+    return result
+
+
+def browser_connector_capabilities(
+    *,
+    state_dir: Path | None = None,
+    socket_path: Path | str | None = None,
+) -> dict[str, Any]:
+    """Return v2 connector runtime capability state from the extension."""
+    try:
+        result = browser_bridge_request(
+            {"v": 2, "op": "capabilities"},
+            state_dir=state_dir,
+            socket_path=socket_path,
+            timeout_s=10,
+        )
+    except BrowserBridgeRuntimeUnavailable:
+        raise
+    except BrowserBridgeError as exc:
+        # An already-installed v1 host knows no protocol version field and
+        # returns its legacy untyped error. Capabilities is a negotiation step,
+        # so it is safe to classify that single failure as v2-unavailable.
+        raise BrowserBridgeRuntimeUnavailable(str(exc)) from exc
+    if not isinstance(result, dict):
+        raise BrowserBridgeProtocolError("Personal DB browser bridge returned invalid v2 capabilities")
+    return result
+
+
+def browser_connector_collect(
+    connector: str,
+    input: Mapping[str, Any],
+    *,
+    timeout_ms: int,
+    state_dir: Path | None = None,
+    socket_path: Path | str | None = None,
+) -> dict[str, Any]:
+    """Run a named v2 connector; callers cannot supply browser code or URLs."""
+    result = browser_bridge_request(
+        {
+            "v": 2,
+            "op": "collect",
+            "connector": connector,
+            "input": dict(input),
+            "timeoutMs": timeout_ms,
+        },
+        state_dir=state_dir,
+        socket_path=socket_path,
+        timeout_s=timeout_ms / 1000 + 30,
+    )
+    if not isinstance(result, dict):
+        raise BrowserBridgeProtocolError("Personal DB browser connector returned a non-object result")
     return result

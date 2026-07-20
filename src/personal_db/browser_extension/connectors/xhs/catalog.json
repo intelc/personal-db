@@ -1,0 +1,17 @@
+{
+  "catalog_version": 1,
+  "runtime": 2,
+  "connectors": [
+    {
+      "id": "xhs.creator.v2",
+      "version": "1.0.0",
+      "runtime": 2,
+      "start_url": "https://creator.xiaohongshu.com/new/note-manager",
+      "run_at": "document_start",
+      "world": "MAIN",
+      "result_global": "__personalDbXhsCreatorApiTap",
+      "source": "creator_api_tap.js",
+      "sha256": "906e653abc3a2da7eccbfcdf93a0be27ea4432f9a4fa5d43073b768cb99462fc"
+    }
+  ]
+}
