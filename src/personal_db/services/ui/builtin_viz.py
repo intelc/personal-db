@@ -196,6 +196,111 @@ def repeated_failure_trackers(
     return sorted(result)
 
 
+def _installed_trackers(cfg: Config) -> list[str]:
+    if not cfg.trackers_dir.exists():
+        return []
+    return sorted(
+        d.name
+        for d in cfg.trackers_dir.iterdir()
+        if d.is_dir() and (d / "manifest.yaml").exists()
+    )
+
+
+def _tracker_error_entry(
+    tracker: str, last_errors: dict[str, dict], last_run_dt: datetime | None, now: datetime
+) -> dict | None:
+    """The active (unresolved) error entry for a tracker, if any.
+
+    An error is "active" when the last recorded sync_errors.jsonl failure for
+    the tracker is newer than its last recorded success in state/last_run.json
+    (or there's no recorded success at all) -- an old error followed by a
+    later success is resolved and shouldn't show.
+    """
+    rec = last_errors.get(tracker)
+    if rec is None:
+        return None
+    error_dt = _parse_ts(rec.get("ts"))
+    if error_dt is None or (last_run_dt is not None and error_dt <= last_run_dt):
+        return None
+    error_text = str(rec.get("error", "")).strip()
+    first_line = error_text.splitlines()[0] if error_text else "(no message)"
+    tb = str(rec.get("tb", "")).strip()
+    full_text = f"{error_text}\n\n{tb}" if tb else error_text
+    return {
+        "age": humanize_age(now - error_dt),
+        "first_line": first_line,
+        "full_text": full_text,
+    }
+
+
+def _is_stale(
+    schedule: ScheduleSpec | None, last_run_dt: datetime | None, now: datetime
+) -> bool:
+    """Staleness rule shared by /health, /t/<tracker>, and the dashboard card.
+
+    - `schedule.every` set: stale once `now - last_run` exceeds
+      `max(3 * interval, 24h)` -- three missed cycles (with a 24h floor so
+      fast-cadence trackers, e.g. every 10m, don't flag on a short blip).
+    - No schedule, or a `schedule.cron` we don't parse cadence for (launchd
+      owns cron timing, not us): stale when there's no recorded sync at all,
+      or the last one is older than 7 days.
+    """
+    if schedule is not None and schedule.every:
+        try:
+            interval = _parse_every(schedule.every)
+        except ValueError:
+            interval = None
+        if interval is not None:
+            threshold = max(interval * 3, timedelta(hours=24))
+            return last_run_dt is None or (now - last_run_dt) > threshold
+    return last_run_dt is None or (now - last_run_dt) > timedelta(days=7)
+
+
+def tracker_status_map(cfg: Config) -> dict[str, dict]:
+    """Per-installed-tracker sync status: {slug: {error, last_sync_age, stale}}.
+
+    Shared by /health, /t/<tracker>, and the dashboard's Tracker Health card
+    so all three surfaces agree on what "failing" and "stale" mean. `error`
+    has the same shape produced by `build_health_page_data` ({"age",
+    "first_line", "full_text"}). A tracker with an active `error` is never
+    also marked `stale` -- the error is the more specific, more actionable
+    signal, so it wins.
+    """
+    last_run_path = cfg.state_dir / "last_run.json"
+    last_runs: dict[str, str] = {}
+    if last_run_path.exists():
+        try:
+            last_runs = json.loads(last_run_path.read_text())
+        except json.JSONDecodeError:
+            last_runs = {}
+
+    last_errors = _last_errors_by_tracker(cfg)
+    now = datetime.now(timezone.utc)
+
+    result: dict[str, dict] = {}
+    for tracker in _installed_trackers(cfg):
+        last_run_dt = _parse_ts(last_runs.get(tracker))
+        last_sync_age = humanize_age(now - last_run_dt) if last_run_dt else None
+
+        schedule = None
+        try:
+            manifest = load_manifest(cfg.trackers_dir / tracker / "manifest.yaml")
+            schedule = manifest.schedule
+        except ManifestError:
+            pass
+
+        error_entry = _tracker_error_entry(tracker, last_errors, last_run_dt, now)
+        stale = error_entry is None and _is_stale(schedule, last_run_dt, now)
+
+        result[tracker] = {
+            "error": error_entry,
+            "last_sync_age": last_sync_age,
+            "stale": stale,
+        }
+
+    return result
+
+
 def build_health_page_data(
     cfg: Config,
     *,
@@ -210,6 +315,8 @@ def build_health_page_data(
     in state/last_run.json (or there's no recorded success at all) -- an old
     error followed by a later success is resolved and shouldn't show.
     """
+    statuses = tracker_status_map(cfg)
+
     last_run_path = cfg.state_dir / "last_run.json"
     last_runs: dict[str, str] = {}
     if last_run_path.exists():
@@ -218,22 +325,12 @@ def build_health_page_data(
         except json.JSONDecodeError:
             last_runs = {}
 
-    last_errors = _last_errors_by_tracker(cfg)
-
-    installed: list[str] = []
-    if cfg.trackers_dir.exists():
-        installed = sorted(
-            d.name
-            for d in cfg.trackers_dir.iterdir()
-            if d.is_dir() and (d / "manifest.yaml").exists()
-        )
-
     now = datetime.now(timezone.utc)
     rows = []
-    for tracker in installed:
+    for tracker in _installed_trackers(cfg):
         title = humanize_tracker_name(tracker)
         last_run_dt = _parse_ts(last_runs.get(tracker))
-        last_sync_age = humanize_age(now - last_run_dt) if last_run_dt else None
+        status = statuses.get(tracker, {})
 
         schedule_text = None
         try:
@@ -249,28 +346,14 @@ def build_health_page_data(
         except ManifestError:
             pass
 
-        error_entry = None
-        rec = last_errors.get(tracker)
-        if rec is not None:
-            error_dt = _parse_ts(rec.get("ts"))
-            if error_dt is not None and (last_run_dt is None or error_dt > last_run_dt):
-                error_text = str(rec.get("error", "")).strip()
-                first_line = error_text.splitlines()[0] if error_text else "(no message)"
-                tb = str(rec.get("tb", "")).strip()
-                full_text = f"{error_text}\n\n{tb}" if tb else error_text
-                error_entry = {
-                    "age": humanize_age(now - error_dt),
-                    "first_line": first_line,
-                    "full_text": full_text,
-                }
-
         rows.append(
             {
                 "slug": tracker,
                 "title": title,
-                "last_sync_age": last_sync_age,
+                "last_sync_age": status.get("last_sync_age"),
                 "schedule": schedule_text,
-                "error": error_entry,
+                "error": status.get("error"),
+                "stale": status.get("stale", False),
             }
         )
 
@@ -297,6 +380,7 @@ def render_health(cfg: Config) -> str:
     horizons = _get_all_horizons(cfg)
     if not last_runs:
         return '<p class="meta">no syncs recorded yet</p>' + footer_link
+    statuses = tracker_status_map(cfg)
     now = datetime.now(timezone.utc)
     rows = []
     for tracker, ts in sorted(last_runs.items()):
@@ -312,9 +396,17 @@ def render_health(cfg: Config) -> str:
             f'<a href="/t/{escape(tracker)}" title="{escape(tracker)}">'
             f"{escape(humanize_tracker_name(tracker))}</a>"
         )
+        status = statuses.get(tracker, {})
+        row_class = ""
+        age_cell = escape(age)
+        if status.get("error"):
+            row_class = ' class="health-card-row-error"'
+            age_cell = f'{age_cell} <span class="health-card-flag">failing</span>'
+        elif status.get("stale"):
+            row_class = ' class="health-card-row-stale"'
         rows.append(
-            f"<tr><td>{name_link}</td>"
-            f"<td>{escape(age)}</td>"
+            f"<tr{row_class}><td>{name_link}</td>"
+            f"<td>{age_cell}</td>"
             f'<td class="meta">{horizon_cell}</td></tr>'
         )
     return (

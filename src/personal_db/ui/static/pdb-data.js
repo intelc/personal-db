@@ -64,7 +64,7 @@
       '<div class="pdb-grid-wrap">' +
       '<div id="' +
       gridId +
-      '" class="pdb-grid ag-theme-quartz" data-pdb-grid style="height:' +
+      '" class="pdb-grid ag-theme-quartz-auto-dark" data-pdb-grid style="height:' +
       height +
       'px"></div>' +
       '<script type="application/json" data-pdb-grid-options="' +

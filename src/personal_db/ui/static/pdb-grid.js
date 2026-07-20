@@ -153,7 +153,19 @@
 
   function normalizeColumn(col) {
     const out = { ...col };
-    if (out.cellRenderer === 'html') out.cellRenderer = htmlCellRenderer;
+    if (out.cellRenderer === 'html') {
+      out.cellRenderer = htmlCellRenderer;
+    } else if (out.tooltipField === undefined && out.tooltipValueGetter === undefined) {
+      // Plain-text columns: show the full cell value on hover so truncated
+      // dates/long strings (e.g. "2026-07-0…") stay readable without
+      // widening every column.
+      out.tooltipField = out.field;
+    }
+    if (out.headerTooltip === undefined && out.headerName) {
+      // Header text gets truncated at narrow widths (e.g. "TIMEZON…");
+      // hovering reveals the full header name.
+      out.headerTooltip = out.headerName;
+    }
     return out;
   }
 
@@ -179,9 +191,14 @@
         filter: true,
         resizable: true,
         minWidth: 110,
-        flex: 1,
         ...(raw.defaultColDef || {}),
       },
+      // Size columns to fit their header/cell content on first render instead
+      // of the old equal-width flex layout, which is what was truncating long
+      // headers ("TIMEZON…") and ISO date cells ("2026-07-0…"). AG Grid does
+      // not honor per-column width from autoSizeStrategy on flex columns, so
+      // this replaces the flex:1 default above rather than combining with it.
+      autoSizeStrategy: raw.autoSizeStrategy || { type: 'fitCellContents' },
       suppressCellFocus: true,
       animateRows: false,
       getRowClass: grouped

@@ -13,6 +13,21 @@
   </div>
 </header>
 
+{% if tracker_status and tracker_status.error %}
+  <div class="tracker-status-banner tracker-status-banner-error">
+    <p>
+      <strong>{{ tracker_title }}</strong> sync is failing — {{ tracker_status.error.first_line }}
+      (last error {{ tracker_status.error.age }})
+    </p>
+    <a href="/setup/{{ tracker }}" class="tracker-status-banner-link">Reconnect &rarr;</a>
+  </div>
+{% elif tracker_status and tracker_status.stale %}
+  <div class="tracker-status-banner tracker-status-banner-warn">
+    <p>{% if tracker_status.last_sync_age %}No new data in {{ tracker_status.last_sync_age | replace(" ago", "") }}.{% else %}Never synced.{% endif %}</p>
+    <a href="/setup/{{ tracker }}" class="tracker-status-banner-link tracker-status-banner-link-quiet">Check setup &rarr;</a>
+  </div>
+{% endif %}
+
 {% if rendered and not full %}
   <noscript><p class="meta">Visualizations need JavaScript to load — <a href="?full=1">view the full page</a> instead.</p></noscript>
 {% endif %}

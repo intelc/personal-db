@@ -200,7 +200,7 @@ def test_page_route_renders_picker_and_grid_payload(tmp_root):
     assert 'data-data-table-btn="trka_items"' in r.text
     assert "data-pdb-grid" in r.text
     assert "2 rows · showing 1–2" in r.text
-    assert "/static/pdb-data.js?v=1" in r.text
+    assert "/static/pdb-data.js?v=2" in r.text
 
 
 def test_page_route_shows_empty_state_for_zero_row_table(tmp_root):

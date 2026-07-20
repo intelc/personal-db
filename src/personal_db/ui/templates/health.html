@@ -30,7 +30,7 @@
     </thead>
     <tbody>
       {% for row in rows %}
-      <tr class="{{ 'health-row-error' if row.error else '' }}">
+      <tr class="{{ 'health-row-error' if row.error else ('health-row-stale' if row.stale else '') }}">
         <td><a href="/t/{{ row.slug }}" title="{{ row.slug }}">{{ row.title }}</a></td>
         <td class="meta">{{ row.last_sync_age or "never" }}</td>
         <td class="meta">{{ row.schedule or "—" }}</td>
@@ -39,11 +39,14 @@
             <div class="health-error">
               <span class="health-error-age">{{ row.error.age }}</span>
               <span class="health-error-line">{{ row.error.first_line }}</span>
+              <a href="/setup/{{ row.slug }}" class="health-reconnect-link">reconnect &rarr;</a>
               <details class="health-error-details">
                 <summary>full error</summary>
                 <pre>{{ row.error.full_text }}</pre>
               </details>
             </div>
+          {% elif row.stale %}
+            <span class="health-stale">stale</span>
           {% else %}
             <span class="health-ok">ok</span>
           {% endif %}

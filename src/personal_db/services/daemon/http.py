@@ -81,6 +81,7 @@ from personal_db.services.daemon.routes.sync import (
 from personal_db.services.ui.builtin_viz import (
     build_health_page_data,
     repeated_failure_trackers,
+    tracker_status_map,
 )
 from personal_db.services.ui.viz import discover, list_trackers_with_viz, load_dashboard_slugs
 
@@ -482,6 +483,7 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
                 except Exception as e:
                     html = f'<p class="meta">error: {e}</p>'
             rendered.append({"viz": v, "html": html})
+        tracker_status = tracker_status_map(cfg).get(tracker)
         return templates.TemplateResponse(
             request=request,
             name="tracker_page.html",
@@ -491,6 +493,7 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
                 "tracker_title": _tracker_title(cfg, tracker),
                 "rendered": rendered,
                 "full": full,
+                "tracker_status": tracker_status,
                 **_nav_context(reg, active=tracker),
             },
         )

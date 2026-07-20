@@ -1875,6 +1875,85 @@ body.pdb-agent-ask-mode * {
   max-height: 240px;
   overflow-y: auto;
 }
+.health-reconnect-link {
+  align-self: flex-start;
+  font-size: 11px;
+  color: var(--danger);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--danger);
+}
+.health-reconnect-link:hover {
+  border-bottom-color: transparent;
+}
+.health-row-stale {
+  background: color-mix(in srgb, var(--warn) 6%, transparent);
+}
+.health-stale {
+  color: var(--warn);
+  font-size: 12px;
+}
+
+/* Dashboard "Tracker Health" card (render_health, table.health) -- same
+   failing/stale signal as the /health page above, kept visually quieter
+   since this table lives inside a small dashboard block. */
+.health-card-row-error {
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
+}
+.health-card-row-stale {
+  background: color-mix(in srgb, var(--warn) 6%, transparent);
+}
+.health-card-flag {
+  margin-left: 4px;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--danger);
+}
+
+/* Tracker page status banner (failing/stale sync surfaced above the viz
+   cards on /t/<tracker> -- same status_map that feeds /health). */
+.tracker-status-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--grid);
+  border-left: 3px solid var(--border);
+  padding: 8px 12px;
+  margin-bottom: calc(var(--grid) * 2);
+  font-size: 13px;
+}
+.tracker-status-banner p {
+  margin: 0;
+}
+.tracker-status-banner-error {
+  border-left-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, var(--bg));
+}
+.tracker-status-banner-error p {
+  color: var(--danger);
+}
+.tracker-status-banner-warn {
+  border-left-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 10%, var(--bg));
+}
+.tracker-status-banner-warn p {
+  color: var(--warn);
+}
+.tracker-status-banner-link {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted currentColor;
+  white-space: nowrap;
+}
+.tracker-status-banner-link:hover {
+  border-bottom-color: transparent;
+}
+.tracker-status-banner-link-quiet {
+  font-weight: normal;
+  color: var(--fg-secondary);
+}
 
 /* Welcome / empty states */
 .welcome-hero {
@@ -2314,4 +2393,44 @@ body.pdb-agent-ask-mode * {
 .health-data-link:hover {
   color: var(--fg);
   text-decoration: underline;
+}
+
+/* ---------------------------------------------------------------------
+ * AG Grid dark-mode blend
+ *
+ * The data browser grid (and any other AG Grid instance) uses the vendor
+ * "ag-theme-quartz-auto-dark" theme, which follows prefers-color-scheme
+ * automatically -- see src/personal_db/ui/aggrid.py and pdb-data.js. That
+ * theme's built-in dark palette is navy-blue-tinted (based on #182230),
+ * which reads as a visibly different, cooler-toned panel next to this
+ * app's neutral dark-gray surfaces (--bg-inset, --bg-sidebar, etc.).
+ * Override AG Grid's CSS custom properties here so the grid blends into
+ * the app's palette instead. Light mode is untouched -- this block is
+ * scoped to prefers-color-scheme: dark only.
+ *
+ * NOTE: AG Grid re-injects its own copy of ag-theme-quartz.min.css's rules
+ * into runtime <style> tags (for the "legacy" theme mode used by
+ * aggrid.py/pdb-data.js), which land later in the cascade than this
+ * linked stylesheet. Same-specificity source order would then let AG
+ * Grid's injected dark palette win over this block, so the selector here
+ * pairs .pdb-grid with .ag-theme-quartz-auto-dark (both always emitted
+ * together) to outrank it on specificity instead of relying on order.
+ * --------------------------------------------------------------------- */
+@media (prefers-color-scheme: dark) {
+  .pdb-grid.ag-theme-quartz-auto-dark {
+    --ag-background-color: var(--bg-inset);
+    --ag-foreground-color: var(--fg);
+    --ag-header-background-color: var(--bg-sidebar);
+    --ag-border-color: var(--border);
+    --ag-secondary-border-color: var(--border);
+    --ag-row-hover-color: var(--bg-hover);
+    --ag-selected-row-background-color: var(--accent-soft);
+    --ag-input-border-color: var(--border);
+    --ag-control-panel-background-color: var(--bg-sidebar);
+    --ag-tooltip-background-color: var(--bg-sidebar);
+    --ag-panel-background-color: var(--bg-inset);
+    --ag-panel-border-color: var(--border);
+    --ag-menu-background-color: var(--bg-sidebar);
+    --ag-menu-border-color: var(--border);
+  }
 }

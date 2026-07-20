@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import html
-from datetime import date, timedelta
+import re
+from datetime import date, datetime, timedelta
 
 from personal_db.db import connect
 from personal_db.ui.charts import horizontal_bars, line_chart, multi_line_chart
+
+_REPLACEMENT_RUN = re.compile("�+")
 
 
 def _rows(cfg, sql: str, params: tuple = ()) -> list[tuple]:
@@ -24,6 +27,43 @@ def _table(rows: list, headers: list[str]) -> str:
         cells = "".join("<td>{}</td>".format(html.escape("" if v is None else str(v))) for v in row)
         body.append(f"<tr>{cells}</tr>")
     return f"<table><thead><tr>{head}</tr></thead><tbody>{''.join(body)}</tbody></table>"
+
+
+def _clean_name(value) -> str:
+    """Strip stray U+FFFD replacement-character runs from account/holding names.
+
+    Some institutions (observed on a Wells Fargo card's official_name) already
+    return names containing literal replacement characters -- the original
+    byte(s), e.g. the "(R)" trademark glyph, were lost before Plaid's API ever
+    returned them, so there is nothing to recover. Drop the mangled run rather
+    than showing "VISA�� CARD" in the UI.
+    """
+    if value is None:
+        return ""
+    s = str(value)
+    if "�" not in s:
+        return s
+    return " ".join(_REPLACEMENT_RUN.sub(" ", s).split())
+
+
+def _short_ts(value) -> str:
+    """Short local timestamp for "As Of" columns, e.g. "2026-07-19 21:46".
+
+    balance_as_of / holdings.as_of are stored as full ISO-8601 timestamps with
+    microseconds (e.g. "2026-07-19T21:46:39.494847+00:00"); render those as a
+    compact local date+minute instead of the raw ISO string.
+    """
+    if not value:
+        return ""
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return str(value)
+    try:
+        dt = dt.astimezone()
+    except (OverflowError, OSError, ValueError):
+        pass
+    return dt.strftime("%Y-%m-%d %H:%M")
 
 
 def _money(value) -> str:
@@ -186,6 +226,10 @@ def _render_accounts(cfg) -> str:
         ORDER BY account_group, owner, institution_name, account
         """,
     )
+    rows = [
+        (group, owner, institution, _clean_name(account), subtype, current, available, currency, _short_ts(as_of))
+        for group, owner, institution, account, subtype, current, available, currency, as_of in rows
+    ]
     return "<h2>Plaid Source Accounts</h2>" + _table(
         rows,
         [
@@ -315,6 +359,10 @@ def _render_investments(cfg) -> str:
         ORDER BY COALESCE(a.current_balance, 0) DESC
         """,
     )
+    account_rows = [
+        (owner, institution, _clean_name(account), balance, _short_ts(as_of))
+        for owner, institution, account, balance, as_of in account_rows
+    ]
     holding_rows = _rows(
         cfg,
         """
@@ -330,6 +378,10 @@ def _render_investments(cfg) -> str:
         LIMIT 80
         """,
     )
+    holding_rows = [
+        (institution, _clean_name(account), holding, quantity, value, _short_ts(as_of))
+        for institution, account, holding, quantity, value, as_of in holding_rows
+    ]
     return (
         "<h2>Plaid Source Investments</h2>"
         + _table(account_rows, ["Owner", "Institution", "Account", "Balance", "As Of"])

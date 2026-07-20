@@ -163,7 +163,7 @@ def grid(
         "grouped": grouped,
     }
     payload = json.dumps(options, ensure_ascii=False).replace("</", "<\\/")
-    classes = "pdb-grid ag-theme-quartz"
+    classes = "pdb-grid ag-theme-quartz-auto-dark"
     if class_name:
         classes += f" {escape(class_name)}"
     return (
