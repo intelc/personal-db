@@ -133,10 +133,11 @@ def metrics(cfg: Config) -> list[dict]:
     ]
     if by_domain:
         top_domain, top_secs = max(by_domain.items(), key=lambda kv: kv[1])
+        display_domain = top_domain[4:] if top_domain.startswith("www.") else top_domain
         out.append(
             {
                 "label": "Top domain today",
-                "value": top_domain,
+                "value": display_domain,
                 "detail": f"{top_secs / 3600.0:.1f}h",
                 "delta": None,
                 "good": None,

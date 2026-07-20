@@ -2365,7 +2365,23 @@ body.pdb-agent-ask-mode * {
   font-weight: 500;
   line-height: 1.2;
   color: var(--fg);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   transition: opacity 0.4s ease, transform 0.4s ease;
+}
+/* Step-down sizing for long text-valued metrics (e.g. a domain, contact
+ * name, or event title) so they shrink instead of just clipping/overflowing
+ * the tile. Thresholds are chosen once here and mirrored in JS
+ * (pdb-tiles.js's sizeClassForValue) and the Jinja shell
+ * (dashboard_tiles.html) so server-rendered and rotated values agree. */
+.tile-value-md {
+  font-size: 18px;
+}
+.tile-value-sm {
+  font-size: 15px;
+  font-weight: 500;
 }
 .tile-label {
   font-size: 12px;

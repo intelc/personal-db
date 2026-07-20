@@ -30,8 +30,16 @@
     <div class="tile-header">{{ tile.title }}</div>
     {% if tile.metrics %}
       {% set m0 = tile.metrics[0] %}
+      {% set m0_value = m0.value | string %}
+      {% if m0_value|length > 20 %}
+        {% set m0_size_class = "tile-value-sm" %}
+      {% elif m0_value|length > 12 %}
+        {% set m0_size_class = "tile-value-md" %}
+      {% else %}
+        {% set m0_size_class = "" %}
+      {% endif %}
       <div class="tile-metric" data-tile-metric>
-        <div class="tile-value" data-tile-value>{{ m0.value }}</div>
+        <div class="tile-value {{ m0_size_class }}" data-tile-value title="{{ m0_value }}">{{ m0_value }}</div>
         <div class="tile-label" data-tile-label>{{ m0.label }}</div>
         <div
           class="tile-delta {% if m0.good == true %}tile-delta-good{% elif m0.good == false %}tile-delta-warn{% else %}tile-delta-neutral{% endif %}"

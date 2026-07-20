@@ -8,9 +8,14 @@
 // (server-rendered), this just wires up rotation over the rest.
 //
 // CRITICAL (explicit product requirement): tiles must NOT change in unison.
-// Each tile gets a phase offset (index * PHASE_STEP_MS initial delay before
-// its first tick) AND a slightly different period (BASE_PERIOD_MS + index *
-// PERIOD_STEP_MS) so the gallery ripples rather than flashing all at once.
+// Each tile gets a phase offset AND a slightly different period
+// (BASE_PERIOD_MS + index * PERIOD_STEP_MS) so the gallery ripples rather
+// than flashing all at once. The phase offset is spread across the full
+// base period via modulo ((index * PHASE_STEP_MS) % BASE_PERIOD_MS) rather
+// than a straight linear ramp -- with a large gallery (20+ tiles) a plain
+// `index * PHASE_STEP_MS` delay would bunch every early tile's first tick
+// into the first few seconds while the last tiles sit idle for the better
+// part of a minute before their first rotation.
 //
 // Pauses on hover (per-tile flag) and whenever the tab is hidden (checked at
 // tick time via document.hidden -- no per-tile visibilitychange listener,
@@ -22,10 +27,25 @@
 
   var GALLERY_SELECTOR = "[data-tile-gallery]";
   var TILE_SELECTOR = "[data-tile]";
-  var BASE_PERIOD_MS = 4500;
-  var PERIOD_STEP_MS = 300;
-  var PHASE_STEP_MS = 900;
+  var BASE_PERIOD_MS = 9000;
+  var PERIOD_STEP_MS = 400;
+  var PHASE_STEP_MS = 1500;
   var FADE_MS = 400;
+
+  // Value-length breakpoints for shrinking long text-valued metrics (a
+  // domain, contact name, event title, ...) so they fit inside the tile
+  // instead of overflowing. Mirrored in the Jinja shell
+  // (dashboard_tiles.html) for the server-rendered first metric, and in the
+  // CSS classes of the same names (style.css) -- keep all three in sync.
+  var VALUE_SM_THRESHOLD = 20;
+  var VALUE_MD_THRESHOLD = 12;
+
+  function sizeClassForValue(value) {
+    var len = (value == null ? "" : String(value)).length;
+    if (len > VALUE_SM_THRESHOLD) return "tile-value-sm";
+    if (len > VALUE_MD_THRESHOLD) return "tile-value-md";
+    return "";
+  }
 
   var reduceMotion =
     window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -64,7 +84,12 @@
     var valueEl = tileEl.querySelector("[data-tile-value]");
     var labelEl = tileEl.querySelector("[data-tile-label]");
     var deltaEl = tileEl.querySelector("[data-tile-delta]");
-    if (valueEl) valueEl.textContent = metric.value;
+    if (valueEl) {
+      var value = metric.value == null ? "" : String(metric.value);
+      valueEl.textContent = value;
+      valueEl.title = value;
+      valueEl.className = ("tile-value " + sizeClassForValue(value)).trim();
+    }
     if (labelEl) labelEl.textContent = metric.label;
     if (deltaEl) {
       if (metric.delta) {
@@ -121,7 +146,8 @@
     }
 
     if (!reduceMotion) {
-      var timeoutId = window.setTimeout(start, phaseIndex * PHASE_STEP_MS);
+      var initialDelay = (phaseIndex * PHASE_STEP_MS) % BASE_PERIOD_MS;
+      var timeoutId = window.setTimeout(start, initialDelay);
       scheduled.push(timeoutId);
     }
 

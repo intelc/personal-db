@@ -313,6 +313,26 @@ def test_chrome_history_metrics(tmp_path):
     assert rows["Top domain today"]["detail"] == "1.0h"
 
 
+def test_chrome_history_metrics_strips_leading_www(tmp_path):
+    """Display-only: a leading "www." on the top domain is stripped so the
+    tile shows "youtube.com" rather than "www.youtube.com" (avoidable extra
+    length that pushes long domains further into overflow territory)."""
+    cfg = _setup(tmp_path, "chrome_history")
+    now = datetime.now(UTC)
+    con = sqlite3.connect(cfg.db_path)
+    con.execute(
+        "INSERT INTO chrome_visits(visit_id, profile, url, domain, visited_at, duration_seconds) "
+        "VALUES (1, 'Default', 'https://www.youtube.com', 'www.youtube.com', ?, 3600)",
+        (_iso(now - timedelta(minutes=30)),),
+    )
+    con.commit()
+    con.close()
+
+    metrics = _load_metrics_fn(cfg, "chrome_history")
+    rows = _by_label(metrics(cfg))
+    assert rows["Top domain today"]["value"] == "youtube.com"
+
+
 def test_chrome_history_metrics_empty_table(tmp_path):
     cfg = _setup(tmp_path, "chrome_history")
     metrics = _load_metrics_fn(cfg, "chrome_history")

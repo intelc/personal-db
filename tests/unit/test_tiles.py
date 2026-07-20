@@ -460,6 +460,68 @@ def test_dashboard_route_renders_tile_shells(tmp_path):
     assert "sessions" in r.text
 
 
+def test_dashboard_route_shrinks_long_text_value(tmp_path):
+    """Long text-valued first metrics (a domain, contact name, event title,
+    ...) get a step-down size class server-side so they never render at the
+    default ~24px and overflow the tile -- and a `title` attribute so the
+    full value is still available on hover. Thresholds/classes must match
+    pdb-tiles.js's sizeClassForValue and style.css's .tile-value-md/-sm."""
+    metrics_src = (
+        "def metrics(cfg):\n"
+        "    return [\n"
+        "        {'label': 'short', 'value': '1.2h'},\n"
+        "        {'label': 'medium', 'value': 'example.com'},\n"
+        "        {'label': 'long', 'value': 'www.some-really-long-domain.com'},\n"
+        "    ]\n"
+    )
+    cfg = _make_tracker(tmp_path, "sizedvalues", metrics_src=metrics_src)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/")
+    assert r.status_code == 200
+    # First metric ("1.2h", 4 chars) is short -- no size-down class, plain
+    # "tile-value" only.
+    assert 'class="tile-value " data-tile-value title="1.2h"' in r.text
+
+
+def test_dashboard_route_shrinks_medium_text_value(tmp_path):
+    metrics_src = (
+        "def metrics(cfg):\n"
+        "    return [{'label': 'domain', 'value': 'example.com'}]\n"  # 11 chars
+    )
+    cfg = _make_tracker(tmp_path, "medvalue", metrics_src=metrics_src)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/")
+    assert r.status_code == 200
+    # 11 chars: under the >12 threshold, so still no size-down class.
+    assert 'class="tile-value " data-tile-value title="example.com"' in r.text
+
+
+def test_dashboard_route_shrinks_long_domain_value(tmp_path):
+    metrics_src = (
+        "def metrics(cfg):\n"
+        "    return [{'label': 'domain', 'value': 'some-medium-domain.com'}]\n"  # 22 chars
+    )
+    cfg = _make_tracker(tmp_path, "longvalue", metrics_src=metrics_src)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/")
+    assert r.status_code == 200
+    # 22 chars: over the >20 threshold -> smallest size class.
+    assert 'class="tile-value tile-value-sm" data-tile-value title="some-medium-domain.com"' in r.text
+
+
+def test_dashboard_route_shrinks_medium_length_value_to_md_class(tmp_path):
+    metrics_src = (
+        "def metrics(cfg):\n"
+        "    return [{'label': 'contact', 'value': 'Jonathan Smith'}]\n"  # 14 chars
+    )
+    cfg = _make_tracker(tmp_path, "mdvalue", metrics_src=metrics_src)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/")
+    assert r.status_code == 200
+    # 14 chars: over the >12 threshold but under >20 -> medium size class.
+    assert 'class="tile-value tile-value-md" data-tile-value title="Jonathan Smith"' in r.text
+
+
 def test_dashboard_route_marks_failing_tile(tmp_path):
     cfg = _make_tracker(tmp_path, "brokentracker")
     cfg.state_dir.mkdir(parents=True, exist_ok=True)
