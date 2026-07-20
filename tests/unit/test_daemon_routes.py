@@ -217,3 +217,29 @@ def test_log_life_context_route_accepts_past_date(tmp_root):
     ).fetchone()
     con.close()
     assert row == ("2026-06-04", "traveling", "flew to Japan")
+
+
+def test_connector_prompt_route_happy_path(tmp_root):
+    """Not gated on agent_terminal.enabled -- reachable even with the
+    terminal off, since it's just text a UI/external agent can consume."""
+    cfg = _make_runnable(tmp_root)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/api/v1/agent/connector-prompt", params={"slug": "runnable"})
+    assert r.status_code == 200
+    body = r.json()
+    assert "runnable" in body["prompt"]
+    assert "{{slug}}" not in body["prompt"]
+
+
+def test_connector_prompt_route_rejects_bad_slug(tmp_root):
+    cfg = _make_runnable(tmp_root)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/api/v1/agent/connector-prompt", params={"slug": "Has-Dash"})
+    assert r.status_code == 400
+
+
+def test_connector_prompt_route_404s_for_missing_tracker(tmp_root):
+    cfg = _make_runnable(tmp_root)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/api/v1/agent/connector-prompt", params={"slug": "nope_not_installed"})
+    assert r.status_code == 404

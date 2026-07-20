@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import errno
 import os
-import re
 import sys
 import urllib.parse
 from collections.abc import Callable
@@ -22,16 +21,10 @@ from personal_db.core.manifest import OAuthStep, PlatformUnsupportedError, load_
 from personal_db.core.migrations import apply_pending_migrations
 from personal_db.core.oauth import ensure_adapter_from_manifest, start_web_oauth
 from personal_db.core.scaffold import apply_manifest_overrides, scaffold_tracker
+from personal_db.services.daemon.routes.common import NEW_SLUG_RE as _NEW_SLUG_RE
 from personal_db.services.ui.setup_runner import list_overview, list_step_views, process_form
 from personal_db.services.wizard.env_file import read_env
 from personal_db.services.wizard.mcp_setup import _TARGETS as _MCP_TARGETS
-
-# Slug rule for the "Add your own source" scaffold form: lowercase, starts
-# with a letter, digits/underscores after, 2-32 chars total. Deliberately
-# stricter than routes/common.py's validate_name (which just guards path
-# traversal) -- this one also has to read well as a Python module stem
-# (ingest.py imports it implicitly) and a SQL table-name prefix.
-_NEW_SLUG_RE = re.compile(r"^[a-z][a-z0-9_]{1,31}$")
 
 
 def _validate_new_slug(cfg: Config, slug: str) -> str | None:
@@ -303,6 +296,7 @@ def register_setup_routes(
                 "flash": msg,
                 "just_created": created == "1",
                 "tracker_root": str(cfg.trackers_dir / name),
+                "agent_terminal_enabled": cfg.agent_terminal.enabled,
                 **nav_context(reg, None),
             },
         )
