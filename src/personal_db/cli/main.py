@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 
 from personal_db.cli import (
     app_cmd,
+    browser_cmd,
     code_agent_hook_cmd,
     context_cmd,
     contract_cmd,
@@ -61,6 +62,10 @@ app.command("backfill")(sync_cmd.backfill)
 app.command("log")(log_cmd.log)
 app.command("ui")(ui_cmd.ui)
 app.command("status")(status_cmd.status)
+
+browser_app = typer.Typer(no_args_is_help=True, help="Optional browser extension setup")
+browser_app.command("install")(browser_cmd.install)
+app.add_typer(browser_app, name="browser")
 
 tracker_app = typer.Typer(no_args_is_help=True, help="Tracker management")
 tracker_app.command("list")(tracker_cmd.list_cmd)

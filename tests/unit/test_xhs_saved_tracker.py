@@ -4,6 +4,9 @@ import json
 import sqlite3
 from pathlib import Path
 
+import pytest
+
+from personal_db.core.browser_bridge import BrowserBridgeUnavailable
 from personal_db.core.config import Config
 from personal_db.core.installer import list_bundled
 from personal_db.core.manifest import load_manifest
@@ -219,3 +222,59 @@ def test_xhs_saved_collection_row_records_incremental_stop_metadata():
 def test_xhs_saved_visualizations_listed():
     slugs = {item["slug"] for item in visualizations.list_visualizations()}
     assert {"recent_saved"} <= slugs
+
+
+def test_xhs_saved_bridge_uses_extension_and_preserves_collection_state(tmp_path, monkeypatch):
+    seen = {}
+    profile_url = "https://www.xiaohongshu.com/user/profile/u1"
+
+    def fake_collect(job, *, state_dir):
+        seen["job"] = job
+        seen["state_dir"] = state_dir
+        return {"source": "xhs_saved", "data": {"href": job["url"], "notes": [{"note_id": "n1"}]}}
+
+    monkeypatch.delenv("XHS_BROWSER_MODE", raising=False)
+    monkeypatch.setattr(ingest, "browser_collect", fake_collect)
+
+    state = ingest._collect_saved_posts(
+        profile_url=profile_url,
+        use_active_tab=False,
+        max_scrolls=7,
+        scroll_delay_ms=900,
+        known_note_ids={"n2", "n1"},
+        overlap_stop=25,
+        deep_backfill=False,
+        state_dir=tmp_path / "state",
+    )
+
+    assert state["notes"] == [{"note_id": "n1"}]
+    assert seen["state_dir"] == tmp_path / "state"
+    assert seen["job"]["collectorFile"] == "collectors/xhs/saved.js"
+    assert seen["job"]["globalName"] == "__personalDbXhsSaved"
+    assert seen["job"]["url"] == ingest._saved_tab_url(profile_url)
+    assert seen["job"]["cfg"]["knownIds"] == ["n1", "n2"]
+
+
+def test_xhs_saved_bridge_failure_does_not_fall_back_to_applescript(monkeypatch):
+    monkeypatch.delenv("XHS_BROWSER_MODE", raising=False)
+    monkeypatch.setattr(
+        ingest,
+        "browser_collect",
+        lambda *args, **kwargs: (_ for _ in ()).throw(BrowserBridgeUnavailable("socket missing")),
+    )
+    monkeypatch.setattr(
+        ingest,
+        "_collect_saved_posts_applescript",
+        lambda **kwargs: pytest.fail("must not fall back to AppleScript"),
+    )
+
+    with pytest.raises(RuntimeError, match="browser collection degraded: socket missing"):
+        ingest._collect_saved_posts(
+            profile_url="https://www.xiaohongshu.com/user/profile/u1",
+            use_active_tab=False,
+            max_scrolls=1,
+            scroll_delay_ms=250,
+            known_note_ids=set(),
+            overlap_stop=1,
+            deep_backfill=False,
+        )

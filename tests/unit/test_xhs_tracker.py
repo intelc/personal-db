@@ -3,6 +3,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
+from personal_db.core.browser_bridge import BrowserBridgeUnavailable
 from personal_db.core.installer import list_bundled
 from personal_db.core.manifest import load_manifest
 from personal_db.templates.trackers.xhs import ingest, visualizations
@@ -121,6 +124,41 @@ def test_xhs_creator_manager_row_parser_marks_archived_and_views():
     assert parsed["share_count"] == 2
 
 
+def test_xhs_creator_api_row_parser_accepts_normalized_first_party_fields():
+    parsed = ingest._parse_creator_row(
+        {
+            "source": "creator-api",
+            "note_id": "693f43a2000000001e02a45d",
+            "title": "Creator API title",
+            "thumbnail_url": "https://sns-na-i11.xhscdn.com/cover.jpg",
+            "posted_at": 1_716_000_000_000,
+            "visibility_label": "仅自己可见",
+            "view_count": "1.2万",
+            "comment_count": 3,
+            "liked_count": "45",
+            "collected_count": 6,
+            "share_count": 7,
+        }
+    )
+
+    assert parsed is not None
+    assert parsed["title"] == "Creator API title"
+    assert parsed["posted_at"] == "2024-05-18T02:40:00+00:00"
+    assert parsed["is_archived"] == 1
+    assert parsed["view_count"] == 12_000
+    assert parsed["comment_count"] == 3
+    assert parsed["raw_text"] == ""
+
+    # A video/photo card can legitimately omit displayTitle. Keep its note ID
+    # and engagement snapshot rather than silently dropping the card.
+    titleless = ingest._parse_creator_row(
+        {"source": "creator-api", "note_id": "693f43a2000000001e02a45e", "liked_count": 9}
+    )
+    assert titleless is not None
+    assert titleless["title"] == ""
+    assert titleless["liked_count"] == 9
+
+
 def test_xhs_profile_snapshot_parses_visible_counts():
     now = "2026-05-24T12:00:00+00:00"
     snapshot = ingest._profile_snapshot(
@@ -144,3 +182,105 @@ def test_xhs_profile_snapshot_parses_visible_counts():
 def test_xhs_visualizations_listed():
     slugs = {item["slug"] for item in visualizations.list_visualizations()}
     assert {"recent_posts", "posts_compared"} <= slugs
+
+
+def test_xhs_creator_bridge_uses_personal_db_collector_contract(tmp_path, monkeypatch):
+    seen = {}
+
+    def fake_collect(job, *, state_dir):
+        seen["job"] = job
+        seen["state_dir"] = state_dir
+        return {"source": "xhs", "data": {"rows": [{"note_id": "note-1"}, "bad"]}}
+
+    monkeypatch.delenv("XHS_BROWSER_MODE", raising=False)
+    monkeypatch.setattr(ingest, "browser_collect", fake_collect)
+
+    rows = ingest._collect_creator_manager_notes(
+        max_scrolls=7,
+        scroll_delay_ms=900,
+        state_dir=tmp_path / "state",
+    )
+
+    assert rows == [{"note_id": "note-1"}]
+    assert seen["state_dir"] == tmp_path / "state"
+    assert seen["job"] == {
+        "source": "xhs",
+        "url": ingest.CREATOR_MANAGER_URL,
+        "collectorFile": "collectors/xhs/creator.js",
+        "globalName": "__personalDbXhsCreator",
+        "cfg": {"maxScrolls": 7, "delayMs": 900},
+        "timeoutMs": ingest.CREATOR_COLLECT_TIMEOUT_S * 1000,
+    }
+
+
+def test_xhs_creator_bridge_rejects_ambiguous_empty_result_with_safe_diagnostics(tmp_path, monkeypatch):
+    monkeypatch.delenv("XHS_BROWSER_MODE", raising=False)
+    monkeypatch.setattr(
+        ingest,
+        "browser_collect",
+        lambda *args, **kwargs: {
+            "source": "xhs",
+            "data": {
+                "rows": [],
+                "diagnostics": {
+                    "href": "https://creator.xiaohongshu.com/new/note-manager?xsec_token=secret",
+                    "title": "Creator centre",
+                    "loginMarkers": ["login", "not safe!"],
+                    "selectorCounts": {"note": 0, "dataNoteId": 0, "bad-name!": 3},
+                    "rawPageText": "must never be included",
+                },
+            },
+        },
+    )
+
+    with pytest.raises(RuntimeError, match="zero rows without an explicit empty state") as exc:
+        ingest._collect_creator_manager_notes(
+            max_scrolls=1,
+            scroll_delay_ms=250,
+            state_dir=tmp_path / "state",
+        )
+
+    message = str(exc.value)
+    assert "https://creator.xiaohongshu.com/new/note-manager" in message
+    assert "xsec_token" not in message
+    assert "rawPageText" not in message
+    assert "must never be included" not in message
+    assert "markers=login" in message
+    assert "not safe" not in message
+    assert "selectors=note=0,dataNoteId=0" in message
+
+
+def test_xhs_creator_bridge_accepts_explicit_empty_state(tmp_path, monkeypatch):
+    monkeypatch.delenv("XHS_BROWSER_MODE", raising=False)
+    monkeypatch.setattr(
+        ingest,
+        "browser_collect",
+        lambda *args, **kwargs: {"source": "xhs", "data": {"rows": [], "empty": True}},
+    )
+
+    assert ingest._collect_creator_manager_notes(
+        max_scrolls=1,
+        scroll_delay_ms=250,
+        state_dir=tmp_path / "state",
+    ) == []
+
+
+def test_xhs_bridge_failure_does_not_fall_back_to_applescript(tmp_path, monkeypatch):
+    monkeypatch.delenv("XHS_BROWSER_MODE", raising=False)
+    monkeypatch.setattr(
+        ingest,
+        "browser_collect",
+        lambda *args, **kwargs: (_ for _ in ()).throw(BrowserBridgeUnavailable("socket missing")),
+    )
+    monkeypatch.setattr(
+        ingest,
+        "_collect_creator_manager_notes_applescript",
+        lambda **kwargs: pytest.fail("must not fall back to AppleScript"),
+    )
+
+    with pytest.raises(RuntimeError, match="browser collection degraded: socket missing"):
+        ingest._collect_creator_manager_notes(
+            max_scrolls=1,
+            scroll_delay_ms=250,
+            state_dir=tmp_path / "state",
+        )

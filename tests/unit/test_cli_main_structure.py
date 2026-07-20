@@ -29,6 +29,7 @@ _TOP_LEVEL_VISIBLE = {
     "log",
     "ui",
     "status",
+    "browser",
     "tracker",
     "app",
     "mcp",

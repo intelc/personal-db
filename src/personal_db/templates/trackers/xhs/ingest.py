@@ -32,6 +32,7 @@ except ImportError as exc:
         "pip install 'personal_db[xhs]'"
     ) from exc
 
+from personal_db.core.browser_bridge import BrowserBridgeError, browser_collect
 from personal_db.migrations import ensure_columns
 from personal_db.tracker import Tracker
 
@@ -73,6 +74,17 @@ def _env_int(name: str, default: int, *, min_value: int = 1, max_value: int = 50
     except ValueError:
         return default
     return max(min_value, min(max_value, value))
+
+
+def _browser_mode() -> str:
+    """Return the explicit browser acquisition mode for XHS collectors."""
+
+    mode = (os.environ.get("XHS_BROWSER_MODE") or "bridge").strip().lower()
+    if mode not in {"bridge", "applescript"}:
+        raise RuntimeError(
+            f"XHS_BROWSER_MODE must be 'bridge' (the default) or 'applescript'; got {mode!r}"
+        )
+    return mode
 
 
 def _extract_note_id(url: str | None) -> str | None:
@@ -418,7 +430,7 @@ def _fetch_note_html(url: str, cookies: dict[str, str]) -> str:
     return response.text
 
 
-def _collect_creator_manager_notes(
+def _collect_creator_manager_notes_applescript(
     *,
     max_scrolls: int,
     scroll_delay_ms: int,
@@ -529,6 +541,100 @@ def _collect_creator_manager_notes(
         with suppress(Exception):
             _close_chrome_temp_tab(tab_handle)
 
+
+def _collect_creator_manager_notes_bridge(
+    *,
+    max_scrolls: int,
+    scroll_delay_ms: int,
+    state_dir: Path,
+) -> list[dict[str, Any]]:
+    """Collect through the extension, which opens an unfocused temporary window."""
+
+    try:
+        result = browser_collect(
+            {
+                "source": "xhs",
+                "url": CREATOR_MANAGER_URL,
+                "collectorFile": "collectors/xhs/creator.js",
+                "globalName": "__personalDbXhsCreator",
+                "cfg": {"maxScrolls": max_scrolls, "delayMs": scroll_delay_ms},
+                "timeoutMs": CREATOR_COLLECT_TIMEOUT_S * 1000,
+            },
+            state_dir=state_dir,
+        )
+    except BrowserBridgeError as exc:
+        raise RuntimeError(f"xhs: browser collection degraded: {exc}") from exc
+    data = result.get("data")
+    if not isinstance(data, dict):
+        raise RuntimeError("xhs: browser bridge returned no creator collection data")
+    rows = data.get("rows")
+    if not isinstance(rows, list):
+        raise RuntimeError("xhs: browser bridge creator collection returned no rows")
+    clean_rows = [row for row in rows if isinstance(row, dict)]
+    if clean_rows or data.get("empty") is True:
+        return clean_rows
+
+    # A collector that finds neither cards nor the explicit empty-state is a
+    # changed creator UI, not evidence that the account has no posts.  Surface
+    # only its deliberately safe page diagnostics; never log page text or URLs
+    # with query strings (which can contain XHS access parameters).
+    diagnostics = data.get("diagnostics")
+    details: list[str] = []
+    if isinstance(diagnostics, dict):
+        href = diagnostics.get("href")
+        if isinstance(href, str) and href.startswith("https://creator.xiaohongshu.com/"):
+            details.append(f"href={href.split('?', 1)[0].split('#', 1)[0]}")
+        title = diagnostics.get("title")
+        if isinstance(title, str) and title:
+            details.append(f"title={title[:180]}")
+        markers = diagnostics.get("loginMarkers")
+        if isinstance(markers, list):
+            safe_markers = [
+                marker for marker in markers
+                if isinstance(marker, str) and re.fullmatch(r"[a-z-]{1,32}", marker)
+            ]
+            if safe_markers:
+                details.append(f"markers={','.join(safe_markers[:8])}")
+        selector_counts = diagnostics.get("selectorCounts")
+        if isinstance(selector_counts, dict):
+            safe_counts = [
+                f"{name}={count}"
+                for name, count in selector_counts.items()
+                if isinstance(name, str)
+                and re.fullmatch(r"[A-Za-z][A-Za-z0-9]{0,31}", name)
+                and isinstance(count, int)
+                and not isinstance(count, bool)
+                and 0 <= count <= 1_000_000
+            ]
+            if safe_counts:
+                details.append(f"selectors={','.join(safe_counts[:12])}")
+    suffix = f" [{'; '.join(details)}]" if details else ""
+    raise RuntimeError(
+        "xhs: creator collection found zero rows without an explicit empty state; "
+        f"the creator UI may have changed{suffix}"
+    )
+
+
+def _collect_creator_manager_notes(
+    *,
+    max_scrolls: int,
+    scroll_delay_ms: int,
+    state_dir: Path,
+) -> list[dict[str, Any]]:
+    """Collect creator rows without silently switching browser-control methods."""
+
+    if _browser_mode() == "applescript":
+        return _collect_creator_manager_notes_applescript(
+            max_scrolls=max_scrolls,
+            scroll_delay_ms=scroll_delay_ms,
+        )
+    return _collect_creator_manager_notes_bridge(
+        max_scrolls=max_scrolls,
+        scroll_delay_ms=scroll_delay_ms,
+        state_dir=state_dir,
+    )
+
+
 def _fetch_note_summary(
     url: str,
     note_id: str,
@@ -591,6 +697,30 @@ def _parse_creator_posted_at(value: str) -> str | None:
 
 
 def _parse_creator_row(row: dict[str, Any]) -> dict[str, Any] | None:
+    if row.get("source") == "creator-api":
+        note_id = str(row.get("note_id") or "").lower()
+        title = str(row.get("title") or "").strip()
+        if not note_id:
+            return None
+        label = str(row.get("visibility_label") or "").strip()
+        posted_at = _iso_from_xhs_time(row.get("posted_at"))
+        if posted_at is None and isinstance(row.get("posted_at"), str):
+            posted_at = _parse_creator_posted_at(str(row["posted_at"]))
+        return {
+            "note_id": note_id,
+            "title": title,
+            "posted_at": posted_at,
+            "thumbnail_url": row.get("thumbnail_url") or "",
+            "visibility_label": label,
+            "is_archived": 1 if label in ARCHIVE_LABELS else 0,
+            "view_count": _parse_count(row.get("view_count")),
+            "comment_count": _parse_count(row.get("comment_count")),
+            "liked_count": _parse_count(row.get("liked_count")),
+            "collected_count": _parse_count(row.get("collected_count")),
+            "share_count": _parse_count(row.get("share_count")),
+            "raw_text": "",
+        }
+
     note_id = str(row.get("note_id") or "").lower()
     text = str(row.get("text") or "")
     if not note_id or not text:
@@ -902,6 +1032,7 @@ def sync(t: Tracker) -> None:
     raw_creator_rows = _collect_creator_manager_notes(
         max_scrolls=creator_scrolls,
         scroll_delay_ms=scroll_delay_ms,
+        state_dir=t.cfg.state_dir,
     )
     creator_rows = [
         parsed

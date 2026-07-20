@@ -32,6 +32,7 @@ except ImportError as exc:
         "pip install 'personal_db[xhs]'"
     ) from exc
 
+from personal_db.core.browser_bridge import BrowserBridgeError, browser_collect
 from personal_db.migrations import ensure_columns
 from personal_db.tracker import Tracker
 
@@ -69,6 +70,17 @@ def _env_int(name: str, default: int, *, min_value: int = 0, max_value: int = 50
 
 def _env_bool(name: str) -> bool:
     return (os.environ.get(name) or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _browser_mode() -> str:
+    """Return the explicit browser acquisition mode for XHS collectors."""
+
+    mode = (os.environ.get("XHS_BROWSER_MODE") or "bridge").strip().lower()
+    if mode not in {"bridge", "applescript"}:
+        raise RuntimeError(
+            f"XHS_BROWSER_MODE must be 'bridge' (the default) or 'applescript'; got {mode!r}"
+        )
+    return mode
 
 
 def _extract_note_id(url: str | None) -> str | None:
@@ -226,7 +238,7 @@ def _parse_json(raw: str, context: str) -> dict[str, Any]:
     return data
 
 
-def _collect_saved_posts(
+def _collect_saved_posts_applescript(
     *,
     profile_url: str | None,
     use_active_tab: bool,
@@ -274,6 +286,90 @@ def _collect_saved_posts(
     finally:
         if close_tab_after:
             _close_chrome_tab_handle(tab_handle)
+
+
+def _collect_saved_posts_bridge(
+    *,
+    profile_url: str | None,
+    use_active_tab: bool,
+    max_scrolls: int,
+    scroll_delay_ms: int,
+    known_note_ids: set[str],
+    overlap_stop: int,
+    deep_backfill: bool,
+    state_dir: Path | None,
+) -> dict[str, Any]:
+    """Collect saved links in a temporary unfocused extension-owned window."""
+
+    if not profile_url:
+        active_tab_hint = (
+            " XHS_SAVED_USE_ACTIVE_TAB is only supported with XHS_BROWSER_MODE=applescript."
+            if use_active_tab
+            else ""
+        )
+        raise RuntimeError(
+            "xhs_saved: bridge collection needs XHS_SAVED_PROFILE_URL."
+            + active_tab_hint
+        )
+    try:
+        result = browser_collect(
+            {
+                "source": "xhs_saved",
+                "url": _saved_tab_url(profile_url),
+                "collectorFile": "collectors/xhs/saved.js",
+                "globalName": "__personalDbXhsSaved",
+                "cfg": {
+                    "maxScrolls": max_scrolls,
+                    "delayMs": scroll_delay_ms,
+                    "knownIds": sorted(known_note_ids),
+                    "overlapStop": overlap_stop,
+                    "deepBackfill": deep_backfill,
+                },
+                "timeoutMs": COLLECT_TIMEOUT_S * 1000,
+            },
+            state_dir=state_dir,
+        )
+    except BrowserBridgeError as exc:
+        raise RuntimeError(f"xhs_saved: browser collection degraded: {exc}") from exc
+    data = result.get("data")
+    if not isinstance(data, dict):
+        raise RuntimeError("xhs_saved: browser bridge returned no saved-post collection data")
+    return data
+
+
+def _collect_saved_posts(
+    *,
+    profile_url: str | None,
+    use_active_tab: bool,
+    max_scrolls: int,
+    scroll_delay_ms: int,
+    known_note_ids: set[str],
+    overlap_stop: int,
+    deep_backfill: bool,
+    state_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Collect saved posts without silently falling back to AppleScript."""
+
+    if _browser_mode() == "applescript":
+        return _collect_saved_posts_applescript(
+            profile_url=profile_url,
+            use_active_tab=use_active_tab,
+            max_scrolls=max_scrolls,
+            scroll_delay_ms=scroll_delay_ms,
+            known_note_ids=known_note_ids,
+            overlap_stop=overlap_stop,
+            deep_backfill=deep_backfill,
+        )
+    return _collect_saved_posts_bridge(
+        profile_url=profile_url,
+        use_active_tab=use_active_tab,
+        max_scrolls=max_scrolls,
+        scroll_delay_ms=scroll_delay_ms,
+        known_note_ids=known_note_ids,
+        overlap_stop=overlap_stop,
+        deep_backfill=deep_backfill,
+        state_dir=state_dir,
+    )
 
 
 def _collect_saved_posts_in_tab(
@@ -1119,6 +1215,7 @@ def _sync(t: Tracker, *, force_deep_backfill: bool = False) -> None:
         known_note_ids=known_ids,
         overlap_stop=overlap_stop,
         deep_backfill=deep_backfill,
+        state_dir=t.cfg.state_dir,
     )
     notes = _dedupe_collected_notes(state.get("notes") if isinstance(state.get("notes"), list) else [])
     note_ids = [str(item["note_id"]).lower() for item in notes]

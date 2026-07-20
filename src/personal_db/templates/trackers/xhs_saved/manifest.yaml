@@ -5,12 +5,20 @@ platform: [darwin]
 permission_type: manual
 setup_steps:
   - type: env_var
+    name: XHS_BROWSER_MODE
+    prompt: "Browser acquisition: bridge (default, unfocused extension window) or applescript"
+    optional: true
+  - type: env_var
+    name: PDB_BROWSER_BRIDGE_SOCK
+    prompt: "Optional Personal DB browser-collector socket override (advanced)"
+    optional: true
+  - type: env_var
     name: XHS_SAVED_PROFILE_URL
-    prompt: "Your Xiaohongshu profile URL; the tracker opens it and clicks 收藏"
+    prompt: "Your Xiaohongshu profile URL; required for default bridge collection"
     optional: true
   - type: env_var
     name: XHS_SAVED_USE_ACTIVE_TAB
-    prompt: "Set to 1 to collect from the current Chrome tab instead of opening XHS_SAVED_PROFILE_URL"
+    prompt: "Legacy AppleScript mode only: collect from the current Chrome tab instead of opening XHS_SAVED_PROFILE_URL"
     optional: true
   - type: env_var
     name: XHS_CHROME_PROFILE
@@ -35,9 +43,15 @@ setup_steps:
   - type: instructions
     text: |
       This tracker uses your real Google Chrome session as the source of truth.
-      Before syncing, sign in to Xiaohongshu / RedNote in Chrome. Set
-      XHS_SAVED_PROFILE_URL to your profile page, or open the desired profile
-      tab in Chrome and set XHS_SAVED_USE_ACTIVE_TAB=1.
+      By default it talks to the separate Personal DB XHS Collector extension,
+      which opens a temporary unfocused window and leaves your active Chrome
+      window alone. Enable that extension, sign in to Xiaohongshu / RedNote in
+      Chrome, and set XHS_SAVED_PROFILE_URL to your profile page.
+
+      Set XHS_BROWSER_MODE=applescript only to use the legacy foreground
+      automation. XHS_SAVED_USE_ACTIVE_TAB=1 is available only in that mode.
+      There is no automatic fallback from bridge mode, so an unavailable
+      extension produces a clear sync error instead of distracting you.
 
       The tracker clicks the 收藏 tab in Chrome, scrolls it to discover saved
       note links, deduplicates by note id, and fetches note detail pages with

@@ -5,6 +5,14 @@ platform: [darwin]
 permission_type: manual
 setup_steps:
   - type: env_var
+    name: XHS_BROWSER_MODE
+    prompt: "Browser acquisition: bridge (default, unfocused extension window) or applescript"
+    optional: true
+  - type: env_var
+    name: PDB_BROWSER_BRIDGE_SOCK
+    prompt: "Optional Personal DB browser-collector socket override (advanced)"
+    optional: true
+  - type: env_var
     name: XHS_POST_LIMIT
     prompt: "Optional max recent posts to snapshot per sync (default 30)"
     optional: true
@@ -15,11 +23,17 @@ setup_steps:
   - type: instructions
     text: |
       This tracker uses your real Google Chrome session and the Xiaohongshu
-      creator note manager as the source of truth. Before syncing, sign in to
-      Xiaohongshu / RedNote in Chrome and make sure
-      https://creator.xiaohongshu.com/new/note-manager can load. macOS may ask
-      you to allow the daemon's Python process to control Google Chrome; allow
-      it.
+      creator note manager as the source of truth. By default it uses the
+      separate Personal DB XHS Collector Chrome extension, which opens an
+      unfocused temporary window and does not take over your active tab. Before
+      syncing, enable that extension, sign in to Xiaohongshu / RedNote in
+      Chrome, and make sure https://creator.xiaohongshu.com/new/note-manager
+      can load.
+
+      Set XHS_BROWSER_MODE=applescript only if you deliberately want the
+      legacy foreground Chrome automation. There is no automatic fallback: if
+      bridge mode cannot reach the extension, sync reports a clear error rather
+      than stealing focus.
 
       The tracker opens only the creator note manager, discovers own posts from
       the 已发布 / 全部笔记 list, and snapshots the creator-center view, comment,
