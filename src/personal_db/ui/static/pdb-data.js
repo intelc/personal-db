@@ -36,11 +36,26 @@
 
   // AG Grid's theme is a CSS class, not just vars -- pick "ag-theme-quartz"
   // vs "ag-theme-quartz-dark" from PDBTheme.isDark() (rather than the OS-
-  // only "ag-theme-quartz-auto-dark" the server-rendered grids in
-  // aggrid.py still use) so a forced light/dark/morandi choice from the
-  // Settings picker is respected here too.
+  // only "ag-theme-quartz-auto-dark") so a forced light/dark/morandi choice
+  // from the Settings picker is respected.
   function gridThemeClass() {
     return window.PDBTheme && window.PDBTheme.isDark() ? "ag-theme-quartz-dark" : "ag-theme-quartz";
+  }
+
+  // aggrid.py's server-rendered grids (used all over the app, not just the
+  // /data browser) still emit the OS-only "ag-theme-quartz-auto-dark" --
+  // the server can't know a localStorage-only theme choice at render time.
+  // Normalize those onto the same explicit class this file already picks
+  // for its own client-rebuilt grids, client-side, once they land in the
+  // DOM. No-op if PDBTheme never loaded: those grids just keep following
+  // the OS via ag-theme-quartz-auto-dark, same as before this existed.
+  function normalizeGridThemeClasses() {
+    if (!window.PDBTheme) return;
+    var next = gridThemeClass();
+    document.querySelectorAll(".pdb-grid.ag-theme-quartz-auto-dark").forEach(function (el) {
+      el.classList.remove("ag-theme-quartz-auto-dark");
+      el.classList.add(next);
+    });
   }
 
   function escapeHtml(s) {
@@ -309,17 +324,23 @@
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", initAll);
+    document.addEventListener("DOMContentLoaded", normalizeGridThemeClasses);
   } else {
     initAll();
+    normalizeGridThemeClasses();
   }
   document.addEventListener("pdb:navigate", initAll);
+  // pdb-nav.js's client-side page swap brings in fresh SSR markup (e.g. a
+  // freshly-rendered aggrid.py grid on the newly-loaded page), which still
+  // needs normalizing the same as the very first page load did.
+  document.addEventListener("pdb:navigate", normalizeGridThemeClasses);
 
   // A theme-picker choice (or an OS scheme flip while on Auto/Morandi) needs
-  // the already-mounted grids' theme class swapped -- a class swap is
-  // sufficient for AG Grid's CSS-driven theme, no grid recreate needed.
-  // Only grids carrying this file's own "ag-theme-quartz"/"-dark" classes
-  // are touched; aggrid.py's server-rendered "ag-theme-quartz-auto-dark"
-  // grids elsewhere in the app are out of scope here.
+  // every already-mounted grid's theme class swapped -- a class swap is
+  // sufficient for AG Grid's CSS-driven theme, no grid recreate needed. This
+  // covers both this file's own "ag-theme-quartz"/"-dark" grids and, via
+  // normalizeGridThemeClasses(), any aggrid.py "ag-theme-quartz-auto-dark"
+  // grids that arrived since the last normalize pass.
   if (window.PDBTheme && typeof window.PDBTheme.onChange === "function") {
     window.PDBTheme.onChange(function () {
       var next = gridThemeClass();
@@ -327,6 +348,7 @@
         el.classList.remove("ag-theme-quartz", "ag-theme-quartz-dark");
         el.classList.add(next);
       });
+      normalizeGridThemeClasses();
     });
   }
 
