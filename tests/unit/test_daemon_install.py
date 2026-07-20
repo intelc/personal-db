@@ -116,6 +116,74 @@ def test_install_raises_runtime_error_on_launchctl_load_failure(tmp_path, monkey
         di.install(root=tmp_path / "personal_db")
 
 
+def test_install_refuses_inside_app_bundle(tmp_path, monkeypatch):
+    """Even if this route/CLI path is hit directly, install() must never
+    write a plist when running inside the packaged app bundle -- the sidecar
+    already runs its own periodic-sync loop (services/daemon/server.py), and
+    a LaunchAgent on top of that fights it for port 8765."""
+    monkeypatch.setenv("PERSONAL_DB_ALLOW_GLOBAL_WRITES", "1")  # get past the scratch-root guard
+    fake_la = tmp_path / "LaunchAgents"
+    fake_la.mkdir()
+    monkeypatch.setattr(di, "_LAUNCHAGENTS_DIR", fake_la)
+    monkeypatch.setattr(di, "is_app_bundle", lambda: True)
+
+    with pytest.raises(RuntimeError, match="managed by the PersonalDB app"):
+        di.install(root=tmp_path / "personal_db")
+
+    assert list(fake_la.iterdir()) == [], "no plist should be written in app-bundle mode"
+
+
+def test_remove_legacy_daemon_noop_when_missing(tmp_path, monkeypatch):
+    fake_la = tmp_path / "LaunchAgents"
+    fake_la.mkdir()
+    monkeypatch.setattr(di, "_LAUNCHAGENTS_DIR", fake_la)
+    calls = []
+    monkeypatch.setattr(di.subprocess, "run", lambda *a, **k: calls.append(a))
+
+    assert di.remove_legacy_daemon() is False
+    assert calls == []
+
+
+def test_remove_legacy_daemon_bootouts_and_deletes_plist(tmp_path, monkeypatch):
+    fake_la = tmp_path / "LaunchAgents"
+    fake_la.mkdir()
+    plist = fake_la / "com.personal_db.daemon.plist"
+    plist.write_text("<plist/>")
+    monkeypatch.setattr(di, "_LAUNCHAGENTS_DIR", fake_la)
+    monkeypatch.setattr(di.os, "getuid", lambda: 501)
+
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kw):
+        calls.append(list(cmd))
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr(di.subprocess, "run", fake_run)
+
+    assert di.remove_legacy_daemon() is True
+    assert not plist.exists()
+    assert calls == [["launchctl", "bootout", "gui/501/com.personal_db.daemon"]]
+
+
+def test_remove_legacy_daemon_ignores_launchctl_failure(tmp_path, monkeypatch):
+    """Even if launchctl bootout fails (e.g. the agent wasn't loaded), the
+    plist file must still be removed."""
+    fake_la = tmp_path / "LaunchAgents"
+    fake_la.mkdir()
+    plist = fake_la / "com.personal_db.daemon.plist"
+    plist.write_text("<plist/>")
+    monkeypatch.setattr(di, "_LAUNCHAGENTS_DIR", fake_la)
+    monkeypatch.setattr(di.os, "getuid", lambda: 501)
+    monkeypatch.setattr(
+        di.subprocess,
+        "run",
+        lambda *a, **k: type("R", (), {"returncode": 1, "stdout": "", "stderr": "not loaded"})(),
+    )
+
+    assert di.remove_legacy_daemon() is True
+    assert not plist.exists()
+
+
 def test_install_blocked_on_scratch_root(tmp_path, monkeypatch):
     """A data root under the system temp dir must be refused before any
     plist is written (scratch-root guard)."""

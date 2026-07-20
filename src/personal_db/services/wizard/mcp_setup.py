@@ -13,6 +13,8 @@ from pathlib import Path
 
 import questionary
 
+from personal_db.core import runtime_env
+
 _BACK = "__BACK__"
 _AUTO = "__AUTO__"
 _MANUAL = "__MANUAL__"
@@ -63,7 +65,20 @@ def _personal_db_path() -> str:
          without the symlink) -- mirrors
          services/daemon/install.py::_resolve_cli_binary's argv[0]
          preference.
-      3. `shutil.which("personal-db")` as a last resort, for the classic
+      3. Inside the frozen app bundle's daemon sidecar, argv[0] is rewritten
+         by runpy to the sidecar's own `__main__.py` (it's spawned as
+         `personal-db-daemon -m personal_db dev daemon run`), so step 2 never
+         matches there. When `runtime_env.is_app_bundle()` is True, prefer
+         `_CLI_LINK_PATH` if it exists and resolves into *some* `.app`
+         bundle's CLI wrapper (best-effort: it may point at a different
+         install than the one currently running, but it's still a real,
+         on-PATH CLI -- far better than nothing); else fall back to this
+         exact bundle's own `runtime_env.app_bundle_cli()`. Mirrors
+         `shell/src-tauri/src/mcp_connect.rs::invoke_path`'s preference
+         order, so the web Finish page and the Tauri tray's "Connect AI
+         Apps" flow agree on which binary ends up written into a host's MCP
+         config.
+      4. `shutil.which("personal-db")` as a last resort, for the classic
          case of calling this outside a `personal-db ...` invocation
          entirely (argv[0] is `python`/`pytest`/etc.).
     """
@@ -77,6 +92,19 @@ def _personal_db_path() -> str:
         except OSError:
             pass
         return running
+
+    if runtime_env.is_app_bundle():
+        try:
+            if _CLI_LINK_PATH.exists() and runtime_env.resolve_app_bundle_root(
+                _CLI_LINK_PATH.resolve()
+            ):
+                return str(_CLI_LINK_PATH)
+        except OSError:
+            pass
+        bundle_cli = runtime_env.app_bundle_cli()
+        if bundle_cli is not None:
+            return str(bundle_cli)
+
     p = shutil.which("personal-db")
     if not p:
         raise RuntimeError(

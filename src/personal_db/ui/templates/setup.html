@@ -14,7 +14,7 @@
 </section>
 
 <section class="block">
-  <h2 class="block-h">TRACKERS</h2>
+  <h2 class="block-h">1. SOURCES</h2>
   <div class="tracker-cards">
     {% for t in trackers %}
     <div class="tracker-card">
@@ -59,11 +59,22 @@
 </section>
 
 <section class="block">
-  <h2 class="block-h">FINISH</h2>
+  <h2 class="block-h">2. FINISH: CONNECT AN AI AGENT</h2>
+  {% if daemon_status.state == 'app_managed' %}
+  <p class="meta">
+    Sync runs with the app; finish setup connects your AI agent.
+  </p>
+  {% elif daemon_status.state == 'launchd_installed' %}
+  <p class="meta">
+    Periodic sync is installed. Finish setup connects <code>personal_db</code>
+    to an AI agent.
+  </p>
+  {% else %}
   <p class="meta">
     When you're done configuring trackers, click below to install the periodic
     sync scheduler and wire <code>personal_db</code> into an AI agent.
   </p>
+  {% endif %}
   <p>
     <a href="/setup/finish" class="btn-primary">finish setup →</a>
   </p>

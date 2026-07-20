@@ -295,6 +295,221 @@ def test_setup_finish_renders_mcp_flash(tmp_path):
     assert "cursor" in r.text
 
 
+# --- app-managed periodic sync (packaged-app installs) ---
+#
+# Audit findings (see the branch's task description): inside the frozen app
+# bundle, the daemon serving this page already runs its own periodic-sync
+# loop (services/daemon/server.py::start_periodic_sync), so the Finish page
+# must not offer to install a competing launchd LaunchAgent -- and must
+# reflect that periodic sync is already active rather than showing "not
+# installed yet".
+
+
+def test_setup_finish_app_managed_hides_install_button_and_shows_status(tmp_path, monkeypatch):
+    monkeypatch.delenv("PERSONAL_DB_NO_DAEMON", raising=False)
+    monkeypatch.setattr("sys.platform", "darwin")
+    monkeypatch.setattr("personal_db.services.daemon.routes.setup.is_app_bundle", lambda: True)
+
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/setup/finish")
+    assert r.status_code == 200
+    assert "managed by the PersonalDB app" in r.text
+    assert 'action="/setup/finish/install-daemon"' not in r.text
+
+
+def test_setup_finish_launchd_installed_state_shown(tmp_path, monkeypatch):
+    """Headless/CLI install with the plist already present: not app-managed,
+    so the page should say installed, not 'not installed yet'."""
+    monkeypatch.delenv("PERSONAL_DB_NO_DAEMON", raising=False)
+    monkeypatch.setattr("sys.platform", "darwin")
+    monkeypatch.setattr("personal_db.services.daemon.routes.setup.is_app_bundle", lambda: False)
+    monkeypatch.setenv("PERSONAL_DB_ALLOW_GLOBAL_WRITES", "1")  # so blocked_reason doesn't shadow it
+
+    fake_la = tmp_path / "LaunchAgents"
+    fake_la.mkdir()
+    plist = fake_la / "com.personal_db.daemon.plist"
+    plist.write_text("<plist/>")
+    monkeypatch.setattr("personal_db.services.daemon.install._LAUNCHAGENTS_DIR", fake_la)
+
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/setup/finish")
+    assert r.status_code == 200
+    assert "daemon installed" in r.text
+    assert 'action="/setup/finish/install-daemon"' in r.text
+
+
+def test_setup_finish_not_installed_state_shown(tmp_path, monkeypatch):
+    monkeypatch.delenv("PERSONAL_DB_NO_DAEMON", raising=False)
+    monkeypatch.setattr("sys.platform", "darwin")
+    monkeypatch.setattr("personal_db.services.daemon.routes.setup.is_app_bundle", lambda: False)
+    monkeypatch.setenv("PERSONAL_DB_ALLOW_GLOBAL_WRITES", "1")
+
+    fake_la = tmp_path / "LaunchAgents"
+    fake_la.mkdir()
+    monkeypatch.setattr("personal_db.services.daemon.install._LAUNCHAGENTS_DIR", fake_la)
+
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/setup/finish")
+    assert r.status_code == 200
+    assert "not installed yet" in r.text
+    assert 'action="/setup/finish/install-daemon"' in r.text
+
+
+def test_setup_finish_app_managed_with_legacy_plist_shows_conflict_warning(tmp_path, monkeypatch):
+    monkeypatch.delenv("PERSONAL_DB_NO_DAEMON", raising=False)
+    monkeypatch.setattr("sys.platform", "darwin")
+    monkeypatch.setattr("personal_db.services.daemon.routes.setup.is_app_bundle", lambda: True)
+
+    fake_la = tmp_path / "LaunchAgents"
+    fake_la.mkdir()
+    plist = fake_la / "com.personal_db.daemon.plist"
+    plist.write_text("<plist/>")
+    monkeypatch.setattr("personal_db.services.daemon.install._LAUNCHAGENTS_DIR", fake_la)
+
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/setup/finish")
+    assert r.status_code == 200
+    assert "legacy background service" in r.text
+    assert 'action="/setup/finish/remove-daemon"' in r.text
+
+
+def test_setup_finish_app_managed_without_legacy_plist_no_conflict_warning(tmp_path, monkeypatch):
+    monkeypatch.delenv("PERSONAL_DB_NO_DAEMON", raising=False)
+    monkeypatch.setattr("sys.platform", "darwin")
+    monkeypatch.setattr("personal_db.services.daemon.routes.setup.is_app_bundle", lambda: True)
+
+    fake_la = tmp_path / "LaunchAgents"
+    fake_la.mkdir()
+    monkeypatch.setattr("personal_db.services.daemon.install._LAUNCHAGENTS_DIR", fake_la)
+
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/setup/finish")
+    assert r.status_code == 200
+    assert "legacy background service" not in r.text
+    assert 'action="/setup/finish/remove-daemon"' not in r.text
+
+
+def test_setup_daemon_install_flashes_refusal_in_app_mode(tmp_path, monkeypatch):
+    """POST install-daemon while app_bundle-detected must never write a
+    plist -- it should flash the "managed by the app" message instead."""
+    monkeypatch.delenv("PERSONAL_DB_NO_DAEMON", raising=False)
+    monkeypatch.setattr("sys.platform", "darwin")
+    monkeypatch.setattr("personal_db.services.daemon.install.is_app_bundle", lambda: True)
+    # Bypass the scratch-root guard so is_app_bundle() is actually what's
+    # under test here (tmp_path would otherwise be refused first).
+    monkeypatch.setenv("PERSONAL_DB_ALLOW_GLOBAL_WRITES", "1")
+
+    fake_la = tmp_path / "LaunchAgents"
+    fake_la.mkdir()
+    monkeypatch.setattr("personal_db.services.daemon.install._LAUNCHAGENTS_DIR", fake_la)
+
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.post("/setup/finish/install-daemon", follow_redirects=False)
+    assert r.status_code == 303
+    loc = r.headers["location"]
+    assert "daemon_ok=0" in loc
+    assert "managed" in urllib.parse.unquote(loc)
+    assert list(fake_la.iterdir()) == []
+
+
+def test_setup_daemon_remove_happy_path(tmp_path, monkeypatch):
+    cfg = _init(tmp_path)  # subprocess.run for the CLI 'init' step, before it's patched below
+
+    monkeypatch.setenv("PERSONAL_DB_ALLOW_GLOBAL_WRITES", "1")
+    fake_la = tmp_path / "LaunchAgents"
+    fake_la.mkdir()
+    plist = fake_la / "com.personal_db.daemon.plist"
+    plist.write_text("<plist/>")
+    monkeypatch.setattr("personal_db.services.daemon.install._LAUNCHAGENTS_DIR", fake_la)
+
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kw):
+        calls.append(list(cmd))
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr("personal_db.services.daemon.install.subprocess.run", fake_run)
+
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.post("/setup/finish/remove-daemon", follow_redirects=False)
+    assert r.status_code == 303
+    loc = r.headers["location"]
+    assert "daemon_ok=1" in loc
+    assert not plist.exists()
+    assert any("bootout" in c for c in calls)
+
+
+def test_setup_daemon_remove_noop_when_plist_missing(tmp_path, monkeypatch):
+    cfg = _init(tmp_path)  # subprocess.run for the CLI 'init' step, before it's patched below
+
+    monkeypatch.setenv("PERSONAL_DB_ALLOW_GLOBAL_WRITES", "1")
+    fake_la = tmp_path / "LaunchAgents"
+    fake_la.mkdir()
+    monkeypatch.setattr("personal_db.services.daemon.install._LAUNCHAGENTS_DIR", fake_la)
+    calls = []
+    monkeypatch.setattr(
+        "personal_db.services.daemon.install.subprocess.run", lambda *a, **k: calls.append(a)
+    )
+
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.post("/setup/finish/remove-daemon", follow_redirects=False)
+    assert r.status_code == 303
+    loc = r.headers["location"]
+    assert "daemon_ok=1" in loc
+    assert "no legacy" in urllib.parse.unquote(loc)
+    assert calls == []
+
+
+def test_setup_daemon_remove_blocked_on_scratch_root(tmp_path):
+    """Data root under tmp_path is a scratch root -- the same
+    global-writes guard the install path uses must apply here too."""
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.post("/setup/finish/remove-daemon", follow_redirects=False)
+    assert r.status_code == 303
+    loc = r.headers["location"]
+    assert "daemon_ok=0" in loc
+    assert "temp" in urllib.parse.unquote(loc)
+
+
+def test_setup_mcp_install_flashes_instead_of_500_on_resolution_failure(tmp_path, monkeypatch):
+    """If a target's auto() raises (e.g. _personal_db_path()'s RuntimeError
+    when nothing resolves), the route must flash the error, never 500."""
+    from personal_db.services.wizard import mcp_setup
+
+    monkeypatch.setenv("PERSONAL_DB_ALLOW_GLOBAL_WRITES", "1")
+
+    def _raise():
+        raise RuntimeError("personal-db not found on PATH; activate the venv or install personal_db")
+
+    monkeypatch.setattr(mcp_setup._TARGETS["cursor"], "auto", _raise)
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.post("/setup/mcp/install/cursor", follow_redirects=False)
+    assert r.status_code == 303
+    loc = r.headers["location"]
+    assert "mcp_ok=0" in loc
+    assert "not found on PATH" in urllib.parse.unquote(loc)
+
+
+def test_setup_overview_reflects_app_managed_finish_copy(tmp_path, monkeypatch):
+    monkeypatch.delenv("PERSONAL_DB_NO_DAEMON", raising=False)
+    monkeypatch.setattr("sys.platform", "darwin")
+    monkeypatch.setattr("personal_db.services.daemon.routes.setup.is_app_bundle", lambda: True)
+
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/setup")
+    assert r.status_code == 200
+    assert "sync runs with the app" in r.text.lower()
+
+
 def test_setup_oauth_redirects_to_provider_when_creds_set(tmp_path, monkeypatch):
     """Posting /setup/oauth/oura with CLIENT_ID/SECRET set in env returns a
     303 redirect to the provider's authorize URL with redirect_uri pointing

@@ -108,6 +108,77 @@ def test_personal_db_path_ignores_symlink_pointing_elsewhere(monkeypatch, tmp_pa
     assert mcp_setup._personal_db_path() == str(running.resolve())
 
 
+# --- app-bundle preference (frozen sidecar's argv[0] is rewritten by runpy,
+# so _resolve_running_cli_path() returns None inside it -- see
+# core/runtime_env.py::is_app_bundle and this module's _personal_db_path
+# docstring for the full resolution order) ---
+
+
+def test_personal_db_path_prefers_cli_link_when_bundle_and_link_resolves_into_app(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(sys, "argv", ["/usr/bin/pytest"])  # argv0 not a personal-db entry point
+    monkeypatch.setattr(mcp_setup.runtime_env, "is_app_bundle", lambda: True)
+
+    # Must actually be named "*.app/Contents/..." -- resolve_app_bundle_root
+    # (used, unmocked, to validate the link) checks for that real segment.
+    bundle_wrapper = tmp_path / "PersonalDB.app" / "Contents" / "Resources" / "cli" / "personal-db"
+    bundle_wrapper.parent.mkdir(parents=True)
+    bundle_wrapper.write_text("#!/bin/sh\n")
+
+    link = tmp_path / "linkdir" / "personal-db"
+    link.parent.mkdir()
+    link.symlink_to(bundle_wrapper)
+    monkeypatch.setattr(mcp_setup, "_CLI_LINK_PATH", link)
+
+    assert mcp_setup._personal_db_path() == str(link)
+
+
+def test_personal_db_path_falls_back_to_app_bundle_cli_when_link_missing(monkeypatch, tmp_path):
+    monkeypatch.setattr(sys, "argv", ["/usr/bin/pytest"])
+    monkeypatch.setattr(mcp_setup.runtime_env, "is_app_bundle", lambda: True)
+    monkeypatch.setattr(mcp_setup, "_CLI_LINK_PATH", tmp_path / "linkdir" / "personal-db")
+
+    bundle_cli = tmp_path / "bundle" / "Contents" / "Resources" / "cli" / "personal-db"
+    monkeypatch.setattr(mcp_setup.runtime_env, "app_bundle_cli", lambda: bundle_cli)
+
+    assert mcp_setup._personal_db_path() == str(bundle_cli)
+
+
+def test_personal_db_path_falls_back_to_which_when_bundle_has_no_cli_at_all(monkeypatch, tmp_path):
+    monkeypatch.setattr(sys, "argv", ["/usr/bin/pytest"])
+    monkeypatch.setattr(mcp_setup.runtime_env, "is_app_bundle", lambda: True)
+    monkeypatch.setattr(mcp_setup, "_CLI_LINK_PATH", tmp_path / "linkdir" / "personal-db")
+    monkeypatch.setattr(mcp_setup.runtime_env, "app_bundle_cli", lambda: None)
+    monkeypatch.setattr(
+        "personal_db.services.wizard.mcp_setup.shutil.which",
+        lambda x: "/fake/personal-db" if x == "personal-db" else None,
+    )
+
+    assert mcp_setup._personal_db_path() == str(Path("/fake/personal-db").resolve())
+
+
+def test_personal_db_path_ignores_cli_link_when_it_points_outside_any_bundle(monkeypatch, tmp_path):
+    """The link exists but doesn't resolve into an .app bundle at all (e.g. a
+    stale symlink from before the app was ever installed) -- must not be
+    preferred over the (real) bundle CLI wrapper."""
+    monkeypatch.setattr(sys, "argv", ["/usr/bin/pytest"])
+    monkeypatch.setattr(mcp_setup.runtime_env, "is_app_bundle", lambda: True)
+
+    not_a_bundle_target = tmp_path / "some" / "random" / "file"
+    not_a_bundle_target.parent.mkdir(parents=True)
+    not_a_bundle_target.write_text("#!/bin/sh\n")
+    link = tmp_path / "linkdir" / "personal-db"
+    link.parent.mkdir()
+    link.symlink_to(not_a_bundle_target)
+    monkeypatch.setattr(mcp_setup, "_CLI_LINK_PATH", link)
+
+    bundle_cli = tmp_path / "bundle" / "Contents" / "Resources" / "cli" / "personal-db"
+    monkeypatch.setattr(mcp_setup.runtime_env, "app_bundle_cli", lambda: bundle_cli)
+
+    assert mcp_setup._personal_db_path() == str(bundle_cli)
+
+
 def test_personal_db_path_falls_back_to_which_when_argv0_is_not_cli(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "argv", ["/usr/bin/pytest"])
     monkeypatch.setattr(mcp_setup, "_CLI_LINK_PATH", tmp_path / "linkdir" / "personal-db")

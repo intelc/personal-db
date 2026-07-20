@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -7,6 +8,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 from personal_db.core.global_writes import blocked_reason
+from personal_db.core.runtime_env import is_app_bundle
 
 LABEL = "com.personal_db.daemon"
 
@@ -67,6 +69,15 @@ def install(root: Path) -> dict:
     reason = blocked_reason(root)
     if reason:
         raise RuntimeError(reason)
+    if is_app_bundle():
+        # The sidecar already runs start_periodic_sync itself (see
+        # services/daemon/server.py) -- a LaunchAgent on top of that would
+        # fight the sidecar for port 8765 (see the module-level docs in
+        # routes/setup.py). Refuse even if this route/CLI path is hit
+        # directly; the web route also hides the button for this case.
+        raise RuntimeError(
+            "periodic sync is managed by the PersonalDB app — launchd install is disabled"
+        )
     pdb_path = _resolve_cli_binary()
     if pdb_path is None:
         raise RuntimeError(
@@ -93,6 +104,30 @@ def uninstall() -> None:
     if p.exists():
         subprocess.run(["launchctl", "unload", str(p)], capture_output=True)
         p.unlink()
+
+
+def remove_legacy_daemon() -> bool:
+    """Stop and remove the legacy `com.personal_db.daemon` LaunchAgent, for
+    the app-managed Finish page's "remove legacy service" button
+    (routes/setup.py) -- an app-bundle install runs its own sync scheduler
+    in-process, so a LaunchAgent left over from a prior headless/CLI install
+    is redundant and can fight the sidecar for port 8765.
+
+    No-op (returns False) when the plist doesn't exist. Otherwise best-effort
+    `launchctl bootout`s it -- failure there is ignored (e.g. it's already
+    not loaded) -- and always removes the plist file itself so a stale entry
+    can't get picked up by a future `launchctl load` or login. Returns True
+    when it removed something.
+    """
+    p = plist_path()
+    if not p.exists():
+        return False
+    subprocess.run(
+        ["launchctl", "bootout", f"gui/{os.getuid()}/{LABEL}"],
+        capture_output=True,
+    )
+    p.unlink(missing_ok=True)
+    return True
 
 
 def status() -> str:

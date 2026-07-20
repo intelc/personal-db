@@ -9,22 +9,34 @@
 
 <section class="block">
   <h2 class="block-h">1. PERIODIC SYNC</h2>
-  <p class="meta">{{ daemon_status }}</p>
+  <p class="meta">{{ daemon_status.detail }}</p>
 
   {% if daemon_flash %}
     <p class="setup-step-result {{ 'ok' if daemon_flash.ok else 'failed' }}">{{ daemon_flash.msg }}</p>
   {% endif %}
 
-  <form method="post" action="/setup/finish/install-daemon" class="inline-form">
-    <button type="submit" class="btn-link">install periodic sync →</button>
-  </form>
+  {% if daemon_status.state == 'app_managed' %}
+    {% if daemon_status.legacy_plist %}
+      <p class="setup-step-result failed">
+        ⚠ A legacy background service is also installed at
+        <code>{{ daemon_status.legacy_plist }}</code> and can conflict with the app.
+      </p>
+      <form method="post" action="/setup/finish/remove-daemon" class="inline-form">
+        <button type="submit" class="btn-link">remove legacy service →</button>
+      </form>
+    {% endif %}
+  {% else %}
+    <form method="post" action="/setup/finish/install-daemon" class="inline-form">
+      <button type="submit" class="btn-link">install periodic sync →</button>
+    </form>
 
-  <p class="meta">
-    On macOS, installing writes a launchd <code>LaunchAgent</code> at
-    <code>~/Library/LaunchAgents/com.personal_db.daemon.plist</code>.
-    Clicking the button again is idempotent — the plist gets overwritten with
-    the current path each time.
-  </p>
+    <p class="meta">
+      On macOS, installing writes a launchd <code>LaunchAgent</code> at
+      <code>~/Library/LaunchAgents/com.personal_db.daemon.plist</code>.
+      Clicking the button again is idempotent — the plist gets overwritten with
+      the current path each time.
+    </p>
+  {% endif %}
 </section>
 
 <section class="block">
@@ -65,11 +77,18 @@
     </tbody>
   </table>
 
+  {% if app_managed %}
+  <p class="meta">
+    Prefer to do it yourself? Use the menu bar app's tray menu → "Connect AI
+    Apps" for the same per-target install.
+  </p>
+  {% else %}
   <p class="meta">
     Prefer to do it yourself? Run <code>personal-db mcp install</code> in a
     terminal for an interactive picker, or
     <code>personal-db mcp install &lt;target&gt;</code> for a single target.
   </p>
+  {% endif %}
 </section>
 
 <section class="block">
@@ -83,20 +102,8 @@
     Historical backfills are running in the background — answers get richer as
     they complete. Tail logs at <code>&lt;root&gt;/state/backfill_*.log</code>.
   </p>
-</section>
-
-<section class="block">
-  <h2 class="block-h">4. OPTIONAL — DASHBOARD</h2>
-  <p class="meta">
-    The menu bar app + dashboard are optional. Agents access your data over MCP
-    independently of the dashboard being open.
-  </p>
   <p>
     <a href="/" class="btn-link">continue to dashboard →</a>
-  </p>
-  <p class="meta">
-    To launch the menu bar version (macOS status bar icon), run
-    <code>personal-db ui</code> in a terminal.
   </p>
 </section>
 {% endblock %}
