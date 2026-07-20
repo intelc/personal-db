@@ -10,6 +10,7 @@ failing/stale status derivation shared with /health, and the TTL cache.
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime, timedelta
 
 import yaml
@@ -458,6 +459,42 @@ def test_dashboard_route_renders_tile_shells(tmp_path):
     # Inline hydration payload for pdb-tiles.js.
     assert 'id="pdb-tiles-data"' in r.text
     assert "sessions" in r.text
+
+
+def test_dashboard_route_reserves_space_for_missing_delta(tmp_path):
+    """A metric with no delta must still render the .tile-delta div (just
+    empty + visually hidden) rather than a `hidden`-attribute element that
+    collapses out of the layout -- otherwise a delta-less metric renders
+    shorter than one with a delta, and tiles (and their whole grid row,
+    since CSS grid rows auto-size to the tallest cell) resize as
+    pdb-tiles.js rotates between them."""
+    metrics_src = (
+        "def metrics(cfg):\n"
+        "    return [{'label': 'no delta here', 'value': '42'}]\n"
+    )
+    cfg = _make_tracker(tmp_path, "nodeltatile", metrics_src=metrics_src)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/")
+    assert r.status_code == 200
+    assert 'data-tile-delta' in r.text
+    assert 'tile-delta-empty' in r.text
+    assert 'aria-hidden="true"' in r.text
+
+
+def test_dashboard_route_does_not_mark_present_delta_as_empty(tmp_path):
+    metrics_src = (
+        "def metrics(cfg):\n"
+        "    return [{'label': 'has delta', 'value': '42', 'delta': '+3', 'good': True}]\n"
+    )
+    cfg = _make_tracker(tmp_path, "deltatile", metrics_src=metrics_src)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/")
+    assert r.status_code == 200
+    assert 'tile-delta-empty' not in r.text
+    delta_div = re.search(r'<div\s+class="tile-delta[^>]*>', r.text)
+    assert delta_div, "expected a .tile-delta div in the rendered tile"
+    assert "aria-hidden" not in delta_div.group(0)
+    assert "+3" in r.text
 
 
 def test_dashboard_route_shrinks_long_text_value(tmp_path):

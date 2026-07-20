@@ -2353,17 +2353,31 @@ body.pdb-agent-ask-mode * {
   color: var(--fg-secondary);
 }
 .tile-metric {
+  /* Fixed (not just min-) height reserving space for the tallest possible
+   * shape -- value line + label line + delta line -- so a metric without a
+   * delta (delta div present but empty, see .tile-delta-empty) renders at
+   * the exact same height as one with a delta. Without this, tiles (and
+   * whole grid rows, since CSS grid rows auto-size to their tallest cell)
+   * resize every time pdb-tiles.js rotates to a metric shape that differs
+   * from the current one. Keep in sync with the child line-heights below:
+   * 29 (value) + 2 (gap) + 16 (label) + 2 (gap) + 14 (delta) = 63.
+   */
   flex: 1;
   display: flex;
   flex-direction: column;
   justify-content: center;
   gap: 2px;
-  min-height: 52px;
+  height: 63px;
+  min-height: 63px;
 }
 .tile-value {
   font-size: 24px;
   font-weight: 500;
-  line-height: 1.2;
+  /* Fixed px line-height (not a relative multiplier) so the value's line
+   * box occupies the same vertical slot at every step-down size below --
+   * a relative line-height would shrink the box along with the font-size
+   * and make the metric (and tile) shorter when a long value steps down. */
+  line-height: 29px;
   color: var(--fg);
   max-width: 100%;
   overflow: hidden;
@@ -2375,7 +2389,9 @@ body.pdb-agent-ask-mode * {
  * name, or event title) so they shrink instead of just clipping/overflowing
  * the tile. Thresholds are chosen once here and mirrored in JS
  * (pdb-tiles.js's sizeClassForValue) and the Jinja shell
- * (dashboard_tiles.html) so server-rendered and rotated values agree. */
+ * (dashboard_tiles.html) so server-rendered and rotated values agree.
+ * Font-size only -- line-height is intentionally left to cascade from
+ * .tile-value's fixed 29px so the line box height never changes. */
 .tile-value-md {
   font-size: 18px;
 }
@@ -2385,12 +2401,33 @@ body.pdb-agent-ask-mode * {
 }
 .tile-label {
   font-size: 12px;
+  line-height: 16px;
   color: var(--fg-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
   transition: opacity 0.4s ease, transform 0.4s ease;
 }
 .tile-delta {
   font-size: 11.5px;
+  line-height: 14px;
+  /* min-height (not just line-height) because when there's no delta this
+   * div is still rendered -- with .tile-delta-empty, see below -- but has
+   * no text node at all, and a childless div gets no line box from
+   * line-height alone; min-height is what actually reserves the slot. */
+  min-height: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
   transition: opacity 0.4s ease, transform 0.4s ease;
+}
+/* Metrics with no delta keep the div in the layout (reserving its line's
+ * height) instead of `hidden`/`display:none` collapsing it -- that's what
+ * used to make delta-less metrics shorter than ones with a delta. */
+.tile-delta-empty {
+  visibility: hidden;
 }
 .tile-delta-good { color: var(--ok); }
 .tile-delta-warn { color: var(--warn); }

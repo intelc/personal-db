@@ -42,9 +42,9 @@
         <div class="tile-value {{ m0_size_class }}" data-tile-value title="{{ m0_value }}">{{ m0_value }}</div>
         <div class="tile-label" data-tile-label>{{ m0.label }}</div>
         <div
-          class="tile-delta {% if m0.good == true %}tile-delta-good{% elif m0.good == false %}tile-delta-warn{% else %}tile-delta-neutral{% endif %}"
+          class="tile-delta {% if m0.good == true %}tile-delta-good{% elif m0.good == false %}tile-delta-warn{% else %}tile-delta-neutral{% endif %}{% if not m0.delta %} tile-delta-empty{% endif %}"
           data-tile-delta
-          {% if not m0.delta %}hidden{% endif %}
+          {% if not m0.delta %}aria-hidden="true"{% endif %}
         >{{ m0.delta or "" }}</div>
       </div>
       {% if tile.metrics|length > 1 %}

@@ -92,14 +92,21 @@
     }
     if (labelEl) labelEl.textContent = metric.label;
     if (deltaEl) {
+      // .tile-delta-empty (visibility:hidden, not display:none) keeps this
+      // div's line-box height reserved even with no delta text -- so a
+      // metric without a delta renders at the same tile height as one with
+      // one. See style.css's .tile-metric/.tile-delta comments for why a
+      // fixed slot matters here (grid rows auto-size to their tallest
+      // cell, so a tile that changed height on rotation dragged its whole
+      // row along with it).
       if (metric.delta) {
-        deltaEl.hidden = false;
         deltaEl.textContent = metric.delta;
         deltaEl.className = "tile-delta " + deltaClass(metric.good);
+        deltaEl.removeAttribute("aria-hidden");
       } else {
-        deltaEl.hidden = true;
         deltaEl.textContent = "";
-        deltaEl.className = "tile-delta";
+        deltaEl.className = "tile-delta tile-delta-empty";
+        deltaEl.setAttribute("aria-hidden", "true");
       }
     }
   }
