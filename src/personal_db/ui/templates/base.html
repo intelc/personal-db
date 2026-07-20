@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/static/vendor/ag-grid-community/35.3.0/ag-grid.min.css">
   <link rel="stylesheet" href="/static/vendor/ag-grid-community/35.3.0/ag-theme-quartz.min.css">
   <link rel="stylesheet" href="/static/vendor/xterm/6.0.0/xterm.css">
-  <link rel="stylesheet" href="/static/style.css?v=p2-3">
+  <link rel="stylesheet" href="/static/style.css?v=p2-4">
   <script defer src="/static/vendor/ag-grid-community/35.3.0/ag-grid-community.min.js"></script>
   <script defer src="/static/vendor/ag-charts-community/13.3.0/ag-charts-community.min.js"></script>
   <script defer src="/static/vendor/xterm/6.0.0/xterm.js"></script>
@@ -23,7 +23,7 @@
   <script defer src="/static/pdb-connector-setup.js?v=1"></script>
   <script defer src="/static/pdb-shell.js?v=1"></script>
   <script defer src="/static/pdb-sync.js?v=4"></script>
-  <script defer src="/static/pdb-nav.js?v=3"></script>
+  <script defer src="/static/pdb-nav.js?v=4"></script>
   <script defer src="/static/pdb-palette.js?v=1"></script>
   <script defer src="/static/pdb-lazy.js?v=1"></script>
   <script defer src="/static/pdb-tiles.js?v=4"></script>
@@ -112,9 +112,43 @@
     </aside>
     <div class="sidebar-scrim" id="pdb-sidebar-scrim"></div>
     <div class="content">
+      {% set _path = request.url.path %}
+      {% if breadcrumbs %}
+        {% set crumbs = breadcrumbs %}
+        {% if _path.startswith('/t/') and _path.endswith('/data') %}
+          {% set crumbs = crumbs + [{'label': 'Data', 'href': None}] %}
+        {% endif %}
+      {% elif _path == '/setup' %}
+        {% set crumbs = [{'label': 'Setup', 'href': None}] %}
+      {% elif _path.startswith('/setup/') %}
+        {% set _seg = _path.split('/')[2] %}
+        {% set _known = {'finish': 'Finish', 'new': 'Add a source'} %}
+        {% set _tracker_title = (nav_trackers|selectattr('slug', 'equalto', _seg)|map(attribute='title')|first) %}
+        {% set _label = _known.get(_seg) or _tracker_title or (_seg|replace('_', ' ')|replace('-', ' ')|title) %}
+        {% set crumbs = [{'label': 'Setup', 'href': '/setup'}, {'label': _label, 'href': None}] %}
+      {% else %}
+        {% set crumbs = [{'label': 'PersonalDB', 'href': '/'}] %}
+      {% endif %}
       <div class="topbar">
         <button type="button" class="topbar-toggle" id="pdb-sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
-        <span class="topbar-title">{% block page_title %}PersonalDB{% endblock %}</span>
+        <div class="topbar-nav-buttons">
+          <button type="button" class="topbar-nav-btn" id="pdb-nav-back" aria-label="Back" title="Back" disabled>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+              <path d="M10 3L5 8l5 5" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+          </button>
+          <button type="button" class="topbar-nav-btn" id="pdb-nav-forward" aria-label="Forward" title="Forward" disabled>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+              <path d="M6 3l5 5-5 5" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+          </button>
+        </div>
+        <nav class="topbar-breadcrumbs" id="topbar-breadcrumbs" aria-label="Breadcrumb">
+          {% for crumb in crumbs %}
+            {% if loop.last %}<span aria-current="page">{{ crumb.label }}</span>{% elif crumb.href %}<a href="{{ crumb.href }}">{{ crumb.label }}</a>{% else %}<span>{{ crumb.label }}</span>{% endif %}
+            {% if not loop.last %}<span class="topbar-breadcrumb-sep" aria-hidden="true">/</span>{% endif %}
+          {% endfor %}
+        </nav>
       </div>
       <main>
         {% block content %}{% endblock %}

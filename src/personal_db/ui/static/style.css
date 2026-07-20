@@ -2759,6 +2759,7 @@ html.pdb-discreet .pdb-sensitive {
   .data-row-panel {
     width: 100vw;
   }
+}
 /* ---- Connector creation ---- */
 
 .connector-build-card {
@@ -2775,4 +2776,94 @@ html.pdb-discreet .pdb-sensitive {
 }
 .connector-prompt-status.fail {
   color: var(--danger);
+}
+
+/* ---- Nav chrome ---- */
+/* The Tauri desktop shell has no browser chrome (no back/forward, no window
+   title showing the page), so the topbar -- previously narrow-viewport-only,
+   see the base `.topbar { display: none; }` rule above -- is promoted to
+   always-visible here: back/forward chevrons + a breadcrumb trail, replacing
+   the old bare topbar-title span. `.topbar-toggle` (the sidebar hamburger)
+   stays narrow-only since the sidebar itself is only off-canvas there. */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.topbar-toggle {
+  display: none;
+}
+@media (max-width: 719px) {
+  .topbar-toggle {
+    display: inline-flex;
+  }
+}
+.topbar-nav-buttons {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.topbar-nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-secondary);
+  cursor: default;
+}
+.topbar-nav-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.topbar-nav-btn:disabled {
+  color: var(--fg-tertiary);
+  opacity: 0.45;
+}
+.topbar-nav-btn svg {
+  display: block;
+}
+.topbar-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.topbar-breadcrumbs a {
+  overflow: hidden;
+  color: var(--fg-secondary);
+  font-weight: 500;
+  text-decoration: none;
+  text-overflow: ellipsis;
+}
+.topbar-breadcrumbs a:hover {
+  color: var(--fg);
+  text-decoration: underline;
+}
+.topbar-breadcrumbs span[aria-current="page"] {
+  overflow: hidden;
+  color: var(--fg);
+  text-overflow: ellipsis;
+}
+.topbar-breadcrumb-sep {
+  flex-shrink: 0;
+  color: var(--fg-tertiary);
 }

@@ -285,10 +285,45 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
             nav_failing = repeated_failure_trackers(cfg)
         except Exception:
             nav_failing = []
+        # Topbar breadcrumb trail: best-effort from `active` alone, since a
+        # couple of callers (routes/setup.py, routes/data.py) invoke this
+        # with only `reg`/`active` -- no request/path. The last entry is
+        # always the current page (rendered as plain text by base.html,
+        # regardless of href); ancestors get an href so they're clickable.
+        # base.html falls back to deriving a trail from the request path for
+        # the cases this can't resolve (active=None) and tops up a trailing
+        # "Data" crumb for the tracker data-browser page, which shares
+        # `active` with the tracker overview page.
+        breadcrumbs: list[dict[str, Any]] = []
+        if active == "dashboard":
+            breadcrumbs = [{"label": "Dashboard", "href": None}]
+        elif active == "health":
+            breadcrumbs = [{"label": "Health", "href": None}]
+        elif active == "apps":
+            breadcrumbs = [{"label": "Apps", "href": None}]
+        elif active:
+            tracker_title = next(
+                (t["title"] for t in nav_trackers if t["slug"] == active), None
+            )
+            if tracker_title:
+                breadcrumbs = [
+                    {"label": "Trackers", "href": None},
+                    {"label": tracker_title, "href": f"/t/{active}"},
+                ]
+            else:
+                app_title = next(
+                    (a["title"] for a in nav_apps if a["name"] == active), None
+                )
+                if app_title:
+                    breadcrumbs = [
+                        {"label": "Apps", "href": "/a"},
+                        {"label": app_title, "href": f"/a/{active}"},
+                    ]
         return {
             "nav_trackers": nav_trackers,
             "nav_apps": nav_apps,
             "nav_failing": nav_failing,
+            "breadcrumbs": breadcrumbs,
         }
 
     register_agent_routes(
@@ -405,6 +440,8 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
                 html = viz.render(cfg)
             except Exception as e:
                 html = f'<p class="meta">error rendering: {e}</p>'
+        nav = _nav_context(reg, active=viz.tracker)
+        nav["breadcrumbs"] = nav["breadcrumbs"] + [{"label": viz.name, "href": None}]
         return templates.TemplateResponse(
             request=request,
             name="viz_page.html",
@@ -413,7 +450,7 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
                 "viz": viz,
                 "html": html,
                 "full": full,
-                **_nav_context(reg, active=viz.tracker),
+                **nav,
             },
         )
 
@@ -479,7 +516,7 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
             context={
                 "active": "apps",
                 "apps": list(apps.values()),
-                **_nav_context(reg, active=None),
+                **_nav_context(reg, active="apps"),
             },
         )
 
@@ -490,7 +527,7 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
         return templates.TemplateResponse(
             request=request,
             name="app_page.html",
-            context={**context, **_nav_context(reg, active=None)},
+            context={**context, **_nav_context(reg, active=context["active"])},
         )
 
     @app.get("/a/{app_name}/{page_slug}", response_class=HTMLResponse)
@@ -498,10 +535,14 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
         reg = _registry()
         _validate_name(page_slug)
         context, _html = _render_app_page(app_name, page_slug)
+        nav = _nav_context(reg, active=context["active"])
+        nav["breadcrumbs"] = nav["breadcrumbs"] + [
+            {"label": context["page"].title, "href": None}
+        ]
         return templates.TemplateResponse(
             request=request,
             name="app_page.html",
-            context={**context, **_nav_context(reg, active=None)},
+            context={**context, **nav},
         )
 
     register_setup_routes(
