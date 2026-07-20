@@ -1,6 +1,6 @@
 [project]
 name = "personal_db"
-version = "0.1.6"
+version = "0.1.7"
 description = "Personal data layer for AI agents"
 requires-python = ">=3.11"
 dependencies = [

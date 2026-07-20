@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "PersonalDB",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "identifier": "com.personal-db.app",
   "build": {
     "frontendDist": "../web"
