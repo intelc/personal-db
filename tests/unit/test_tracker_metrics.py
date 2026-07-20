@@ -11,14 +11,45 @@ asserts on the returned metrics.
 from __future__ import annotations
 
 import importlib.util
+import os
 import subprocess
 import sqlite3
 import sys
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
+
 from personal_db.core.config import Config
+
+
+@pytest.fixture(autouse=True)
+def _midday_local_clock():
+    """Pin the process's local timezone so "now" is mid-day local time.
+
+    The metrics under test bucket "today" with SQLite's `date(..., 'localtime')`
+    while the tests seed rows at `now - <hours>` — near local midnight those
+    rows land on local-yesterday and every "today" assertion fails. Both
+    SQLite's localtime and Python's astimezone() honor TZ + tzset(), so
+    shifting the local clock to noon makes the seeded offsets (< 12h) always
+    fall inside the current local day, at any real wall-clock time.
+    """
+    old = os.environ.get("TZ")
+    shift = (12 - datetime.now(UTC).hour) % 24
+    if shift > 14:  # keep within real-world UTC offset range (-12..+14)
+        shift -= 24
+    os.environ["TZ"] = f"UTC{'-' if shift >= 0 else '+'}{abs(shift)}"
+    time.tzset()
+    try:
+        yield
+    finally:
+        if old is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = old
+        time.tzset()
 
 
 def _setup(tmp_path: Path, *trackers: str) -> Config:
