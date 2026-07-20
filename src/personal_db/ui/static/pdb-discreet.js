@@ -10,14 +10,20 @@
 // sensitive values on load/reload -- this file only owns the click handler,
 // the eye/eye-off icon swap, and persisting future toggles.
 //
-// The toggle button lives in the sidebar footer (`#pdb-sidebar`), which
-// pdb-nav.js's client-side navigation never replaces (only `.content >
-// main` is swapped -- see pdb-nav.js), so this only needs to bind once on
-// initial load, no `pdb:navigate` re-hydration required.
+// The click handler is DELEGATED to `document`, not bound to the button:
+// pdb-nav.js's `updateSidebarStatus` replaces the sidebar footer's markup
+// (`#sidebar-status`, which contains this button) via innerHTML on every
+// client-side navigation, which silently destroys any listener bound to
+// the button node itself -- the v0.1.4 bug where the eye went dead after
+// the first nav. Delegation survives the swap; the `pdb:navigate` listener
+// below re-applies the icon/aria state that the server-rendered
+// replacement markup resets (the server can't know the localStorage-only
+// discreet choice).
 (function () {
   "use strict";
 
   var STORAGE_KEY = "pdb_discreet";
+  var BUTTON_ID = "pdb-discreet-toggle";
 
   function isDiscreet() {
     return document.documentElement.classList.contains("pdb-discreet");
@@ -31,6 +37,13 @@
     button.setAttribute("aria-pressed", discreet ? "true" : "false");
   }
 
+  /// Re-applies icon + aria-pressed onto whatever button node currently
+  /// exists -- safe to call after any sidebar-footer markup swap.
+  function syncButton() {
+    var button = document.getElementById(BUTTON_ID);
+    if (button) applyIcons(button, isDiscreet());
+  }
+
   function setDiscreet(discreet) {
     document.documentElement.classList.toggle("pdb-discreet", discreet);
     try {
@@ -40,17 +53,20 @@
       // the toggle still works for the rest of this page load, it just
       // won't persist across reloads.
     }
-    var button = document.getElementById("pdb-discreet-toggle");
-    if (button) applyIcons(button, discreet);
+    syncButton();
   }
 
   function init() {
-    var button = document.getElementById("pdb-discreet-toggle");
-    if (!button) return;
-    applyIcons(button, isDiscreet());
-    button.addEventListener("click", function () {
-      setDiscreet(!isDiscreet());
+    syncButton();
+    document.addEventListener("click", function (event) {
+      var button = event.target instanceof Element
+        ? event.target.closest("#" + BUTTON_ID)
+        : null;
+      if (button) setDiscreet(!isDiscreet());
     });
+    // pdb-nav.js dispatches this after every client-side swap (the same
+    // hook pdb-chart.js/pdb-app-state.js re-hydrate on).
+    document.addEventListener("pdb:navigate", syncButton);
   }
 
   if (document.readyState === "loading") {
