@@ -75,6 +75,37 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 log() { echo "[release] $*" >&2; }
 die() { echo "[release] error: $*" >&2; exit 1; }
 
+# Run a command whose updater-key password prompt reads /dev/tty, retrying up
+# to 3 attempts when the failure is a mistyped password (marker on stderr:
+# "incorrect updater private key password"). A typo at the step-4b prompt
+# otherwise kills the whole run -- observed on the v0.1.4 rollout, costing a
+# full re-build + notarization round-trip. Capturing stderr is safe here
+# because the Tauri CLI prompts via /dev/tty, not stdin/stderr (verified: with
+# no TTY it fails with "Device not configured" instead of reading stdin).
+retry_key_password() {
+  local label="$1"; shift
+  local attempt err rc
+  for attempt in 1 2 3; do
+    err="$(mktemp "${TMPDIR:-/tmp}/release-pw-err.XXXXXX")"
+    set +e
+    "$@" 2> >(tee "$err" >&2)
+    rc=$?
+    set -e
+    if [[ "$rc" -eq 0 ]]; then rm -f "$err"; return 0; fi
+    sleep 1  # let the tee process substitution flush before reading (bash 3.2: wait won't cover it)
+    if grep -q "incorrect updater private key password" "$err"; then
+      rm -f "$err"
+      if [[ "$attempt" -lt 3 ]]; then
+        log "$label: wrong updater-key password (attempt $attempt/3) -- try again"
+        continue
+      fi
+      die "$label: wrong updater-key password on all 3 attempts"
+    fi
+    rm -f "$err"
+    die "$label failed (exit $rc)"
+  done
+}
+
 # --- flags -------------------------------------------------------------------
 
 DRY_RUN=0
@@ -179,7 +210,12 @@ else
   log "        for the updater key password; see the script header)"
   # `env -u CI`: with CI set, the CLI assumes an empty key password instead
   # of prompting, which fails against the protected key (see header).
-  (cd "$REPO_ROOT/shell" && env -u CI npm run tauri build -- --config "$OVERLAY")
+  # retry_key_password: a mistyped password re-runs the build (cargo is
+  # incremental, so the retry is cheap) instead of killing the release.
+  build_with_updater_artifacts() {
+    (cd "$REPO_ROOT/shell" && env -u CI npm run tauri build -- --config "$OVERLAY")
+  }
+  retry_key_password "step 3 tauri build" build_with_updater_artifacts
 fi
 
 BUNDLE_DIR="$REPO_ROOT/shell/src-tauri/target/release/bundle/macos"
@@ -222,8 +258,11 @@ rm -f "$UPDATER_ARCHIVE" "$UPDATER_SIG"
 # v0.1.3 rollout). Every needed signature is embedded now; the archive
 # must carry no metadata sidecars.
 COPYFILE_DISABLE=1 tar --no-mac-metadata -czf "$UPDATER_ARCHIVE" -C "$(dirname "$APP_PATH")" "$(basename "$APP_PATH")"
-(cd "$REPO_ROOT/shell" && env -u CI -u TAURI_SIGNING_PRIVATE_KEY npx tauri signer sign \
-  --private-key-path "$TAURI_SIGNING_PRIVATE_KEY" "$UPDATER_ARCHIVE")
+sign_updater_archive() {
+  (cd "$REPO_ROOT/shell" && env -u CI -u TAURI_SIGNING_PRIVATE_KEY npx tauri signer sign \
+    --private-key-path "$TAURI_SIGNING_PRIVATE_KEY" "$UPDATER_ARCHIVE")
+}
+retry_key_password "step 4b signer sign" sign_updater_archive
 [[ -f "$UPDATER_SIG" ]] || die "tauri signer sign did not produce $UPDATER_SIG"
 
 # --- 5. DMG ------------------------------------------------------------------
