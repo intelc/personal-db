@@ -1,6 +1,6 @@
 [package]
 name = "personal-db-shell"
-version = "0.1.5"
+version = "0.1.6"
 description = "Menu-bar shell for the personal_db daemon"
 authors = ["personal_db"]
 edition = "2021"
