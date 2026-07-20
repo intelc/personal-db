@@ -1,62 +1,74 @@
-/* System-native theme. Color appears throughout the chrome (not just data
-   visualizations); dark mode follows prefers-color-scheme only. */
+/* Selectable color themes (auto/light/dark/morandi). Color appears
+   throughout the chrome (not just data visualizations). Every token below
+   is a light-dark(lightValue, darkValue) pair, so "which mode" reduces to
+   a single `color-scheme` value: `auto` (default) leaves color-scheme at
+   `light dark` and follows the OS; `light`/`dark` pin it explicitly via
+   `:root[data-theme=...]`; `morandi` is a second, muted low-saturation
+   palette that still follows the OS light/dark split through its own
+   light-dark() pairs. See pdb-theme.js (persistence + the Settings picker)
+   and base.html's pre-paint <head> script (applies the choice before
+   first paint to avoid a flash of the wrong scheme). */
 
 :root {
   color-scheme: light dark;
-  --bg: #ffffff;            /* content */
-  --bg-sidebar: #f5f5f7;
-  --bg-inset: #f6f6f8;      /* cards/inset panels */
-  --bg-hover: rgba(0, 0, 0, 0.045);
-  --fg: #1d1d1f;
-  --fg-secondary: #6e6e73;
-  --fg-tertiary: #98989d;
-  --border: rgba(0, 0, 0, 0.10);
-  --border-strong: rgba(0, 0, 0, 0.22);
-  --accent: #0071e3;
-  --accent-fg: #ffffff;
-  --accent-soft: rgba(0, 113, 227, 0.12);
-  --ok: #1f8a3b;
-  --warn: #b46a00;
-  --danger: #c93b2e;
+  --bg: light-dark(#ffffff, #1f1f21);            /* content */
+  --bg-sidebar: light-dark(#f5f5f7, #27272a);
+  --bg-inset: light-dark(#f6f6f8, #2a2a2e);      /* cards/inset panels */
+  --bg-hover: light-dark(rgba(0, 0, 0, 0.045), rgba(255, 255, 255, 0.06));
+  --fg: light-dark(#1d1d1f, #f5f5f7);
+  --fg-secondary: light-dark(#6e6e73, #a1a1a6);
+  --fg-tertiary: light-dark(#98989d, #7c7c81);
+  --border: light-dark(rgba(0, 0, 0, 0.10), rgba(255, 255, 255, 0.12));
+  --border-strong: light-dark(rgba(0, 0, 0, 0.22), rgba(255, 255, 255, 0.26));
+  --accent: light-dark(#0071e3, #3395ff);
+  --accent-fg: light-dark(#ffffff, #ffffff);
+  --accent-soft: light-dark(rgba(0, 113, 227, 0.12), rgba(51, 149, 255, 0.20));
+  --ok: light-dark(#1f8a3b, #4cc069);
+  --warn: light-dark(#b46a00, #e0a83e);
+  --danger: light-dark(#c93b2e, #ec6a5c);
   --radius: 8px;
   --radius-sm: 6px;
   --grid: 8px;
   --rule: 1px solid var(--border);
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "IBM Plex Mono", Menlo, monospace;
-  --chart-fg: #1d1d1f;
-  --chart-muted: #6e6e73;
-  --chart-grid: rgba(0, 0, 0, 0.08);
-  --chart-green: #2f9e55;
-  --chart-amber: #d9a13b;
-  --chart-red: #c94f42;
-  --chart-accent: #0071e3;
+  --chart-fg: light-dark(#1d1d1f, #e8e8ec);
+  --chart-muted: light-dark(#6e6e73, #a1a1a6);
+  --chart-grid: light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.10));
+  --chart-green: light-dark(#2f9e55, #4cc069);
+  --chart-amber: light-dark(#d9a13b, #e0a83e);
+  --chart-red: light-dark(#c94f42, #ec6a5c);
+  --chart-accent: light-dark(#0071e3, #3395ff);
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #1f1f21;
-    --bg-sidebar: #27272a;
-    --bg-inset: #2a2a2e;
-    --bg-hover: rgba(255, 255, 255, 0.06);
-    --fg: #f5f5f7;
-    --fg-secondary: #a1a1a6;
-    --fg-tertiary: #7c7c81;
-    --border: rgba(255, 255, 255, 0.12);
-    --border-strong: rgba(255, 255, 255, 0.26);
-    --accent: #3395ff;
-    --accent-fg: #ffffff;
-    --accent-soft: rgba(51, 149, 255, 0.20);
-    --ok: #4cc069;
-    --warn: #e0a83e;
-    --danger: #ec6a5c;
-    --chart-fg: #e8e8ec;
-    --chart-muted: #a1a1a6;
-    --chart-grid: rgba(255, 255, 255, 0.10);
-    --chart-green: #4cc069;
-    --chart-amber: #e0a83e;
-    --chart-red: #ec6a5c;
-    --chart-accent: #3395ff;
-  }
+/* Forced light/dark: pin color-scheme so every light-dark() pair above
+   resolves to one branch regardless of the OS setting. */
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+/* Morandi (莫兰迪): muted, low-saturation palette. Still OS-follows via its
+   own light-dark() pairs -- color-scheme stays at the :root default. */
+:root[data-theme="morandi"] {
+  --bg: light-dark(#F4F2EE, #2B2926);
+  --bg-sidebar: light-dark(#EAE6E0, #33302C);
+  --bg-inset: light-dark(#EDEAE4, #36332F);
+  --bg-hover: light-dark(rgba(90, 80, 70, 0.06), rgba(255, 250, 240, 0.06));
+  --fg: light-dark(#45423E, #E8E4DE);
+  --fg-secondary: light-dark(#85807A, #A8A29A);
+  --fg-tertiary: light-dark(#A6A19A, #7E7A73);
+  --border: light-dark(rgba(70, 60, 50, 0.12), rgba(255, 250, 240, 0.12));
+  --border-strong: light-dark(rgba(70, 60, 50, 0.26), rgba(255, 250, 240, 0.26));
+  --accent: light-dark(#587485, #8CA3B5);
+  --accent-fg: light-dark(#FFFFFF, #20282E);
+  --accent-soft: light-dark(rgba(122, 150, 168, 0.16), rgba(140, 163, 181, 0.20));
+  --ok: light-dark(#6B8460, #8AA687);
+  --warn: light-dark(#A98A5B, #C4A97E);
+  --danger: light-dark(#B25F5F, #C08A83);
+  --chart-fg: light-dark(#45423E, #E5E1DA);
+  --chart-muted: light-dark(#85807A, #A8A29A);
+  --chart-grid: light-dark(rgba(70, 60, 50, 0.09), rgba(255, 250, 240, 0.10));
+  --chart-green: #8AA687;
+  --chart-amber: #C4A97E;
+  --chart-red: #C08A83;
+  --chart-accent: #8CA3B5;
 }
 
 * { box-sizing: border-box; }
@@ -2274,26 +2286,56 @@ body.pdb-agent-ask-mode * {
 /* ---------------------------------------------------------------------
  * AG Grid dark-mode blend
  *
- * The data browser grid (and any other AG Grid instance) uses the vendor
- * "ag-theme-quartz-auto-dark" theme, which follows prefers-color-scheme
- * automatically -- see src/personal_db/ui/aggrid.py and pdb-data.js. That
- * theme's built-in dark palette is navy-blue-tinted (based on #182230),
- * which reads as a visibly different, cooler-toned panel next to this
- * app's neutral dark-gray surfaces (--bg-inset, --bg-sidebar, etc.).
- * Override AG Grid's CSS custom properties here so the grid blends into
- * the app's palette instead. Light mode is untouched -- this block is
- * scoped to prefers-color-scheme: dark only.
+ * The data browser grid (and any other AG Grid instance) uses one of two
+ * vendor themes: aggrid.py's server-rendered grids still emit the OS-only
+ * "ag-theme-quartz-auto-dark"; pdb-data.js's client-rebuilt grids (the
+ * /t/<tracker>/data browser) pick an explicit "ag-theme-quartz"/
+ * "ag-theme-quartz-dark" class from PDBTheme.isDark() so a forced theme
+ * (not just the OS) is respected there. Both themes' built-in dark palette
+ * is navy-blue-tinted (based on #182230), which reads as a visibly
+ * different, cooler-toned panel next to this app's neutral dark-gray
+ * surfaces (--bg-inset, --bg-sidebar, etc.), so this block overrides AG
+ * Grid's CSS custom properties to blend the grid into the app's palette
+ * instead. Light mode is untouched.
+ *
+ * This can't just move the values into the :root light-dark() token block
+ * above -- the override only needs to apply while the *effective* scheme
+ * is dark, which for "auto"/"morandi" depends on the OS and for
+ * "light"/"dark" depends only on the forced choice, so it's expressed as
+ * two rules: forced dark (any OS) always matches; auto/morandi match only
+ * inside `prefers-color-scheme: dark`. Forced light never matches, even
+ * with the OS set to dark.
  *
  * NOTE: AG Grid re-injects its own copy of ag-theme-quartz.min.css's rules
  * into runtime <style> tags (for the "legacy" theme mode used by
  * aggrid.py/pdb-data.js), which land later in the cascade than this
  * linked stylesheet. Same-specificity source order would then let AG
- * Grid's injected dark palette win over this block, so the selector here
- * pairs .pdb-grid with .ag-theme-quartz-auto-dark (both always emitted
- * together) to outrank it on specificity instead of relying on order.
+ * Grid's injected dark palette win over this block, so each selector below
+ * pairs .pdb-grid with the grid's theme class (always emitted together) to
+ * outrank it on specificity instead of relying on order.
  * --------------------------------------------------------------------- */
+:root[data-theme="dark"] .pdb-grid.ag-theme-quartz-auto-dark,
+:root[data-theme="dark"] .pdb-grid.ag-theme-quartz-dark {
+  --ag-background-color: var(--bg-inset);
+  --ag-foreground-color: var(--fg);
+  --ag-header-background-color: var(--bg-sidebar);
+  --ag-border-color: var(--border);
+  --ag-secondary-border-color: var(--border);
+  --ag-row-hover-color: var(--bg-hover);
+  --ag-selected-row-background-color: var(--accent-soft);
+  --ag-input-border-color: var(--border);
+  --ag-control-panel-background-color: var(--bg-sidebar);
+  --ag-tooltip-background-color: var(--bg-sidebar);
+  --ag-panel-background-color: var(--bg-inset);
+  --ag-panel-border-color: var(--border);
+  --ag-menu-background-color: var(--bg-sidebar);
+  --ag-menu-border-color: var(--border);
+}
 @media (prefers-color-scheme: dark) {
-  .pdb-grid.ag-theme-quartz-auto-dark {
+  :root:not([data-theme]) .pdb-grid.ag-theme-quartz-auto-dark,
+  :root:not([data-theme]) .pdb-grid.ag-theme-quartz-dark,
+  :root[data-theme="morandi"] .pdb-grid.ag-theme-quartz-auto-dark,
+  :root[data-theme="morandi"] .pdb-grid.ag-theme-quartz-dark {
     --ag-background-color: var(--bg-inset);
     --ag-foreground-color: var(--fg);
     --ag-header-background-color: var(--bg-sidebar);
@@ -2909,6 +2951,34 @@ html.pdb-discreet .pdb-sensitive {
   text-decoration: none;
   display: inline-block;
   flex-shrink: 0;
+}
+
+/* Appearance section's theme picker (setup.html, top of Settings) --
+   segmented pill control, same visual weight as .filter-tab below but its
+   own classes since the two toggle unrelated state. */
+.theme-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.theme-option {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg-secondary);
+  cursor: pointer;
+}
+.theme-option:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.theme-option.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 /* All / Ready / Needs attention tabs above the manage list. */

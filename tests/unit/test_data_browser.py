@@ -392,7 +392,7 @@ def test_page_route_renders_picker_and_grid_payload(tmp_root):
     assert 'data-data-table-btn="trka_items"' in r.text
     assert "data-pdb-grid" in r.text
     assert "2 rows · showing 1–2" in r.text
-    assert "/static/pdb-data.js?v=3" in r.text
+    assert "/static/pdb-data.js?v=4" in r.text
     # Default sort is the manifest's time_column, descending.
     assert 'data-sort="ts"' in r.text
     assert "data-data-browser-tables" in r.text

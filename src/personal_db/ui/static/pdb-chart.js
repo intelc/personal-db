@@ -392,39 +392,41 @@
     return toolbar;
   }
 
-  // Dark-mode theming ----------------------------------------------------
+  // Theme-aware charting ---------------------------------------------------
   //
   // AG Charts options here come from agcharts.py, whose Python-side defaults
-  // stay pinned to light-mode colors (SDK stability + existing tests). Dark
-  // support is applied client-side instead: `applyDarkTheme` runs on the
-  // fully-resolved options object right before it's handed to AG Charts, so
-  // it works regardless of which tracker/app produced the payload.
-  const DARK_MEDIA_QUERY = window.matchMedia
-    ? window.matchMedia('(prefers-color-scheme: dark)')
-    : null;
-
-  function isDarkMode() {
-    return Boolean(DARK_MEDIA_QUERY && DARK_MEDIA_QUERY.matches);
+  // stay pinned to light-mode literals (SDK stability + existing tests).
+  // AG Charts renders to <canvas>, so unlike the rest of the app's chrome it
+  // can't just pick up the app's --chart-* CSS custom properties for free --
+  // `applyChartTheme` resolves them via getComputedStyle at render time and
+  // remaps a small allow-list of Python-side literals onto them, in every
+  // theme (not a hardcoded "dark" branch), so a forced light/dark/morandi
+  // choice from the Settings picker is honored the same way the rest of the
+  // chrome is. It runs on the fully-resolved options object right before
+  // that's handed to AG Charts, so it works regardless of which
+  // tracker/app produced the payload.
+  function chartToken(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   }
 
   // Literal blacks that read fine on a white chart background but disappear
   // against a dark one (e.g. agcharts.py's `line_color: str = "#111111"`
   // default in gain_loss_area_chart, or callers passing "#000"/"#000000").
-  // Every other explicit color (series greens/reds/etc.) is left untouched.
-  const DARK_ON_DARK_COLORS = new Set(['#000', '#000000', '#111', '#111111']);
-  const DARK_ON_DARK_REPLACEMENT = '#e8e8ec';
-  const DARK_AXIS_TEXT_COLOR = '#a1a1a6';
-  const DARK_GRID_STROKE = 'rgba(255, 255, 255, 0.1)';
+  // Remapped onto the resolved --chart-fg token in every theme, so charts
+  // track whichever palette (light/dark/morandi) is active instead of a
+  // single baked-in replacement color. Every other explicit color (series
+  // greens/reds/etc.) is left untouched.
+  const REMAPPED_FG_LITERALS = new Set(['#000', '#000000', '#111', '#111111']);
 
-  function remapDarkOnDarkColors(value) {
-    if (Array.isArray(value)) return value.map(remapDarkOnDarkColors);
+  function remapChartColors(value, resolvedFg) {
+    if (Array.isArray(value)) return value.map((item) => remapChartColors(item, resolvedFg));
     if (value && typeof value === 'object') {
       const out = {};
-      for (const key of Object.keys(value)) out[key] = remapDarkOnDarkColors(value[key]);
+      for (const key of Object.keys(value)) out[key] = remapChartColors(value[key], resolvedFg);
       return out;
     }
-    if (typeof value === 'string' && DARK_ON_DARK_COLORS.has(value.trim().toLowerCase())) {
-      return DARK_ON_DARK_REPLACEMENT;
+    if (typeof value === 'string' && REMAPPED_FG_LITERALS.has(value.trim().toLowerCase())) {
+      return resolvedFg;
     }
     return value;
   }
@@ -434,30 +436,31 @@
   // can't be layered on via a top-level `axes` key here. AG Charts' own
   // theme system (`overrides.common.axes.<type>`) applies regardless of
   // which axis types AG Charts ends up auto-inferring, so use that instead.
-  function darkChartTheme() {
-    const axisText = { color: DARK_AXIS_TEXT_COLOR };
+  function chartTheme(isDark, tokens) {
+    const axisText = { color: tokens.muted };
     const axisCommon = {
       label: axisText,
       title: axisText,
-      line: { stroke: DARK_GRID_STROKE },
-      tick: { stroke: DARK_GRID_STROKE },
-      gridLine: { style: [{ stroke: DARK_GRID_STROKE }] },
+      line: { stroke: tokens.grid },
+      tick: { stroke: tokens.grid },
+      gridLine: { style: [{ stroke: tokens.grid }] },
       crosshair: {
-        stroke: DARK_GRID_STROKE,
-        label: { color: '#1f1f21', backgroundColor: DARK_AXIS_TEXT_COLOR },
+        stroke: tokens.grid,
+        label: { color: isDark ? '#1f1f21' : '#ffffff', backgroundColor: tokens.muted },
       },
     };
     return {
       // AG Charts ships a matching "-dark" variant of every base theme.
-      // Using it (rather than the light "ag-default") is what switches the
+      // Picking it (rather than always "ag-default") is what switches the
       // DOM-rendered chrome AG Charts draws outside the canvas — the
       // no-data/loading overlay text and the wrapper's CSS custom
       // properties — since those aren't reachable through `overrides` at
       // all (confirmed by inspecting the vendored bundle: overlay text has
       // no color option, only `enabled`/`renderer`/`text`). The
       // `overrides.common.*` below then fine-tunes the canvas-drawn axes/
-      // legend on top of that base.
-      baseTheme: 'ag-default-dark',
+      // legend on top of that base, using the resolved --chart-* tokens so
+      // it also matches non-default themes like morandi.
+      baseTheme: isDark ? 'ag-default-dark' : 'ag-default',
       overrides: {
         common: {
           background: { visible: false },
@@ -475,15 +478,20 @@
     };
   }
 
-  function applyDarkTheme(options) {
-    if (!isDarkMode()) return options;
-    const remapped = remapDarkOnDarkColors(options);
+  function applyChartTheme(options) {
+    const isDark = Boolean(window.PDBTheme && window.PDBTheme.isDark());
+    const tokens = {
+      fg: chartToken('--chart-fg') || (isDark ? '#e8e8ec' : '#1d1d1f'),
+      muted: chartToken('--chart-muted') || (isDark ? '#a1a1a6' : '#6e6e73'),
+      grid: chartToken('--chart-grid') || (isDark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(0, 0, 0, 0.08)'),
+    };
+    const remapped = remapChartColors(options, tokens.fg);
     const legend = remapped.legend
       ? {
           ...remapped.legend,
           item: {
             ...(remapped.legend.item || {}),
-            label: { color: DARK_AXIS_TEXT_COLOR, ...((remapped.legend.item || {}).label || {}) },
+            label: { color: tokens.muted, ...((remapped.legend.item || {}).label || {}) },
           },
         }
       : remapped.legend;
@@ -491,12 +499,12 @@
       ...remapped,
       legend,
       background: { visible: false },
-      theme: darkChartTheme(),
+      theme: chartTheme(isDark, tokens),
       // Built-in AG Charts toggle (confirmed in the vendored bundle) that
       // dark-styles the loading/no-data/no-visible-series overlay text and
       // the tooltip chrome, which `theme.overrides` doesn't reach.
-      overlays: { ...(remapped.overlays || {}), darkTheme: true },
-      tooltip: { ...(remapped.tooltip || {}), darkTheme: true },
+      overlays: { ...(remapped.overlays || {}), darkTheme: isDark },
+      tooltip: { ...(remapped.tooltip || {}), darkTheme: isDark },
     };
   }
 
@@ -537,7 +545,7 @@
     }
     function render() {
       const data = aggregateData(rawOptions, visibleData(), state.group);
-      const options = applyDarkTheme(chartOptions(rawOptions, data, state.scale, state.group));
+      const options = applyChartTheme(chartOptions(rawOptions, data, state.scale, state.group));
       const next = { ...options, container: el };
       if (chart && api.update) {
         api.update(chart, next);
@@ -575,12 +583,18 @@
     });
   }
 
-  if (DARK_MEDIA_QUERY) {
-    if (DARK_MEDIA_QUERY.addEventListener) {
-      DARK_MEDIA_QUERY.addEventListener('change', handleColorSchemeChange);
-    } else if (DARK_MEDIA_QUERY.addListener) {
-      // Safari < 14 / older WebKit fallback.
-      DARK_MEDIA_QUERY.addListener(handleColorSchemeChange);
+  // PDBTheme.onChange fires this both on an explicit theme-picker choice
+  // (pdb-theme-change) and on a raw OS scheme flip (matchMedia), so this
+  // replaces the old direct matchMedia listener with a single hookup.
+  if (window.PDBTheme && typeof window.PDBTheme.onChange === 'function') {
+    window.PDBTheme.onChange(handleColorSchemeChange);
+  } else if (window.matchMedia) {
+    // Defensive fallback if pdb-theme.js somehow failed to load.
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener('change', handleColorSchemeChange);
+    } else if (mediaQuery.addListener) {
+      mediaQuery.addListener(handleColorSchemeChange);
     }
   }
 

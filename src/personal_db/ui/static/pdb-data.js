@@ -34,6 +34,15 @@
     return el.closest("[data-data-browser]");
   }
 
+  // AG Grid's theme is a CSS class, not just vars -- pick "ag-theme-quartz"
+  // vs "ag-theme-quartz-dark" from PDBTheme.isDark() (rather than the OS-
+  // only "ag-theme-quartz-auto-dark" the server-rendered grids in
+  // aggrid.py still use) so a forced light/dark/morandi choice from the
+  // Settings picker is respected here too.
+  function gridThemeClass() {
+    return window.PDBTheme && window.PDBTheme.isDark() ? "ag-theme-quartz-dark" : "ag-theme-quartz";
+  }
+
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
@@ -128,7 +137,9 @@
       '<div class="pdb-grid-wrap">' +
       '<div id="' +
       gridId +
-      '" class="pdb-grid ag-theme-quartz-auto-dark" data-pdb-grid style="height:' +
+      '" class="pdb-grid ' +
+      gridThemeClass() +
+      '" data-pdb-grid style="height:' +
       height +
       'px"></div>' +
       '<script type="application/json" data-pdb-grid-options="' +
@@ -302,6 +313,22 @@
     initAll();
   }
   document.addEventListener("pdb:navigate", initAll);
+
+  // A theme-picker choice (or an OS scheme flip while on Auto/Morandi) needs
+  // the already-mounted grids' theme class swapped -- a class swap is
+  // sufficient for AG Grid's CSS-driven theme, no grid recreate needed.
+  // Only grids carrying this file's own "ag-theme-quartz"/"-dark" classes
+  // are touched; aggrid.py's server-rendered "ag-theme-quartz-auto-dark"
+  // grids elsewhere in the app are out of scope here.
+  if (window.PDBTheme && typeof window.PDBTheme.onChange === "function") {
+    window.PDBTheme.onChange(function () {
+      var next = gridThemeClass();
+      document.querySelectorAll(".pdb-grid.ag-theme-quartz, .pdb-grid.ag-theme-quartz-dark").forEach(function (el) {
+        el.classList.remove("ag-theme-quartz", "ag-theme-quartz-dark");
+        el.classList.add(next);
+      });
+    });
+  }
 
   // ---- row detail panel ---------------------------------------------------
 

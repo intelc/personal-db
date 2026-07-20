@@ -4,16 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}personal_db{% endblock %}</title>
+  <script>(function(){try{var t=localStorage.getItem("pdb-theme");if(t&&t!=="auto")document.documentElement.dataset.theme=t;}catch(e){}})();</script>
   <link rel="stylesheet" href="/static/vendor/ag-grid-community/35.3.0/ag-grid.min.css">
   <link rel="stylesheet" href="/static/vendor/ag-grid-community/35.3.0/ag-theme-quartz.min.css">
   <link rel="stylesheet" href="/static/vendor/xterm/6.0.0/xterm.css">
-  <link rel="stylesheet" href="/static/style.css?v=p2-5">
+  <link rel="stylesheet" href="/static/style.css?v=p2-6">
   <script defer src="/static/vendor/ag-grid-community/35.3.0/ag-grid-community.min.js"></script>
   <script defer src="/static/vendor/ag-charts-community/13.3.0/ag-charts-community.min.js"></script>
   <script defer src="/static/vendor/xterm/6.0.0/xterm.js"></script>
   <script defer src="/static/vendor/xterm-addon-fit/0.11.0/addon-fit.js"></script>
+  <script defer src="/static/pdb-theme.js?v=1"></script>
   <script defer src="/static/pdb-grid.js?v=8"></script>
-  <script defer src="/static/pdb-chart.js?v=14"></script>
+  <script defer src="/static/pdb-chart.js?v=15"></script>
   <script defer src="/static/pdb-app-state.js?v=3"></script>
   <script defer src="/static/apps/finance-burn-rate.js?v=4"></script>
   <script defer src="/static/apps/finance-categorize.js?v=1"></script>
@@ -28,7 +30,7 @@
   <script defer src="/static/pdb-palette.js?v=1"></script>
   <script defer src="/static/pdb-lazy.js?v=1"></script>
   <script defer src="/static/pdb-tiles.js?v=4"></script>
-  <script defer src="/static/pdb-data.js?v=3"></script>
+  <script defer src="/static/pdb-data.js?v=4"></script>
   <script>
     // Discreet mode: applied to <html> BEFORE first paint so sensitive tile
     // values / stat cards never flash visible then blur -- pdb-discreet.js
