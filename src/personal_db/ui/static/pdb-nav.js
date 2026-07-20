@@ -12,7 +12,7 @@
 // error) falls back to a normal browser navigation so this is purely
 // progressive enhancement.
 //
-// Chrome (sidebar aria-current, topbar title, document title) updates
+// Chrome (sidebar aria-current, topbar breadcrumbs, document title) updates
 // *optimistically* the instant a navigation starts -- see optimisticActivate
 // -- rather than waiting for the fetch, so a click feels instant even before
 // any response has arrived. If the fetch is still pending after
@@ -27,6 +27,20 @@
   // to be imperceptible for the common fast-fetch case but short enough that
   // a slow dashboard render doesn't leave the page looking dead.
   var SKELETON_DELAY_MS = 200;
+
+  // Session-local back/forward position tracking for the topbar chevron
+  // buttons (base.html, #pdb-nav-back / #pdb-nav-forward -- outside
+  // `.content > main` so they survive swaps). The browser exposes no API to
+  // read history depth, so we track our own counter in history.state.navIndex:
+  // bumped on every pushState, read back on popstate. historyMax is the
+  // highest index reached this session; a fresh pushState always truncates
+  // it back down (matches real browser forward-stack truncation). This only
+  // knows about navigation that happened in this JS instance -- a full page
+  // reload mid-session starts a fresh counter, so Forward may be
+  // conservatively disabled right after a reload even if the real browser
+  // history has entries ahead. Acceptable tradeoff over no back/forward UI.
+  var historyIndex = 0;
+  var historyMax = 0;
 
   function contentContainer() {
     return document.querySelector(".content");
@@ -138,13 +152,22 @@
     });
   }
 
-  // The topbar title (shown in the narrow/off-canvas-sidebar layout, see
-  // style.css) lives in `.content` alongside <main>, not inside it -- swap
-  // it too, or it'll go stale after navigating.
-  function updateTopbarTitle(newDoc) {
-    var live = document.querySelector(".topbar-title");
-    var next = newDoc.querySelector(".topbar-title");
-    if (live && next) live.textContent = next.textContent;
+  // The topbar breadcrumb trail lives in `.content` alongside <main>, not
+  // inside it -- swap it too, or it'll go stale after navigating. The trail
+  // itself (ancestor links + current-page label) is fully server-rendered
+  // (see _nav_context in services/daemon/http.py + the fallback logic in
+  // base.html), so this is a straight innerHTML replace, same approach as
+  // updateSidebarStatus.
+  function updateBreadcrumbs(newDoc) {
+    var live = document.getElementById("topbar-breadcrumbs");
+    var next = newDoc.getElementById("topbar-breadcrumbs");
+    if (live && next) live.innerHTML = next.innerHTML;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
   }
 
   // The sidebar footer (#sidebar-status) holds the Health status dot/label
@@ -167,7 +190,7 @@
     document.title = doc.title;
     updateSidebar(doc);
     updateSidebarStatus(doc);
-    updateTopbarTitle(doc);
+    updateBreadcrumbs(doc);
     executeScripts(liveMain);
     document.dispatchEvent(new CustomEvent("pdb:navigate"));
   }
@@ -212,9 +235,11 @@
 
   // Fires synchronously the instant a navigation starts (well before the
   // fetch resolves) so a sidebar click feels instant instead of dead: mark
-  // the matching sidebar link(s) current and swap the topbar/document title
-  // to a best-effort guess. This is deliberately approximate -- `updateSidebar`
-  // / `updateTopbarTitle` (run from applySwap once the real response lands)
+  // the matching sidebar link(s) current and swap the breadcrumb trail/
+  // document title to a best-effort guess (just the clicked label, no
+  // ancestor trail -- we don't know the real trail until the server
+  // responds). This is deliberately approximate -- `updateSidebar` /
+  // `updateBreadcrumbs` (run from applySwap once the real response lands)
   // are the source of truth and silently correct any mismatch, e.g. a body
   // link with no sidebar counterpart just leaves the sidebar as it was until
   // then.
@@ -231,8 +256,10 @@
     });
     var label = anchorLabel(sourceAnchor) || anchorLabel(match);
     if (label) {
-      var topbarTitle = document.querySelector(".topbar-title");
-      if (topbarTitle) topbarTitle.textContent = label;
+      var crumbs = document.getElementById("topbar-breadcrumbs");
+      if (crumbs) {
+        crumbs.innerHTML = '<span aria-current="page">' + escapeHtml(label) + "</span>";
+      }
       document.title = label + " · personal_db";
     }
   }
@@ -287,6 +314,16 @@
       });
   }
 
+  // Back/forward chevron buttons (base.html, outside `.content > main` so
+  // they survive innerHTML swaps). Disabled state is purely a function of
+  // historyIndex/historyMax -- see the comment on those vars above.
+  function syncNavButtons() {
+    var backBtn = document.getElementById("pdb-nav-back");
+    var forwardBtn = document.getElementById("pdb-nav-forward");
+    if (backBtn) backBtn.disabled = historyIndex <= 0;
+    if (forwardBtn) forwardBtn.disabled = historyIndex >= historyMax;
+  }
+
   function navigateTo(url, anchor) {
     var targetUrl;
     try {
@@ -299,8 +336,12 @@
     // pushState happens immediately, before the fetch resolves -- if it
     // ultimately fails, onFailure below does a real navigation to the same
     // URL, which reloads regardless of the history entry already pointing
-    // there.
-    window.history.pushState({ scrollTop: 0 }, "", targetUrl.href);
+    // there. A fresh pushState always truncates whatever forward entries
+    // historyMax previously tracked, same as real browser history does.
+    historyIndex += 1;
+    historyMax = historyIndex;
+    window.history.pushState({ scrollTop: 0, navIndex: historyIndex }, "", targetUrl.href);
+    syncNavButtons();
     runNavigation(targetUrl, anchor, function () {
       window.location.href = targetUrl.href;
     }).then(function () {
@@ -318,6 +359,8 @@
 
   window.addEventListener("popstate", function (event) {
     var state = event.state || {};
+    if (typeof state.navIndex === "number") historyIndex = state.navIndex;
+    syncNavButtons();
     var targetUrl = new URL(window.location.href);
     runNavigation(targetUrl, null, function () {
       window.location.reload();
@@ -327,9 +370,60 @@
     });
   });
 
-  // Give the initial entry a state object so the first Back press has a
-  // scrollTop to restore, same as pushed entries.
-  if (!window.history.state) {
-    window.history.replaceState({ scrollTop: 0 }, "", window.location.href);
+  // Delegated (not bound to the buttons themselves) so this survives
+  // applySwap's innerHTML replacement of unrelated DOM -- these buttons live
+  // outside `.content > main` and are never actually swapped, but delegation
+  // matches the convention used by every other topbar/sidebar control here
+  // (see pdb-discreet.js) and costs nothing.
+  document.addEventListener("click", function (event) {
+    var target = event.target;
+    if (!(target instanceof Element)) return;
+    var backBtn = target.closest("#pdb-nav-back");
+    if (backBtn) {
+      if (!backBtn.disabled) window.history.back();
+      return;
+    }
+    var forwardBtn = target.closest("#pdb-nav-forward");
+    if (forwardBtn && !forwardBtn.disabled) window.history.forward();
+  });
+
+  function isTypingTarget(el) {
+    if (!el) return false;
+    var tag = el.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+    return !!el.isContentEditable;
   }
+
+  // Cmd+[ / Cmd+] (mirrors the browser-native shortcut) plus Alt+Left/
+  // Alt+Right (mirrors most desktop apps' back/forward). Guarded against
+  // typing contexts the same way any global keydown shortcut here should be
+  // -- see pdb-palette.js for the Cmd+K equivalent, though that one doesn't
+  // need the guard since it has no destructive/navigational side effect
+  // while typing; this one does.
+  document.addEventListener("keydown", function (event) {
+    if (isTypingTarget(event.target)) return;
+    var back = (event.metaKey && event.key === "[") || (event.altKey && event.key === "ArrowLeft");
+    var forward = (event.metaKey && event.key === "]") || (event.altKey && event.key === "ArrowRight");
+    if (!back && !forward) return;
+    event.preventDefault();
+    if (back) window.history.back();
+    else window.history.forward();
+  });
+
+  // Give the initial entry a state object (incl. navIndex 0) so the first
+  // Back press has a scrollTop to restore, same as pushed entries, and the
+  // back/forward buttons start from a known position.
+  if (!window.history.state) {
+    window.history.replaceState({ scrollTop: 0, navIndex: 0 }, "", window.location.href);
+  } else if (typeof window.history.state.navIndex !== "number") {
+    window.history.replaceState(
+      Object.assign({}, window.history.state, { navIndex: 0 }),
+      "",
+      window.location.href
+    );
+  } else {
+    historyIndex = window.history.state.navIndex;
+    historyMax = historyIndex;
+  }
+  syncNavButtons();
 })();
