@@ -691,6 +691,24 @@ def test_dashboard_route_marks_failing_tile(tmp_path):
     assert "auth expired" in r.text
 
 
+def test_dashboard_route_shows_add_source_tile(tmp_path):
+    """The dashboard always shows a dashed "Add a source" shortcut tile at
+    the end of the trackers grid, linking to the browse catalog -- it's a
+    static template card, not part of tiles.py's data-driven metrics list
+    (see pdb-tiles.js's rotation-skip guard for data-tile-static)."""
+    cfg = _make_tracker(tmp_path, "onetracker")
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/")
+    assert r.status_code == 200
+    assert 'href="/setup/browse"' in r.text
+    assert "data-tile-static" in r.text
+    assert "Add a source" in r.text
+    # It must never be part of the JSON hydration payload / API response --
+    # it has no metrics and pdb-tiles.js's rotation loop must never see it.
+    body = client.get("/api/v1/tiles").json()
+    assert all(t.get("slug") != "add-source" for t in body["tiles"])
+
+
 def test_dashboard_route_shows_welcome_hero_with_no_trackers(tmp_path):
     cfg = Config(root=tmp_path)
     init_db(cfg.db_path)

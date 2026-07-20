@@ -76,14 +76,16 @@
     </div>
   </section>
   {% endif %}
-  {% if tracker_tiles %}
   <section class="tile-section">
     <h2 class="tile-section-label">Trackers</h2>
     <div class="tile-gallery">
       {% for tile in tracker_tiles %}{{ tile_card(tile) }}{% endfor %}
+      <a class="tile tile-add-source" href="/setup/browse" data-tile-static aria-label="Add a source">
+        <span class="tile-add-source-plus" aria-hidden="true">+</span>
+        <span class="tile-add-source-label">Add a source</span>
+      </a>
     </div>
   </section>
-  {% endif %}
 </div>
 <script type="application/json" id="pdb-tiles-data">{{ tiles | tojson }}</script>
 {% else %}
@@ -93,6 +95,14 @@
       Your trackers are installed but nothing has synced yet — tiles appear
       here as data lands. <a href="/setup">Go to Setup &rarr;</a>
     </p>
+  </section>
+  <section class="tile-section">
+    <div class="tile-gallery">
+      <a class="tile tile-add-source" href="/setup/browse" data-tile-static aria-label="Add a source">
+        <span class="tile-add-source-plus" aria-hidden="true">+</span>
+        <span class="tile-add-source-label">Add a source</span>
+      </a>
+    </div>
   </section>
 {% endif %}
 

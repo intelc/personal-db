@@ -206,7 +206,11 @@
     data.forEach(function (tile) {
       bySlug[tile.slug] = tile;
     });
-    var tiles = gallery.querySelectorAll(TILE_SELECTOR);
+    // The static "Add a source" CTA (dashboard_tiles.html) lives in the same
+    // .tile-gallery grid so it lines up visually with the real tracker
+    // tiles, marked data-tile-static -- it has no metrics/slug of its own
+    // and must never enter the rotation loop below.
+    var tiles = gallery.querySelectorAll(TILE_SELECTOR + ":not([data-tile-static])");
     for (var i = 0; i < tiles.length; i++) {
       var tileEl = tiles[i];
       var tile = bySlug[tileEl.getAttribute("data-slug")];

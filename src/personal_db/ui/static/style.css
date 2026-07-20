@@ -2867,3 +2867,174 @@ html.pdb-discreet .pdb-sensitive {
   flex-shrink: 0;
   color: var(--fg-tertiary);
 }
+
+/* ---- Source marketplace ----
+   Settings (setup.html) now shows a manage-only list of installed sources
+   with filter tabs; the full bundled catalog moved to its own browse/
+   marketplace view (setup_browse.html), modeled on Claude.ai's
+   Directory (browse) + Connectors (manage) split. Also covers the
+   dashboard's "Add a source" tile shortcut (dashboard_tiles.html).
+   Additive section (append-only -- do not edit rules above this point). */
+
+/* pdb-settings.js toggles the `hidden` attribute (not a class) on filtered
+   rows/cards for the manage-list tabs and marketplace search -- both
+   .tracker-card and .marketplace-card set an explicit `display` (flex/grid
+   item), which has equal CSS specificity to the UA stylesheet's
+   `[hidden] { display: none }` and beats it in the cascade (author sheet >
+   UA sheet at equal specificity). Restate `display: none` here at higher
+   specificity so `hidden` actually hides these elements. */
+.tracker-card[hidden],
+.marketplace-card[hidden] {
+  display: none;
+}
+
+.settings-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 var(--grid) 0;
+  padding-bottom: 8px;
+  border-bottom: var(--rule);
+}
+.settings-section-head .block-h {
+  border-bottom: none;
+  padding-bottom: 0;
+  margin: 0;
+}
+.btn-primary.btn-sm {
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: none;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* All / Ready / Needs attention tabs above the manage list. */
+.filter-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.filter-tab {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg-secondary);
+  cursor: pointer;
+}
+.filter-tab:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.filter-tab.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Zero-installed-sources empty state, points at the browse page. */
+.empty-state-card {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  text-align: center;
+}
+.empty-state-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+  margin: 0 0 4px 0;
+}
+.empty-state-card .btn-primary {
+  display: inline-block;
+  text-decoration: none;
+  margin-top: 10px;
+}
+.empty-state-card .meta {
+  margin-top: 8px;
+}
+
+/* Browse/marketplace page (setup_browse.html) ----------------------------- */
+.marketplace-search {
+  width: 100%;
+  max-width: 360px;
+  margin-top: 10px;
+  padding: 7px 12px;
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+}
+.marketplace-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.marketplace-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+/* .tracker-card is normally a horizontal row (see the "Setup / badges /
+   cards" section above) -- inside the grid, cards read better stacked
+   vertically with the action row pinned to the bottom. */
+.marketplace-card {
+  flex-direction: column;
+  align-items: stretch;
+}
+.marketplace-card-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+.marketplace-unsupported-label {
+  color: var(--fg-tertiary);
+  font-size: 11.5px;
+}
+.marketplace-card-unsupported {
+  opacity: 0.55;
+}
+.marketplace-card-installed {
+  background: var(--bg-inset);
+}
+.marketplace-installed-check {
+  color: var(--ok);
+  font-size: 12px;
+  font-weight: 600;
+}
+.marketplace-card-custom {
+  text-decoration: none;
+  color: inherit;
+  justify-content: center;
+}
+.marketplace-empty {
+  margin-top: 12px;
+}
+
+/* Dashboard "Add a source" tile shortcut (dashboard_tiles.html) ----------- */
+.tile-add-source {
+  align-items: center;
+  justify-content: center;
+  border-style: dashed;
+  color: var(--fg-secondary);
+  gap: 4px;
+}
+.tile-add-source:hover {
+  color: var(--fg);
+}
+.tile-add-source-plus {
+  font-size: 22px;
+  line-height: 1;
+}
+.tile-add-source-label {
+  font-size: 12px;
+  font-weight: 500;
+}

@@ -56,7 +56,11 @@ def _install(root, name):
     )
 
 
-def test_setup_overview_lists_installed_and_bundled(tmp_path):
+def test_setup_overview_lists_installed_only(tmp_path):
+    """Settings (/setup) is a manage-only view: installed sources with a
+    configure link, plus an "Add source" button pointing at the browse
+    catalog. Bundled-but-not-installed trackers no longer show up here --
+    they live on /setup/browse instead (see test_setup_browse_*)."""
     cfg = _init(tmp_path)
     _install(cfg.root, "habits")
 
@@ -66,9 +70,73 @@ def test_setup_overview_lists_installed_and_bundled(tmp_path):
     # installed tracker shows configure link
     assert "habits" in r.text
     assert "/setup/habits" in r.text
-    # bundled-but-not-installed tracker shows install form
+    # bundled-but-not-installed tracker no longer renders an install form here
+    assert "/setup/install/github_commits" not in r.text
+    # ...it's reachable via the Add source button instead
+    assert 'href="/setup/browse"' in r.text
+
+
+def test_setup_overview_empty_state_when_nothing_installed(tmp_path):
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/setup")
+    assert r.status_code == 200
+    assert "No sources connected yet" in r.text
+    assert 'href="/setup/browse"' in r.text
+
+
+def test_setup_overview_filter_tabs_present_when_installed(tmp_path):
+    cfg = _init(tmp_path)
+    _install(cfg.root, "habits")
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/setup")
+    assert r.status_code == 200
+    assert 'data-filter="all"' in r.text
+    assert 'data-filter="ready"' in r.text
+    assert 'data-filter="attention"' in r.text
+    assert 'data-status=' in r.text
+
+
+def test_setup_browse_lists_available_bundled_trackers(tmp_path):
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/setup/browse")
+    assert r.status_code == 200
     assert "github_commits" in r.text
     assert "/setup/install/github_commits" in r.text
+    # add-your-own-source card is present
+    assert 'href="/setup/new"' in r.text
+    assert "Add your own source" in r.text
+
+
+def test_setup_browse_shows_installed_checkmark_state(tmp_path):
+    cfg = _init(tmp_path)
+    _install(cfg.root, "habits")
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/setup/browse")
+    assert r.status_code == 200
+    assert "✓ Installed" in r.text
+    assert "/setup/habits" in r.text
+    # installed trackers don't get a redundant install form on the browse page
+    assert "/setup/install/habits" not in r.text
+
+
+def test_setup_browse_has_search_input(tmp_path):
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/setup/browse")
+    assert r.status_code == 200
+    assert "data-marketplace-search" in r.text
+    assert "data-marketplace-grid" in r.text
+
+
+def test_setup_browse_breadcrumb_label(tmp_path):
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/setup/browse")
+    assert r.status_code == 200
+    assert "Settings" in r.text
+    assert "Browse" in r.text
 
 
 def test_setup_install_creates_tracker_dir(tmp_path):

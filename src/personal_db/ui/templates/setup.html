@@ -13,11 +13,23 @@
   </p>
 </section>
 
+{% set installed_trackers = trackers | selectattr('installed') | list %}
 <section class="block">
-  <h2 class="block-h">SOURCES</h2>
-  <div class="tracker-cards">
-    {% for t in trackers %}
-    <div class="tracker-card">
+  <div class="settings-section-head">
+    <h2 class="block-h">SOURCES</h2>
+    <a href="/setup/browse" class="btn-primary btn-sm">Add source →</a>
+  </div>
+
+  {% if installed_trackers %}
+  <div class="filter-tabs" role="tablist" aria-label="Filter sources" data-source-filter-tabs>
+    <button type="button" class="filter-tab is-active" data-filter="all" role="tab" aria-selected="true">All</button>
+    <button type="button" class="filter-tab" data-filter="ready" role="tab" aria-selected="false">Ready</button>
+    <button type="button" class="filter-tab" data-filter="attention" role="tab" aria-selected="false">Needs attention</button>
+  </div>
+
+  <div class="tracker-cards" data-source-manage-list>
+    {% for t in installed_trackers %}
+    <div class="tracker-card" data-status="{{ 'ready' if t.status_class == 'ok' else 'attention' }}">
       <div class="tracker-card-main">
         <p class="tracker-card-title" title="{{ t.name }}">{{ t.title }}</p>
         {% if t.description %}<p class="tracker-card-desc">{{ t.description }}</p>{% endif %}
@@ -39,23 +51,23 @@
         {% if t.last_sync_age %}
           <span class="sync-age">Synced {{ t.last_sync_age }}{% if t.next_sync %} · {{ t.next_sync }}{% endif %}</span>
         {% endif %}
-        {% if t.installed %}
-          <a href="/setup/{{ t.name }}" class="btn-link">configure →</a>
-        {% else %}
-          <form method="post" action="/setup/install/{{ t.name }}" class="inline-form">
-            <button type="submit" class="btn-link">install →</button>
-          </form>
-        {% endif %}
+        <a href="/setup/{{ t.name }}" class="btn-link">configure →</a>
       </div>
     </div>
     {% endfor %}
-    <div class="tracker-card tracker-card-add">
-      <div class="tracker-card-main">
-        <a href="/setup/new" class="tracker-card-title">Add your own source +</a>
-        <p class="tracker-card-desc">Scaffold a custom tracker, then fill in ingest.py — or ask your AI agent to.</p>
-      </div>
-    </div>
   </div>
+  <div class="source-list-empty-filtered" data-source-filter-empty hidden>
+    <p class="meta">No sources in this view.</p>
+  </div>
+  <p class="meta">Building something custom? <a href="/setup/new">Add your own source +</a></p>
+  {% else %}
+  <div class="empty-state-card">
+    <p class="empty-state-title">No sources connected yet</p>
+    <p class="meta">Connect your first data source — an API key or a permission grant — and it'll sync on its own from here on.</p>
+    <a href="/setup/browse" class="btn-primary">Browse sources →</a>
+    <p class="meta">Or <a href="/setup/new">Add your own source +</a>.</p>
+  </div>
+  {% endif %}
 </section>
 
 <section class="block">

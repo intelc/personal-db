@@ -342,6 +342,24 @@ def register_setup_routes(
         )
         return RedirectResponse(url=f"/setup/{slug}?created=1", status_code=303)
 
+    @app.get("/setup/browse", response_class=HTMLResponse)
+    async def setup_browse(request: Request):
+        # Marketplace/catalog view -- every bundled tracker, available ones
+        # with an install form and already-installed ones shown with a ✓
+        # state (see setup_browse.html). Must be registered before the
+        # catch-all GET /setup/{name} below so "browse" doesn't get treated
+        # as a tracker name.
+        reg = registry()
+        return templates.TemplateResponse(
+            request=request,
+            name="setup_browse.html",
+            context={
+                "active": "setup",
+                "trackers": list_overview(cfg),
+                **nav_context(reg, None),
+            },
+        )
+
     @app.get("/setup/{name}", response_class=HTMLResponse)
     async def setup_tracker_get(request: Request, name: str, msg: str = "", created: str = ""):
         reg = registry()

@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}add a source · personal_db{% endblock %}
+
+{% block content %}
+<header class="page-head">
+  <h1>Add a source</h1>
+</header>
+<section class="block">
+  <p class="meta">
+    Pick a source to connect. Each one takes a minute or two — an API key, a
+    permission grant — and then it syncs on its own from here on.
+  </p>
+  <input
+    type="search"
+    class="marketplace-search"
+    placeholder="Search sources…"
+    aria-label="Search sources"
+    data-marketplace-search
+  >
+</section>
+
+{% set available = trackers | rejectattr('installed') | list %}
+{% set already_installed = trackers | selectattr('installed') | list %}
+
+<section class="block">
+  <div class="marketplace-grid" data-marketplace-grid>
+    {% for t in available %}
+    <div
+      class="tracker-card marketplace-card{% if not t.platform_supported %} marketplace-card-unsupported{% endif %}"
+      data-marketplace-card
+      data-search-text="{{ (t.title ~ ' ' ~ t.description)|lower }}"
+    >
+      <div class="tracker-card-main">
+        <p class="tracker-card-title" title="{{ t.name }}">{{ t.title }}</p>
+        {% if t.description %}<p class="tracker-card-desc">{{ t.description }}</p>{% endif %}
+        {% if t.platform or (t.permission and t.permission != 'none') %}
+        <div class="badge-row">
+          {% for p in (t.platform or []) %}
+            <span class="badge">{{ platform_label(p) }}</span>
+          {% endfor %}
+          {% if t.permission and t.permission != 'none' %}
+            <span class="badge{% if t.permission == 'full_disk_access' %} badge-fda{% endif %}">{{ permission_label(t.permission) }}</span>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+      <div class="marketplace-card-action">
+        {% if t.platform_supported %}
+          <form method="post" action="/setup/install/{{ t.name }}" class="inline-form">
+            <button type="submit" class="btn-link">install →</button>
+          </form>
+        {% else %}
+          <span class="marketplace-unsupported-label">not available on this platform</span>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+
+    {% for t in already_installed %}
+    <div
+      class="tracker-card marketplace-card marketplace-card-installed"
+      data-marketplace-card
+      data-search-text="{{ (t.title ~ ' ' ~ t.description)|lower }}"
+    >
+      <div class="tracker-card-main">
+        <p class="tracker-card-title" title="{{ t.name }}">{{ t.title }}</p>
+        {% if t.description %}<p class="tracker-card-desc">{{ t.description }}</p>{% endif %}
+        {% if t.platform or (t.permission and t.permission != 'none') %}
+        <div class="badge-row">
+          {% for p in (t.platform or []) %}
+            <span class="badge">{{ platform_label(p) }}</span>
+          {% endfor %}
+          {% if t.permission and t.permission != 'none' %}
+            <span class="badge{% if t.permission == 'full_disk_access' %} badge-fda{% endif %}">{{ permission_label(t.permission) }}</span>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+      <div class="marketplace-card-action">
+        <span class="marketplace-installed-check">✓ Installed</span>
+        <a href="/setup/{{ t.name }}" class="btn-link">configure →</a>
+      </div>
+    </div>
+    {% endfor %}
+
+    <a href="/setup/new" class="tracker-card marketplace-card tracker-card-add marketplace-card-custom" data-marketplace-card data-search-text="add your own source custom scaffold">
+      <div class="tracker-card-main">
+        <p class="tracker-card-title">Add your own source +</p>
+        <p class="tracker-card-desc">Scaffold a custom tracker, then fill in ingest.py — or ask your AI agent to.</p>
+      </div>
+    </a>
+  </div>
+  <div class="marketplace-empty" data-marketplace-empty hidden>
+    <p class="meta">No sources match your search.</p>
+  </div>
+</section>
+{% endblock %}

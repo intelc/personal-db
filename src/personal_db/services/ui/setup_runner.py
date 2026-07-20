@@ -28,6 +28,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from importlib import resources
@@ -80,6 +81,11 @@ class TrackerOverview:
     status_class: str | None = None  # "ok" | "warn"
     last_sync_age: str | None = None  # e.g. "38m ago"
     next_sync: str | None = None  # e.g. "next in ~2h" -- only for `every` schedules
+    # False only for bundled-but-not-installed trackers whose manifest.platform
+    # excludes the current OS (see check_platform_supported) -- drives the
+    # greyed-out, no-install-button card on /setup/browse. Installed trackers
+    # are always True: they couldn't have been installed here otherwise.
+    platform_supported: bool = True
 
 
 @dataclass
@@ -177,6 +183,7 @@ def list_overview(cfg: Config) -> list[TrackerOverview]:
         if name in installed:
             continue
         data = _bundled_manifest_data(name)
+        platform = data.get("platform")
         out.append(
             TrackerOverview(
                 name=name,
@@ -185,8 +192,9 @@ def list_overview(cfg: Config) -> list[TrackerOverview]:
                 icon="+",
                 summary="not installed",
                 title=data.get("title") or humanize_tracker_name(name),
-                platform=data.get("platform"),
+                platform=platform,
                 permission=data.get("permission_type", "none"),
+                platform_supported=platform is None or sys.platform in platform,
             )
         )
     return out
