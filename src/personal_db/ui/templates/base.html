@@ -23,9 +23,24 @@
   <script defer src="/static/pdb-shell.js?v=1"></script>
   <script defer src="/static/pdb-sync.js?v=4"></script>
   <script defer src="/static/pdb-nav.js?v=3"></script>
+  <script defer src="/static/pdb-palette.js?v=1"></script>
   <script defer src="/static/pdb-lazy.js?v=1"></script>
-  <script defer src="/static/pdb-tiles.js?v=3"></script>
+  <script defer src="/static/pdb-tiles.js?v=4"></script>
   <script defer src="/static/pdb-data.js?v=2"></script>
+  <script>
+    // Discreet mode: applied to <html> BEFORE first paint so sensitive tile
+    // values / stat cards never flash visible then blur -- pdb-discreet.js
+    // (deferred, below) owns the toggle button + persistence; this just
+    // replays the last choice synchronously from localStorage. Wrapped in
+    // try/catch since localStorage can throw (private-browsing quirks,
+    // disabled storage) and that must never block page render.
+    try {
+      if (localStorage.getItem("pdb_discreet") === "1") {
+        document.documentElement.classList.add("pdb-discreet");
+      }
+    } catch (e) {}
+  </script>
+  <script defer src="/static/pdb-discreet.js?v=1"></script>
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute">
@@ -62,6 +77,28 @@
           <span class="sidebar-status-dot {% if nav_failing %}is-danger{% else %}is-ok{% endif %}"></span>
           <span class="sidebar-status-label">{% if nav_failing %}{{ nav_failing|length }} failing{% else %}All sources syncing{% endif %}</span>
         </a>
+        <button
+          type="button"
+          class="sidebar-gear"
+          id="pdb-discreet-toggle"
+          aria-label="Toggle discreet mode"
+          aria-pressed="false"
+          title="Discreet mode: blur sensitive values (net worth, balances, spend) everywhere until you toggle this off again. Choice is remembered on this device."
+        >
+          <svg class="pdb-discreet-icon-eye" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
+            <g transform="scale(0.6667)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"></path>
+              <circle cx="12" cy="12" r="3.2"></circle>
+            </g>
+          </svg>
+          <svg class="pdb-discreet-icon-eye-off" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true" style="display:none">
+            <g transform="scale(0.6667)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 3l18 18"></path>
+              <path d="M10.6 5.1A11.6 11.6 0 0 1 12 5c7 0 11 7 11 7a19.6 19.6 0 0 1-3.4 4.3M6.6 6.6C3.4 8.5 1 12 1 12s4 7 11 7a10.9 10.9 0 0 0 5.4-1.4"></path>
+              <path d="M9.5 9.7a3.2 3.2 0 0 0 4.5 4.5"></path>
+            </g>
+          </svg>
+        </button>
         <a href="/setup" class="sidebar-gear" aria-label="Setup" title="Setup" {% if active=='setup' %}aria-current="page"{% endif %}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
             <g transform="scale(0.6667)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

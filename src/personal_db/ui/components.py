@@ -62,22 +62,28 @@ def section(title: str, *children: str, subtitle: str = "", class_name: str = ""
     return f'<section class="{klass}"><h2>{escape(title)}</h2>{subtitle_html}{join_html(list(children))}</section>'
 
 
-def metric_card(label: str, value: str, *, hint: str = "") -> str:
+def metric_card(label: str, value: str, *, hint: str = "", sensitive: bool = False) -> str:
     hint_html = f'<span class="metric-hint">{escape(hint)}</span>' if hint else ""
+    value_html = escape(value)
+    if sensitive:
+        value_html = f'<span class="pdb-sensitive">{value_html}</span>'
     return (
         '<div class="metric-card">'
         f'<span class="metric-label">{escape(label)}</span>'
-        f'<strong>{escape(value)}</strong>'
+        f'<strong>{value_html}</strong>'
         f"{hint_html}</div>"
     )
 
 
-def metric_grid(items: list[tuple[str, str] | tuple[str, str, str]]) -> str:
+def metric_grid(
+    items: list[tuple[str, str] | tuple[str, str, str] | tuple[str, str, str, bool]],
+) -> str:
     cards = []
     for item in items:
         label, value = item[0], item[1]
         hint = item[2] if len(item) > 2 else ""
-        cards.append(metric_card(label, value, hint=hint))
+        sensitive = bool(item[3]) if len(item) > 3 else False
+        cards.append(metric_card(label, value, hint=hint, sensitive=sensitive))
     return f'<div class="metric-grid">{join_html(cards)}</div>'
 
 

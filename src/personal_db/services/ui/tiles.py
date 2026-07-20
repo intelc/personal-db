@@ -1,23 +1,30 @@
-"""Dashboard tile gallery loader: per-tracker headline metrics for `/`.
+"""Dashboard tile gallery loader: per-tracker/per-app headline metrics for `/`.
 
 Each installed tracker gets one tile. If its *installed* `visualizations.py`
 exports `metrics(cfg) -> list[dict]` (see the module docstring on that
-contract -- up to 4 of `{label, value, detail, delta, good}`), this loader
-calls it and uses those, coerced to strings and capped at 4. Otherwise --
-including when the call raises -- it falls back to mechanically-derived
-metrics: total row count across the tracker's tables, the newest recorded
-event (humanized age), and the tracker's recorded data horizon (for
-`local_only` trackers that track one).
+contract -- up to 4 of `{label, value, detail, delta, good, sensitive}`),
+this loader calls it and uses those, coerced to strings and capped at 4.
+Otherwise -- including when the call raises -- it falls back to
+mechanically-derived metrics: total row count across the tracker's tables,
+the newest recorded event (humanized age), and the tracker's recorded data
+horizon (for `local_only` trackers that track one).
 
-Every step is isolated per-tracker: a tracker whose `metrics()` raises, or
+Apps (services/daemon's `_app_registry` / `core.apps.discover_apps`) get a
+tile too, ahead of tracker tiles, but only if their `views.py` exports a
+`metrics(cfg) -> list[dict]` -- apps have no sync state and no schema.sql
+table inventory to fall back to mechanically, so an app without `metrics()`
+gets no tile at all rather than a fabricated one.
+
+Every step is isolated per-tracker/per-app: one whose `metrics()` raises, or
 whose fallback derivation hits a missing table, still gets a tile -- it just
-falls back further (custom metrics -> mechanical metrics -> empty list)
-rather than ever taking the whole `/` route down with it.
+falls back further (custom metrics -> mechanical metrics -> empty list, or
+for apps, custom metrics -> no tile) rather than ever taking the whole `/`
+route down with it.
 
 Results are cached in-process for `_CACHE_TTL_SECONDS`, keyed by root path,
 so a burst of requests (initial page load + pdb-tiles.js's periodic
-refresh) doesn't re-run sqlite queries and re-import every tracker's
-visualizations.py on each one.
+refresh) doesn't re-run sqlite queries and re-import every tracker's/app's
+module on each one.
 """
 
 from __future__ import annotations
@@ -27,6 +34,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from personal_db.core.apps import AppDefinition, discover_apps, load_app_module
 from personal_db.core.config import Config
 from personal_db.core.data_horizon import get as _get_horizon
 from personal_db.core.manifest import ManifestError, humanize_tracker_name, load_manifest
@@ -59,7 +67,9 @@ def _coerce_metric(raw: Any) -> dict[str, Any] | None:
     `delta` are coerced to `str` when present, `None` otherwise; `good` is
     passed through only if it's already a real bool (anything else -> None,
     since it drives color, not display text -- no reason to coerce it to a
-    string).
+    string). `sensitive` is coerced to `bool`, defaulting `False` -- it
+    drives the discreet-mode blur (see `.pdb-sensitive` in style.css /
+    pdb-tiles.js), not display text either.
     """
     if not isinstance(raw, dict):
         return None
@@ -76,6 +86,7 @@ def _coerce_metric(raw: Any) -> dict[str, Any] | None:
         "detail": str(detail) if detail is not None else None,
         "delta": str(delta) if delta is not None else None,
         "good": good if isinstance(good, bool) else None,
+        "sensitive": bool(raw.get("sensitive", False)),
     }
 
 
@@ -109,7 +120,14 @@ def _custom_metrics(cfg: Config, tracker: str) -> list[dict[str, Any]] | None:
 
 
 def _neutral_metric(label: str, value: str) -> dict[str, Any]:
-    return {"label": label, "value": value, "detail": None, "delta": None, "good": None}
+    return {
+        "label": label,
+        "value": value,
+        "detail": None,
+        "delta": None,
+        "good": None,
+        "sensitive": False,
+    }
 
 
 def _fallback_metrics(cfg: Config, tracker: str) -> list[dict[str, Any]]:
@@ -239,10 +257,77 @@ def _title_for(cfg: Config, tracker: str) -> str:
         return humanize_tracker_name(tracker)
 
 
-def build_tiles(cfg: Config) -> list[dict[str, Any]]:
-    """One tile per installed tracker. Never raises."""
-    statuses = tracker_status_map(cfg)
+def _custom_app_metrics(cfg: Config, definition: AppDefinition) -> list[dict[str, Any]] | None:
+    """Call the app's `views.py`'s `metrics(cfg)`, if it has one.
+
+    Mirrors `_custom_metrics` for trackers, but there is no mechanical
+    fallback for apps (see module docstring): `None` here means the app
+    simply gets no tile, not a fabricated row-count one. Never lets an
+    exception escape -- one app's broken `metrics()` must not sink the
+    whole gallery.
+    """
+    try:
+        mod = load_app_module(definition.root, definition.name, "views")
+        fn = getattr(mod, "metrics", None)
+        if fn is None:
+            return None
+        raw_metrics = fn(cfg)
+        if not isinstance(raw_metrics, list):
+            return None
+        out: list[dict[str, Any]] = []
+        for raw in raw_metrics[:_MAX_METRICS]:
+            coerced = _coerce_metric(raw)
+            if coerced is not None:
+                out.append(coerced)
+        return out or None
+    except Exception:  # noqa: BLE001 — isolate one app's bad metrics() from the rest
+        return None
+
+
+def build_app_tiles(cfg: Config) -> list[dict[str, Any]]:
+    """One tile per installed app whose `views.py` exports a working
+    `metrics(cfg)`. Apps without one get no tile at all -- see module
+    docstring for why apps don't get the trackers' mechanical fallback.
+
+    App tiles have no sync state (no daemon-tracked cursor/error history
+    the way trackers do), so `status` is always "ok" / `status_detail` is
+    always `None` here. `slug` is namespaced ("app:<name>") so it can never
+    collide with a tracker's bare slug -- both the `finance` app and the
+    `finance` tracker get tiles, deliberately showing different metrics
+    (see templates/apps/finance/views.py vs templates/trackers/finance/
+    visualizations.py), and pdb-tiles.js's hydration keys off this field.
+    """
     tiles: list[dict[str, Any]] = []
+    try:
+        apps = discover_apps(cfg)
+    except Exception:  # noqa: BLE001 — app discovery failure must not sink the gallery
+        return tiles
+    for name, definition in apps.items():
+        try:
+            metrics = _custom_app_metrics(cfg, definition)
+        except Exception:  # noqa: BLE001
+            metrics = None
+        if not metrics:
+            continue
+        tiles.append(
+            {
+                "slug": f"app:{name}",
+                "title": definition.manifest.title,
+                "href": f"/a/{name}",
+                "status": "ok",
+                "status_detail": None,
+                "metrics": metrics,
+                "kind": "app",
+            }
+        )
+    return tiles
+
+
+def build_tiles(cfg: Config) -> list[dict[str, Any]]:
+    """App tiles (those with a working `metrics()`) ahead of one tile per
+    installed tracker. Never raises."""
+    tiles: list[dict[str, Any]] = build_app_tiles(cfg)
+    statuses = tracker_status_map(cfg)
     for tracker in _installed_trackers(cfg):
         title = _title_for(cfg, tracker)
         status, status_detail = "ok", None
@@ -260,6 +345,7 @@ def build_tiles(cfg: Config) -> list[dict[str, Any]]:
                 "status": status,
                 "status_detail": status_detail,
                 "metrics": metrics,
+                "kind": "tracker",
             }
         )
     return tiles

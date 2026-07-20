@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from personal_db.apps import AppContext
+from personal_db.db import connect
 from personal_db.ui import components as c
 
 
@@ -102,6 +103,50 @@ def _style() -> str:
       .cr-no-activity, .cr-calendar-only { background: #f3f4f6; }
     </style>
     """
+
+
+def metrics(cfg) -> list[dict]:
+    """Dashboard tile metrics: focused vs fragmented block counts over the
+    past 14 days (same window and label semantics as `render_overview`'s
+    `overview_counts` query -- the two most robust labels calendar_reality
+    assigns; `calendar_only` blocks are excluded there too)."""
+    try:
+        con = connect(cfg.db_path, read_only=True)
+    except sqlite3.OperationalError:
+        return []
+    try:
+        row = con.execute(
+            "SELECT count(*) AS blocks, "
+            "sum(CASE WHEN reality_label = 'focused' THEN 1 ELSE 0 END) AS focused_blocks, "
+            "sum(CASE WHEN reality_label = 'fragmented' THEN 1 ELSE 0 END) AS fragmented_blocks "
+            "FROM calendar_reality_blocks "
+            "WHERE start_at >= ? AND reality_label != 'calendar_only'",
+            (_cutoff(14),),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        con.close()
+
+    if not row or not row[0]:
+        return []
+    _blocks, focused, fragmented = row
+    return [
+        {
+            "label": "Focused blocks (14d)",
+            "value": f"{_int(focused):,}",
+            "detail": None,
+            "delta": None,
+            "good": None,
+        },
+        {
+            "label": "Fragmented blocks (14d)",
+            "value": f"{_int(fragmented):,}",
+            "detail": None,
+            "delta": None,
+            "good": None,
+        },
+    ]
 
 
 def render_overview(ctx: AppContext) -> str:

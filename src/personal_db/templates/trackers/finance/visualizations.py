@@ -71,6 +71,7 @@ def metrics(cfg) -> list[dict]:
             "detail": detail,
             "delta": delta,
             "good": good,
+            "sensitive": True,
         }
     )
     out.append(
@@ -80,6 +81,7 @@ def metrics(cfg) -> list[dict]:
             "detail": detail,
             "delta": None,
             "good": None,
+            "sensitive": True,
         }
     )
     return out

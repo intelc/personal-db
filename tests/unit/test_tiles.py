@@ -22,7 +22,7 @@ from personal_db.core.db import apply_tracker_schema, init_db
 from personal_db.core.manifest import load_manifest
 from personal_db.services.daemon.http import build_app
 from personal_db.services.ui import tiles as tiles_mod
-from personal_db.services.ui.tiles import build_tiles, get_tiles
+from personal_db.services.ui.tiles import build_app_tiles, build_tiles, get_tiles
 from tests._daemon_auth import auth_headers
 from tests._validation_helpers import mark_valid
 
@@ -168,6 +168,35 @@ def _mark_synced(cfg: Config, name: str) -> None:
     last_run_path.write_text(json.dumps(data))
 
 
+def _make_app(tmp_root, name, *, metrics_src: str | None = None) -> Config:
+    """Hand-build a minimal, discoverable app under <root>/apps/<name> --
+    just enough (app.yaml with one page + a views.py) for `discover_apps`/
+    `build_app_tiles` to find it. `metrics_src`, if given, is written
+    verbatim ahead of a dummy `render_overview` so tests can supply any
+    `metrics(cfg)` body, including a deliberately broken one; without it, no
+    `metrics` function exists at all -- exercising the "no metrics() ->
+    no tile" path apps take (unlike trackers, which fall back mechanically).
+    """
+    cfg = Config(root=tmp_root)
+    if not cfg.db_path.exists():
+        init_db(cfg.db_path)
+    d = tmp_root / "apps" / name
+    d.mkdir(parents=True)
+    (d / "app.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": name,
+                "title": name.replace("_", " ").title(),
+                "description": name,
+                "pages": [{"slug": "overview", "title": "Overview", "view": "render_overview"}],
+            }
+        )
+    )
+    views_src = (metrics_src or "") + "\n\ndef render_overview(ctx):\n    return '<p>hi</p>'\n"
+    (d / "views.py").write_text(views_src)
+    return cfg
+
+
 # ---------- metrics contract ----------
 
 
@@ -197,6 +226,7 @@ def test_build_tiles_uses_custom_metrics(tmp_path):
         "detail": "top app · Cursor",
         "delta": "+8% vs last week",
         "good": True,
+        "sensitive": False,
     }
     # Non-string value coerced to str; missing detail/delta -> None.
     assert m1["value"] == "12"
@@ -229,7 +259,14 @@ def test_build_tiles_filters_invalid_metric_entries(tmp_path):
     cfg = _make_tracker(tmp_path, "dirty", metrics_src=metrics_src)
     tile = build_tiles(cfg)[0]
     assert tile["metrics"] == [
-        {"label": "ok", "value": "1", "detail": None, "delta": None, "good": None}
+        {
+            "label": "ok",
+            "value": "1",
+            "detail": None,
+            "delta": None,
+            "good": None,
+            "sensitive": False,
+        }
     ]
 
 
@@ -337,6 +374,79 @@ def test_build_tiles_no_installed_trackers_is_empty(tmp_path):
     cfg = Config(root=tmp_path)
     init_db(cfg.db_path)
     assert build_tiles(cfg) == []
+
+
+# ---------- app tiles ----------
+#
+# Apps (core.apps.discover_apps) get a tile ahead of tracker tiles, but only
+# when their views.py exports a working metrics(cfg) -- unlike trackers,
+# there's no mechanical row-count fallback (see build_app_tiles's docstring:
+# apps have no schema.sql table inventory or sync state to derive one from).
+
+
+def test_build_app_tiles_uses_metrics_cfg(tmp_path):
+    metrics_src = (
+        "def metrics(cfg):\n"
+        "    return [\n"
+        "        {'label': 'widgets', 'value': '7', 'good': True},\n"
+        "        {'label': 'total', 'value': '$42', 'sensitive': True},\n"
+        "    ]\n"
+    )
+    cfg = _make_app(tmp_path, "customapp", metrics_src=metrics_src)
+    tiles = [t for t in build_app_tiles(cfg) if t["slug"] == "app:customapp"]
+    assert len(tiles) == 1
+    tile = tiles[0]
+    assert tile["kind"] == "app"
+    assert tile["href"] == "/a/customapp"
+    assert tile["status"] == "ok"
+    assert tile["status_detail"] is None
+    assert tile["title"] == "Customapp"
+    m0, m1 = tile["metrics"]
+    assert m0 == {
+        "label": "widgets", "value": "7", "detail": None, "delta": None,
+        "good": True, "sensitive": False,
+    }
+    assert m1["sensitive"] is True
+
+
+def test_build_app_tiles_no_tile_without_metrics_fn(tmp_path):
+    cfg = _make_app(tmp_path, "noviz")
+    tiles = [t for t in build_app_tiles(cfg) if t["slug"] == "app:noviz"]
+    assert tiles == []
+
+
+def test_build_app_tiles_no_tile_when_metrics_returns_empty_list(tmp_path):
+    cfg = _make_app(tmp_path, "emptymetrics", metrics_src="def metrics(cfg):\n    return []\n")
+    tiles = [t for t in build_app_tiles(cfg) if t["slug"] == "app:emptymetrics"]
+    assert tiles == []
+
+
+def test_build_app_tiles_no_tile_when_metrics_raises(tmp_path):
+    cfg = _make_app(tmp_path, "brokenapp", metrics_src="def metrics(cfg):\n    raise RuntimeError('boom')\n")
+    tiles = [t for t in build_app_tiles(cfg) if t["slug"] == "app:brokenapp"]
+    assert tiles == []
+
+
+def test_build_app_tiles_no_tile_when_metrics_returns_non_list(tmp_path):
+    cfg = _make_app(tmp_path, "wrongtypeapp", metrics_src="def metrics(cfg):\n    return {'not': 'a list'}\n")
+    tiles = [t for t in build_app_tiles(cfg) if t["slug"] == "app:wrongtypeapp"]
+    assert tiles == []
+
+
+def test_build_tiles_app_tiles_ahead_of_tracker_tiles(tmp_path):
+    metrics_src = "def metrics(cfg):\n    return [{'label': 'x', 'value': '1'}]\n"
+    cfg = _make_app(tmp_path, "leadapp", metrics_src=metrics_src)
+    # _make_tracker's Config(root=tmp_path)/init_db(...) re-point at the same
+    # root (init_db is IF NOT EXISTS-idempotent), so both land in one tile list.
+    cfg = _make_tracker(tmp_path, "trailtracker")
+
+    tiles = build_tiles(cfg)
+    kinds_by_slug = {t["slug"]: t["kind"] for t in tiles}
+    assert kinds_by_slug["app:leadapp"] == "app"
+    assert kinds_by_slug["trailtracker"] == "tracker"
+    app_index = next(i for i, t in enumerate(tiles) if t["slug"] == "app:leadapp")
+    tracker_index = next(i for i, t in enumerate(tiles) if t["slug"] == "trailtracker")
+    assert app_index < tracker_index
 
 
 # ---------- status derivation (shared with tracker_status_map / /health) ----------
@@ -589,3 +699,76 @@ def test_dashboard_route_shows_welcome_hero_with_no_trackers(tmp_path):
     assert r.status_code == 200
     assert "Connect your first source" in r.text
     assert 'class="tile-gallery"' not in r.text
+
+
+# ---------- discreet mode (sensitive metrics) ----------
+
+
+def test_dashboard_route_wraps_sensitive_value_in_span(tmp_path):
+    metrics_src = (
+        "def metrics(cfg):\n"
+        "    return [{'label': 'net worth', 'value': '$201k', 'delta': '+3%',\n"
+        "             'good': True, 'sensitive': True}]\n"
+    )
+    cfg = _make_tracker(tmp_path, "moneytracker", metrics_src=metrics_src)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/")
+    assert r.status_code == 200
+    assert '<span class="pdb-sensitive">$201k</span>' in r.text
+    assert '<span class="pdb-sensitive">+3%</span>' in r.text
+
+
+def test_dashboard_route_does_not_wrap_non_sensitive_value(tmp_path):
+    metrics_src = (
+        "def metrics(cfg):\n"
+        "    return [{'label': 'hours', 'value': '5.9h'}]\n"
+    )
+    cfg = _make_tracker(tmp_path, "plaintracker", metrics_src=metrics_src)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "pdb-sensitive" not in r.text
+
+
+def test_tiles_endpoint_includes_sensitive_flag(tmp_path):
+    metrics_src = (
+        "def metrics(cfg):\n"
+        "    return [{'label': 'cash', 'value': '$1', 'sensitive': True}]\n"
+    )
+    cfg = _make_tracker(tmp_path, "apitracker", metrics_src=metrics_src)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/api/v1/tiles")
+    assert r.status_code == 200
+    metric = r.json()["tiles"][0]["metrics"][0]
+    assert metric["sensitive"] is True
+
+
+# ---------- dashboard "Apps" / "Trackers" sections ----------
+
+
+def test_dashboard_route_renders_app_and_tracker_sections(tmp_path):
+    metrics_src = "def metrics(cfg):\n    return [{'label': 'x', 'value': '1'}]\n"
+    cfg = _make_app(tmp_path, "sectionapp", metrics_src=metrics_src)
+    cfg = _make_tracker(tmp_path, "sectiontracker")
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/")
+    assert r.status_code == 200
+    assert '<h2 class="tile-section-label">Apps</h2>' in r.text
+    assert '<h2 class="tile-section-label">Trackers</h2>' in r.text
+    assert 'data-slug="app:sectionapp"' in r.text
+    assert 'data-slug="sectiontracker"' in r.text
+    # Apps section (and its tile) appears before the Trackers section in the
+    # rendered HTML, matching build_tiles's app-tiles-first ordering. Index
+    # on the data-slug attributes specifically (not bare substrings) since
+    # the sidebar nav also mentions "sectiontracker" earlier, in its own
+    # link href, well before the tile gallery.
+    assert r.text.index('data-slug="app:sectionapp"') < r.text.index('data-slug="sectiontracker"')
+
+
+def test_dashboard_route_omits_apps_section_without_app_tiles(tmp_path):
+    cfg = _make_tracker(tmp_path, "onlytracker")
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/")
+    assert r.status_code == 200
+    assert '<h2 class="tile-section-label">Apps</h2>' not in r.text
+    assert '<h2 class="tile-section-label">Trackers</h2>' in r.text

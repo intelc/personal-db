@@ -226,7 +226,7 @@ def _account_summary(ctx: AppContext, scope: str) -> dict[str, float]:
     return out
 
 
-def _latest_metrics(ctx: AppContext, scope: str) -> tuple[list[tuple[str, str, str]], str]:
+def _latest_metrics(ctx: AppContext, scope: str) -> tuple[list[tuple[str, str, str, bool]], str]:
     owner = _scope_owner(scope)
     latest = _q(ctx, "latest_net_worth", owner=owner)
     if latest:
@@ -236,12 +236,13 @@ def _latest_metrics(ctx: AppContext, scope: str) -> tuple[list[tuple[str, str, s
                 "Net worth" if scope == "self" else "Managed total",
                 _money(row["net_worth"]),
                 f"as of {row['date']}",
+                True,
             ),
-            ("Assets", _money(row["assets"]), ""),
-            ("Debts", _money(row["debts"]), ""),
-            ("Cash", _money(row["cash"]), ""),
-            ("Investments", _money(row["investments"]), ""),
-            ("Credit cards", _money(-_float(row["credit_card_debt"])), ""),
+            ("Assets", _money(row["assets"]), "", True),
+            ("Debts", _money(row["debts"]), "", True),
+            ("Cash", _money(row["cash"]), "", True),
+            ("Investments", _money(row["investments"]), "", True),
+            ("Credit cards", _money(-_float(row["credit_card_debt"])), "", True),
         ], str(row["date"])
     summary = _account_summary(ctx, scope)
     return [
@@ -249,12 +250,14 @@ def _latest_metrics(ctx: AppContext, scope: str) -> tuple[list[tuple[str, str, s
             "Net worth" if scope == "self" else "Managed total",
             _money(summary["net_worth"]),
             "from latest accounts",
+            True,
         ),
-        ("Assets", _money(summary["assets"]), ""),
-        ("Debts", _money(summary["debts"]), ""),
-        ("Cash", _money(summary["cash"]), ""),
-        ("Investments", _money(summary["investments"]), ""),
-        ("Accounts", str(int(summary["accounts"])), ""),
+        ("Assets", _money(summary["assets"]), "", True),
+        ("Debts", _money(summary["debts"]), "", True),
+        ("Cash", _money(summary["cash"]), "", True),
+        ("Investments", _money(summary["investments"]), "", True),
+        # Account count, not a currency amount -- not sensitive.
+        ("Accounts", str(int(summary["accounts"])), "", False),
     ], ""
 
 
@@ -1094,6 +1097,62 @@ def _scope_page(ctx: AppContext, scope: str, title: str) -> str:
     if scope == "parents":
         sections.append(_parent_draw_section(ctx))
     return _finance_page(ctx, scope, title, *sections, subtitle=subtitle)
+
+
+def metrics(cfg) -> list[dict]:
+    """Dashboard tile metrics for the Finance app: cashflow (7d) and spend
+    this month, both from the combined ('all' owner) daily cashflow mart.
+
+    Deliberately different from the `finance` tracker's own tile (net worth
+    + cash, see templates/trackers/finance/visualizations.py) so the two
+    tiles don't just duplicate each other on the dashboard.
+    """
+    try:
+        con = connect(cfg.db_path, read_only=True)
+    except sqlite3.OperationalError:
+        return []
+    try:
+        has_any = con.execute(
+            "SELECT 1 FROM finance_daily_cashflow WHERE owner = 'all' LIMIT 1"
+        ).fetchone()
+        if not has_any:
+            return []
+        cutoff_7d = (date.today() - timedelta(days=7)).isoformat()
+        month_start = date.today().replace(day=1).isoformat()
+        (cashflow_7d,) = con.execute(
+            "SELECT SUM(net) FROM finance_daily_cashflow WHERE owner = 'all' AND date >= ?",
+            (cutoff_7d,),
+        ).fetchone()
+        (spend_month,) = con.execute(
+            "SELECT SUM(spending) FROM finance_daily_cashflow WHERE owner = 'all' AND date >= ?",
+            (month_start,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        con.close()
+
+    cashflow_7d = float(cashflow_7d or 0)
+    spend_month = float(spend_month or 0)
+    good = True if cashflow_7d > 0 else (False if cashflow_7d < 0 else None)
+    return [
+        {
+            "label": "Cashflow (7d)",
+            "value": _signed_money(cashflow_7d),
+            "detail": None,
+            "delta": None,
+            "good": good,
+            "sensitive": True,
+        },
+        {
+            "label": "Spend this month",
+            "value": _money(spend_month),
+            "detail": None,
+            "delta": None,
+            "good": None,
+            "sensitive": True,
+        },
+    ]
 
 
 def render_overview(ctx: AppContext) -> str:

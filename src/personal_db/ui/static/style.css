@@ -2311,6 +2311,62 @@ body.pdb-agent-ask-mode * {
   }
 }
 
+/* Discreet mode -----------------------------------------------------------
+ * `.pdb-sensitive` marks money-ish values (net worth, cash, balances,
+ * spend) wherever they're rendered -- dashboard tile values/deltas
+ * (dashboard_tiles.html + pdb-tiles.js), the finance app's Overview stat
+ * cards (ui/components.py's metric_card), and plaid/monarch tracker table
+ * columns (templates/trackers/{plaid,monarch}/visualizations.py). Blurred
+ * only while `<html>` carries `.pdb-discreet`, toggled by the sidebar-footer
+ * eye button (base.html + pdb-discreet.js) and persisted to localStorage;
+ * base.html replays that choice in an inline <head> script so there's no
+ * flash of sensitive values before pdb-discreet.js (deferred) loads. Plain
+ * `<span>`s with no layout role of their own -- blur is the only effect, so
+ * unmarked (non-discreet) pages/users see completely normal text. */
+html.pdb-discreet .pdb-sensitive {
+  filter: blur(7px);
+  user-select: none;
+}
+
+/* Sidebar-footer eye toggle: reuses `.sidebar-gear`'s 28x28 icon-button
+ * box (hover/active tint) but that class was written for an `<a>` -- reset
+ * the native <button> chrome it otherwise inherits, and add a "currently
+ * on" tint parallel to `.sidebar-gear[aria-current="page"]`. Swapping which
+ * of the two eye/eye-off <svg>s is visible (inline `style="display"`) is
+ * pdb-discreet.js's job, not CSS. */
+#pdb-discreet-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  -webkit-appearance: none;
+}
+#pdb-discreet-toggle[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Tile gallery sections (dashboard "/") -----------------------------------
+ * "Apps" then "Trackers", each its own grid (see .tile-gallery below) --
+ * matches the sidebar's .sidebar-group section-label styling so the
+ * dashboard and nav read as the same taxonomy. Both sections live inside
+ * one [data-tile-gallery] container so pdb-tiles.js's per-tile phase/period
+ * index (derived from DOM order across the whole gallery) continues
+ * unbroken from the last app tile into the first tracker tile -- the
+ * ripple effect spans the full page, not just one section. */
+.tile-section + .tile-section {
+  margin-top: calc(var(--grid) * 1);
+}
+.tile-section-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--fg-tertiary);
+  letter-spacing: 0.08em;
+  margin: calc(var(--grid) * 2) 0 6px;
+}
+
 /* Tile gallery (dashboard "/") ------------------------------------------
  * One uniform tile per installed tracker, rotating through up to 4
  * headline metrics (services/ui/tiles.py). Rotation timing itself is
@@ -2485,4 +2541,100 @@ body.pdb-agent-ask-mode * {
   .tile-delta {
     transition: none;
   }
+}
+
+/* ==========================================================================
+   Cmd+K / Ctrl+K navigation palette (pdb-palette.js)
+   Fully self-contained: markup is built in JS, never server-rendered.
+   ========================================================================== */
+.pdb-palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  justify-content: center;
+  padding-top: 20vh;
+  background: rgba(0, 0, 0, 0.35);
+}
+.pdb-palette {
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(60vh, 420px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+  height: fit-content;
+}
+.pdb-palette-input {
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  padding: 14px 16px;
+  outline: none;
+}
+.pdb-palette-input::placeholder {
+  color: var(--fg-tertiary);
+}
+.pdb-palette-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  max-height: calc(10 * 34px);
+}
+.pdb-palette-group {
+  padding: 8px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--fg-tertiary);
+}
+.pdb-palette-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.pdb-palette-row-label {
+  color: var(--fg);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pdb-palette-row-href {
+  color: var(--fg-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 3;
+}
+.pdb-palette-row mark {
+  background: transparent;
+  color: var(--accent);
+  font-weight: 600;
+}
+.pdb-palette-row.is-selected {
+  background: var(--accent-soft);
+}
+.pdb-palette-row.is-selected .pdb-palette-row-label {
+  color: var(--accent);
+}
+.pdb-palette-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--fg-tertiary);
+  font-size: 13px;
 }

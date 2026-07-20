@@ -154,6 +154,96 @@ def _geocode_source(ctx: AppContext) -> str | None:
     return None
 
 
+def _table_columns(con: sqlite3.Connection, table: str) -> set[str]:
+    try:
+        row = con.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+        ).fetchone()
+        if row is None:
+            return set()
+        return {str(r[1]) for r in con.execute(f'PRAGMA table_info("{table}")').fetchall()}
+    except sqlite3.OperationalError:
+        return set()
+
+
+def metrics(cfg) -> list[dict]:
+    """Dashboard tile metrics: raw GPS points in the last 24h and distinct
+    places visited in the last 30 days. Detects the same two location-table
+    shapes `_location_source`/`_geocode_source` do (new `location_points` +
+    `geocoded_locations(recorded_at, ...)`, or legacy `raw_locations` +
+    `geocoded_locations(source_id, ...)`) -- this can't reuse those helpers
+    directly since they take an `AppContext`, not a bare `cfg`."""
+    try:
+        con = connect(cfg.db_path, read_only=True)
+    except sqlite3.OperationalError:
+        return []
+    try:
+        cutoff_24h = _cutoff(1)
+        cutoff_30d = _cutoff(30)
+        points_cols = _table_columns(con, "location_points")
+        if {"recorded_at", "latitude", "longitude"}.issubset(points_cols):
+            (points_24h,) = con.execute(
+                "SELECT count(*) FROM location_points WHERE recorded_at >= ?",
+                (cutoff_24h,),
+            ).fetchone()
+            geo_cols = _table_columns(con, "geocoded_locations")
+            places_30d = None
+            if {"recorded_at", "formatted_address"}.issubset(geo_cols):
+                (places_30d,) = con.execute(
+                    """
+                    SELECT count(DISTINCT coalesce(g.place_id, g.formatted_address))
+                    FROM location_points p
+                    LEFT JOIN geocoded_locations g ON g.recorded_at = p.recorded_at
+                    WHERE p.recorded_at >= ?
+                    """,
+                    (cutoff_30d,),
+                ).fetchone()
+        else:
+            raw_cols = _table_columns(con, "raw_locations")
+            if not {"id", "ts", "lat", "lon"}.issubset(raw_cols):
+                return []
+            (points_24h,) = con.execute(
+                "SELECT count(*) FROM raw_locations WHERE ts >= ?", (cutoff_24h,)
+            ).fetchone()
+            geo_cols = _table_columns(con, "geocoded_locations")
+            places_30d = None
+            if {"source_id", "place_name"}.issubset(geo_cols):
+                (places_30d,) = con.execute(
+                    """
+                    SELECT count(DISTINCT coalesce(g.place_name, '(unlabeled)'))
+                    FROM raw_locations r
+                    LEFT JOIN geocoded_locations g ON g.source_id = r.id
+                    WHERE r.ts >= ?
+                    """,
+                    (cutoff_30d,),
+                ).fetchone()
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        con.close()
+
+    out = [
+        {
+            "label": "GPS points (24h)",
+            "value": f"{int(points_24h or 0):,}",
+            "detail": None,
+            "delta": None,
+            "good": None,
+        }
+    ]
+    if places_30d is not None:
+        out.append(
+            {
+                "label": "Places visited (30d)",
+                "value": f"{int(places_30d):,}",
+                "detail": None,
+                "delta": None,
+                "good": None,
+            }
+        )
+    return out
+
+
 def _run(ctx: AppContext, sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
     try:
         con = connect(ctx.cfg.db_path, read_only=True)

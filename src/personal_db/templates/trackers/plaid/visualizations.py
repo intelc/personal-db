@@ -18,14 +18,20 @@ def _rows(cfg, sql: str, params: tuple = ()) -> list[tuple]:
         con.close()
 
 
-def _table(rows: list, headers: list[str]) -> str:
+def _table(rows: list, headers: list[str], *, sensitive_columns: set[int] | None = None) -> str:
     if not rows:
         return '<p class="meta">no data</p>'
+    sensitive_columns = sensitive_columns or set()
     head = "".join(f"<th>{html.escape(h)}</th>" for h in headers)
     body = []
     for row in rows:
-        cells = "".join("<td>{}</td>".format(html.escape("" if v is None else str(v))) for v in row)
-        body.append(f"<tr>{cells}</tr>")
+        cells = []
+        for i, v in enumerate(row):
+            text = html.escape("" if v is None else str(v))
+            if i in sensitive_columns:
+                text = f'<span class="pdb-sensitive">{text}</span>'
+            cells.append(f"<td>{text}</td>")
+        body.append(f"<tr>{''.join(cells)}</tr>")
     return f"<table><thead><tr>{head}</tr></thead><tbody>{''.join(body)}</tbody></table>"
 
 
@@ -87,12 +93,15 @@ def _signed_money(value) -> str:
     return "$0"
 
 
-def _metric_table(items: list[tuple[str, str]]) -> str:
-    rows = "".join(
-        f"<tr><th>{html.escape(label)}</th><td>{html.escape(value)}</td></tr>"
-        for label, value in items
-    )
-    return f'<table class="kv"><tbody>{rows}</tbody></table>'
+def _metric_table(items: list[tuple[str, str]], *, sensitive_labels: set[str] | None = None) -> str:
+    sensitive_labels = sensitive_labels or set()
+    rows = []
+    for label, value in items:
+        text = html.escape(value)
+        if label in sensitive_labels:
+            text = f'<span class="pdb-sensitive">{text}</span>'
+        rows.append(f"<tr><th>{html.escape(label)}</th><td>{text}</td></tr>")
+    return f'<table class="kv"><tbody>{"".join(rows)}</tbody></table>'
 
 
 def _owner_options(cfg) -> list[str]:
@@ -176,7 +185,10 @@ def _render_overview(cfg) -> str:
                 ("Cash/checking", _money(cash)),
                 ("Investments", _money(investments)),
                 ("Credit cards", _money(-float(credit_debt or 0))),
-            ]
+            ],
+            sensitive_labels={
+                "Net worth", "Assets", "Debts", "Cash/checking", "Investments", "Credit cards",
+            },
         )
         + "<h3>Net Worth</h3>"
         + line_chart(
@@ -243,6 +255,7 @@ def _render_accounts(cfg) -> str:
             "Currency",
             "As Of",
         ],
+        sensitive_columns={5, 6},  # Current, Available
     )
 
 
@@ -299,6 +312,7 @@ def _render_cashflow(cfg) -> str:
                 "Card Payments Excluded",
                 "Transfers Excluded",
             ],
+            sensitive_columns={1, 2, 3, 4, 5, 6},
         )
     )
 
@@ -339,7 +353,11 @@ def _render_net_worth(cfg) -> str:
             show_every_nth_label=max(len(labels) // 10, 1),
             value_attr="data-usd",
         )
-        + _table(latest_rows, ["Owner", "Net Worth", "Cash", "Investments", "Credit Card Debt"])
+        + _table(
+            latest_rows,
+            ["Owner", "Net Worth", "Cash", "Investments", "Credit Card Debt"],
+            sensitive_columns={1, 2, 3, 4},
+        )
     )
 
 
@@ -384,9 +402,17 @@ def _render_investments(cfg) -> str:
     ]
     return (
         "<h2>Plaid Source Investments</h2>"
-        + _table(account_rows, ["Owner", "Institution", "Account", "Balance", "As Of"])
+        + _table(
+            account_rows,
+            ["Owner", "Institution", "Account", "Balance", "As Of"],
+            sensitive_columns={3},
+        )
         + "<h3>Latest Holdings</h3>"
-        + _table(holding_rows, ["Institution", "Account", "Holding", "Quantity", "Value", "As Of"])
+        + _table(
+            holding_rows,
+            ["Institution", "Account", "Holding", "Quantity", "Value", "As Of"],
+            sensitive_columns={4},
+        )
     )
 
 
@@ -423,7 +449,11 @@ def _render_parent_draws(cfg) -> str:
             value_attr="data-usd",
         )
         + '<p class="meta">Set <code>owner: parents</code> in <code>account_labels.yaml</code> to classify accounts here.</p>'
-        + _table(recent, ["Date", "Owner", "Institution", "Account", "Merchant", "Amount", "Category"])
+        + _table(
+            recent,
+            ["Date", "Owner", "Institution", "Account", "Merchant", "Amount", "Category"],
+            sensitive_columns={5},
+        )
     )
 
 

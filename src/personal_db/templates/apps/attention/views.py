@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from personal_db.apps import AppContext
+from personal_db.db import connect
 from personal_db.ui import agcharts
 from personal_db.ui import components as c
 
@@ -74,6 +75,78 @@ def _style() -> str:
       .attention-impact.impact-derailed { background: #fee2e2; color: #991b1b; }
     </style>
     """
+
+
+def metrics(cfg) -> list[dict]:
+    """Dashboard tile metrics: notification volume, act-on rate, and
+    derailments over the past 7 days (vs the prior 7 days for the
+    derailment delta -- the same two windows `_impact_counts`/the daily
+    chart already use)."""
+    try:
+        con = connect(cfg.db_path, read_only=True)
+    except sqlite3.OperationalError:
+        return []
+    try:
+        this_cutoff = _cutoff(7)
+        prior_cutoff = _cutoff(14)
+        this_rows = con.execute(
+            "SELECT impact, count(*) FROM notification_impacts "
+            "WHERE delivered_at >= ? GROUP BY impact",
+            (this_cutoff,),
+        ).fetchall()
+        prior_rows = con.execute(
+            "SELECT impact, count(*) FROM notification_impacts "
+            "WHERE delivered_at >= ? AND delivered_at < ? GROUP BY impact",
+            (prior_cutoff, this_cutoff),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        con.close()
+
+    if not this_rows and not prior_rows:
+        return []
+
+    counts = {impact: n for impact, n in this_rows}
+    prior_counts = {impact: n for impact, n in prior_rows}
+    total = sum(counts.values())
+    acted = counts.get("acted_on", 0) + counts.get("derailed", 0)
+    derailed = counts.get("derailed", 0)
+    prior_derailed = prior_counts.get("derailed", 0)
+
+    out = [
+        {
+            "label": "Notifications (7d)",
+            "value": f"{total:,}",
+            "detail": None,
+            "delta": None,
+            "good": None,
+        },
+        {
+            "label": "Acted on",
+            "value": _pct(acted, total),
+            "detail": f"{acted:,} of {total:,}",
+            "delta": None,
+            "good": None,
+        },
+    ]
+    delta = None
+    good = None
+    diff = derailed - prior_derailed
+    if diff != 0:
+        sign = "+" if diff > 0 else ""
+        delta = f"{sign}{diff} vs prior 7d"
+        good = False if diff > 0 else True
+    out.append(
+        {
+            "label": "Derailments (7d)",
+            "value": f"{derailed:,}",
+            "detail": None,
+            "delta": delta,
+            "good": good,
+        }
+    )
+    return out
 
 
 def render_overview(ctx: AppContext) -> str:

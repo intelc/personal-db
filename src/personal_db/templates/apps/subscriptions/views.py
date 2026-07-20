@@ -589,6 +589,48 @@ def _evidence_summary(value: Any) -> str:
     return ", ".join(labels)
 
 
+def metrics(cfg) -> list[dict]:
+    """Dashboard tile metrics: active subscription count and their combined
+    monthly-like cost (same `overview_counts` shape `render_overview` uses --
+    latest charge/monthly-average blended per subscription, summed)."""
+    try:
+        con = connect(cfg.db_path, read_only=True)
+    except sqlite3.OperationalError:
+        return []
+    try:
+        row = con.execute(
+            "SELECT COUNT(*) AS subscriptions, "
+            "SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active_subscriptions, "
+            "SUM(COALESCE(monthly_avg_amount, latest_amount, 0)) AS latest_monthly_like_cost "
+            "FROM subscription_entities"
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        con.close()
+
+    if not row or not row[0]:
+        return []
+    _subscriptions, active, monthly_cost = row
+    return [
+        {
+            "label": "Active subscriptions",
+            "value": str(_int(active)),
+            "detail": None,
+            "delta": None,
+            "good": None,
+        },
+        {
+            "label": "Monthly total",
+            "value": _money(monthly_cost),
+            "detail": None,
+            "delta": None,
+            "good": None,
+            "sensitive": True,
+        },
+    ]
+
+
 def render_overview(ctx: AppContext) -> str:
     counts = _q(ctx, "overview_counts")
     row = counts[0] if counts else {}

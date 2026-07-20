@@ -14,14 +14,20 @@ def _rows(cfg, sql: str, params: tuple = ()) -> list[tuple]:
         con.close()
 
 
-def _table(rows: list, headers: list[str]) -> str:
+def _table(rows: list, headers: list[str], *, sensitive_columns: set[int] | None = None) -> str:
     if not rows:
         return '<p class="meta">no data</p>'
+    sensitive_columns = sensitive_columns or set()
     head = "".join(f"<th>{html.escape(h)}</th>" for h in headers)
     body = []
     for row in rows:
-        cells = "".join("<td>{}</td>".format(html.escape("" if v is None else str(v))) for v in row)
-        body.append(f"<tr>{cells}</tr>")
+        cells = []
+        for i, v in enumerate(row):
+            text = html.escape("" if v is None else str(v))
+            if i in sensitive_columns:
+                text = f'<span class="pdb-sensitive">{text}</span>'
+            cells.append(f"<td>{text}</td>")
+        body.append(f"<tr>{''.join(cells)}</tr>")
     return f"<table><thead><tr>{head}</tr></thead><tbody>{''.join(body)}</tbody></table>"
 
 
@@ -56,6 +62,7 @@ def _render_accounts(cfg) -> str:
     return "<h2>Monarch Accounts</h2>" + _table(
         rows,
         ["Group", "Export", "Owner", "Institution", "Account", "Balance", "Type", "Subtype", "Updated"],
+        sensitive_columns={5},  # Balance
     )
 
 
@@ -94,7 +101,11 @@ def _render_overview(cfg) -> str:
         + "<h3>Selected Account Groups</h3>"
         + chart
         + "<h3>Recent Transactions</h3>"
-        + _table(recent, ["Date", "Institution", "Account", "Merchant", "Amount", "Category", "Pending"])
+        + _table(
+            recent,
+            ["Date", "Institution", "Account", "Merchant", "Amount", "Category", "Pending"],
+            sensitive_columns={4},  # Amount
+        )
     )
 
 

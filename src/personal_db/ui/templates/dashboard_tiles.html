@@ -23,9 +23,7 @@
   <h1>Dashboard</h1>
 </header>
 
-{% if tiles %}
-<div class="tile-gallery" id="pdb-tile-gallery" data-tile-gallery>
-  {% for tile in tiles %}
+{% macro tile_card(tile) %}
   <a class="tile tile-status-{{ tile.status }}" href="{{ tile.href }}" data-tile data-slug="{{ tile.slug }}">
     <div class="tile-header">{{ tile.title }}</div>
     {% if tile.metrics %}
@@ -39,13 +37,13 @@
         {% set m0_size_class = "" %}
       {% endif %}
       <div class="tile-metric" data-tile-metric>
-        <div class="tile-value {{ m0_size_class }}" data-tile-value title="{{ m0_value }}">{{ m0_value }}</div>
+        <div class="tile-value {{ m0_size_class }}" data-tile-value title="{{ m0_value }}">{% if m0.sensitive %}<span class="pdb-sensitive">{{ m0_value }}</span>{% else %}{{ m0_value }}{% endif %}</div>
         <div class="tile-label" data-tile-label>{{ m0.label }}</div>
         <div
           class="tile-delta {% if m0.good == true %}tile-delta-good{% elif m0.good == false %}tile-delta-warn{% else %}tile-delta-neutral{% endif %}{% if not m0.delta %} tile-delta-empty{% endif %}"
           data-tile-delta
           {% if not m0.delta %}aria-hidden="true"{% endif %}
-        >{{ m0.delta or "" }}</div>
+        >{% if m0.delta and m0.sensitive %}<span class="pdb-sensitive">{{ m0.delta }}</span>{% else %}{{ m0.delta or "" }}{% endif %}</div>
       </div>
       {% if tile.metrics|length > 1 %}
       <div class="tile-dots" data-tile-dots role="tablist" aria-label="{{ tile.title }} metrics">
@@ -64,7 +62,28 @@
       <div class="tile-status-line">{{ tile.status_detail }}</div>
     {% endif %}
   </a>
-  {% endfor %}
+{% endmacro %}
+
+{% if tiles %}
+{% set app_tiles = tiles | selectattr('kind', 'equalto', 'app') | list %}
+{% set tracker_tiles = tiles | selectattr('kind', 'equalto', 'tracker') | list %}
+<div id="pdb-tile-gallery" data-tile-gallery>
+  {% if app_tiles %}
+  <section class="tile-section">
+    <h2 class="tile-section-label">Apps</h2>
+    <div class="tile-gallery">
+      {% for tile in app_tiles %}{{ tile_card(tile) }}{% endfor %}
+    </div>
+  </section>
+  {% endif %}
+  {% if tracker_tiles %}
+  <section class="tile-section">
+    <h2 class="tile-section-label">Trackers</h2>
+    <div class="tile-gallery">
+      {% for tile in tracker_tiles %}{{ tile_card(tile) }}{% endfor %}
+    </div>
+  </section>
+  {% endif %}
 </div>
 <script type="application/json" id="pdb-tiles-data">{{ tiles | tojson }}</script>
 {% else %}

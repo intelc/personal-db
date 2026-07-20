@@ -80,15 +80,33 @@
     return "tile-delta-neutral";
   }
 
+  // Sets an element's text, wrapping it in a `.pdb-sensitive` span when
+  // `sensitive` is true (discreet mode blurs that span -- see style.css's
+  // `html.pdb-discreet .pdb-sensitive` rule and base.html's sidebar toggle).
+  // Built via DOM APIs rather than an innerHTML string so metric text (which
+  // comes from tracker/app `metrics()` implementations, not necessarily
+  // fully trusted) is never parsed as markup.
+  function setSensitiveText(el, text, sensitive) {
+    el.textContent = "";
+    if (!sensitive) {
+      el.textContent = text;
+      return;
+    }
+    var span = document.createElement("span");
+    span.className = "pdb-sensitive";
+    span.textContent = text;
+    el.appendChild(span);
+  }
+
   function renderMetric(tileEl, metric) {
     var valueEl = tileEl.querySelector("[data-tile-value]");
     var labelEl = tileEl.querySelector("[data-tile-label]");
     var deltaEl = tileEl.querySelector("[data-tile-delta]");
     if (valueEl) {
       var value = metric.value == null ? "" : String(metric.value);
-      valueEl.textContent = value;
       valueEl.title = value;
       valueEl.className = ("tile-value " + sizeClassForValue(value)).trim();
+      setSensitiveText(valueEl, value, !!metric.sensitive);
     }
     if (labelEl) labelEl.textContent = metric.label;
     if (deltaEl) {
@@ -100,7 +118,7 @@
       // cell, so a tile that changed height on rotation dragged its whole
       // row along with it).
       if (metric.delta) {
-        deltaEl.textContent = metric.delta;
+        setSensitiveText(deltaEl, metric.delta, !!metric.sensitive);
         deltaEl.className = "tile-delta " + deltaClass(metric.good);
         deltaEl.removeAttribute("aria-hidden");
       } else {
