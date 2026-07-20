@@ -20,6 +20,7 @@ from personal_db.core.installer import install_template, list_bundled
 from personal_db.core.manifest import OAuthStep, PlatformUnsupportedError, load_manifest
 from personal_db.core.migrations import apply_pending_migrations
 from personal_db.core.oauth import ensure_adapter_from_manifest, start_web_oauth
+from personal_db.core.runtime_env import is_app_bundle
 from personal_db.core.scaffold import apply_manifest_overrides, scaffold_tracker
 from personal_db.services.daemon.routes.common import NEW_SLUG_RE as _NEW_SLUG_RE
 from personal_db.services.ui.setup_runner import list_overview, list_step_views, process_form
@@ -56,21 +57,75 @@ def _install_daemon_safe(cfg: Config) -> str:
         return f"⚠ daemon install failed: {e}"
 
 
-def _daemon_status(root) -> str:
-    """Report the current daemon install status with NO side effects."""
+def _daemon_status(root) -> dict[str, Any]:
+    """Report the current periodic-sync status with NO side effects.
+
+    Returns a dict:
+      state: "disabled" | "unsupported" | "app_managed" | "blocked" |
+             "launchd_installed" | "not_installed"
+      detail: human-readable one-line status (rendered directly on the page)
+      legacy_plist: str | None -- only set when state == "app_managed" and a
+        legacy LaunchAgent plist is *also* installed (it's redundant and can
+        fight the sidecar for port 8765 -- the Finish page offers to remove
+        it, see setup_daemon_remove()).
+
+    `app_managed` takes priority over everything else: inside the packaged
+    app, the daemon serving this very page already runs
+    services/daemon/server.py::start_periodic_sync in-process, regardless of
+    what cfg.root is or whether global writes are blocked for it.
+    """
     if os.environ.get("PERSONAL_DB_NO_DAEMON") == "1":
-        return "daemon disabled (PERSONAL_DB_NO_DAEMON=1)"
+        return {
+            "state": "disabled",
+            "detail": "daemon disabled (PERSONAL_DB_NO_DAEMON=1)",
+            "legacy_plist": None,
+        }
     if sys.platform != "darwin":
-        return f"daemon is macOS-only (detected {sys.platform}); periodic sync unavailable"
+        return {
+            "state": "unsupported",
+            "detail": f"daemon is macOS-only (detected {sys.platform}); periodic sync unavailable",
+            "legacy_plist": None,
+        }
+
+    from personal_db.services.daemon import install as di
+
+    if is_app_bundle():
+        legacy = di.plist_path()
+        return {
+            "state": "app_managed",
+            "detail": (
+                "Periodic sync is active and managed by the PersonalDB app — "
+                "the daemon serving this page runs the sync scheduler itself."
+            ),
+            "legacy_plist": str(legacy) if legacy.exists() else None,
+        }
+
     reason = blocked_reason(root)
     if reason:
-        return f"⚠ {reason}"
-    from personal_db.services.daemon import install as di
+        return {"state": "blocked", "detail": f"⚠ {reason}", "legacy_plist": None}
 
     p = di.plist_path()
     if p.exists():
-        return f"✓ daemon installed → {p}"
-    return "not installed yet"
+        return {"state": "launchd_installed", "detail": f"✓ daemon installed → {p}", "legacy_plist": None}
+    return {"state": "not_installed", "detail": "not installed yet", "legacy_plist": None}
+
+
+def _remove_legacy_daemon_safe(cfg: Config) -> str:
+    """Remove the legacy LaunchAgent for the app-managed Finish page's
+    "remove legacy service" button. Never raises -- always returns a
+    one-line status to flash on the page."""
+    reason = blocked_reason(cfg.root)
+    if reason:
+        return f"⚠ {reason}"
+    try:
+        from personal_db.services.daemon import install as di
+
+        if not di.plist_path().exists():
+            return "no legacy background service found"
+        di.remove_legacy_daemon()
+        return "✓ legacy background service removed"
+    except Exception as e:
+        return f"⚠ failed to remove legacy background service: {e}"
 
 
 def register_setup_routes(
@@ -91,6 +146,7 @@ def register_setup_routes(
             context={
                 "active": "setup",
                 "trackers": list_overview(cfg),
+                "daemon_status": _daemon_status(cfg.root),
                 **nav_context(reg, None),
             },
         )
@@ -196,12 +252,14 @@ def register_setup_routes(
     ):
         reg = registry()
         targets = [{"key": key, "label": tgt.label} for key, tgt in _MCP_TARGETS.items()]
+        daemon_status = _daemon_status(cfg.root)
         return templates.TemplateResponse(
             request=request,
             name="setup_finish.html",
             context={
                 "active": "setup",
-                "daemon_status": _daemon_status(cfg.root),
+                "daemon_status": daemon_status,
+                "app_managed": daemon_status["state"] == "app_managed",
                 "daemon_flash": {"msg": daemon_msg, "ok": daemon_ok == "1"} if daemon_msg else None,
                 "mcp_targets": targets,
                 "mcp_flash": {"target": mcp, "ok": mcp_ok == "1", "msg": mcp_msg} if mcp else None,
@@ -218,6 +276,15 @@ def register_setup_routes(
             status_code=303,
         )
 
+    @app.post("/setup/finish/remove-daemon")
+    async def setup_daemon_remove():
+        msg = _remove_legacy_daemon_safe(cfg)
+        ok = msg.startswith("✓") or msg.startswith("no legacy")
+        return RedirectResponse(
+            url=f"/setup/finish?daemon_ok={'1' if ok else '0'}&daemon_msg={urllib.parse.quote(msg)}",
+            status_code=303,
+        )
+
     @app.post("/setup/mcp/install/{target}")
     async def setup_mcp_install(target: str):
         if target not in _MCP_TARGETS:
@@ -228,7 +295,13 @@ def register_setup_routes(
                 url=f"/setup/finish?mcp={target}&mcp_ok=0&mcp_msg={urllib.parse.quote(reason)}",
                 status_code=303,
             )
-        ok, _detail = _MCP_TARGETS[target].auto()
+        try:
+            ok, _detail = _MCP_TARGETS[target].auto()
+        except Exception as e:
+            return RedirectResponse(
+                url=f"/setup/finish?mcp={target}&mcp_ok=0&mcp_msg={urllib.parse.quote(str(e))}",
+                status_code=303,
+            )
         return RedirectResponse(
             url=f"/setup/finish?mcp={target}&mcp_ok={'1' if ok else '0'}",
             status_code=303,
