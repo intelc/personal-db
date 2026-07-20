@@ -19,7 +19,12 @@
   data-limit="{{ limit }}"
   data-offset="{{ offset }}"
   data-total="{{ total }}"
+  data-sort="{{ default_sort or '' }}"
+  data-dir="desc"
+  data-q=""
 >
+  <script type="application/json" data-data-browser-tables>{{ tables_json | tojson }}</script>
+
   <div class="data-browser-tables" role="tablist">
     {% for t in tables %}
       <button
@@ -29,6 +34,17 @@
         {% if t.name == default_table %}aria-current="true"{% endif %}
       >{{ t.name }} <span class="data-browser-table-count">{{ t.row_count }}</span></button>
     {% endfor %}
+  </div>
+
+  <div class="data-browser-toolbar">
+    <p class="meta data-browser-stats" data-data-browser-stats>{{ stats_text }}</p>
+    <input
+      type="search"
+      class="data-browser-search"
+      data-data-search
+      placeholder="Search this table…"
+      aria-label="Search this table"
+    >
   </div>
 
   <p class="meta data-browser-meta" data-data-browser-meta>{{ meta_text }}</p>

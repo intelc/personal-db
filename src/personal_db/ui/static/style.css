@@ -2638,3 +2638,125 @@ html.pdb-discreet .pdb-sensitive {
   color: var(--fg-tertiary);
   font-size: 13px;
 }
+
+/* ---- Data navigator ----
+   Additive on top of the .data-browser rules earlier in this file
+   (data_browser.html; /t/<tracker>/data): stats line, search box, and the
+   row-detail side panel (pdb-data.js). Appended rather than interleaved so
+   this stays a single contiguous block. */
+
+.data-browser-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--grid);
+  flex-wrap: wrap;
+}
+
+.data-browser-stats {
+  margin: 0;
+}
+
+.data-browser-search {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  min-width: 220px;
+}
+.data-browser-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.data-browser-search::placeholder {
+  color: var(--fg-tertiary);
+}
+
+.data-row-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 90;
+  width: min(420px, 90vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--fg);
+  border-left: 1px solid var(--border-strong);
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.18);
+  transform: translateX(100%);
+  transition: transform 120ms ease-out;
+}
+.pdb-data-row-open .data-row-panel {
+  transform: translateX(0);
+}
+
+.data-row-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--grid);
+  min-height: 44px;
+  padding: var(--grid) calc(var(--grid) * 1.5);
+  border-bottom: var(--rule);
+}
+.data-row-panel-close {
+  width: 28px;
+  height: 28px;
+  border: var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.data-row-panel-close:hover {
+  background: var(--bg-hover);
+}
+
+.data-row-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: calc(var(--grid) * 1.5);
+}
+
+.data-row-panel-field {
+  margin-bottom: calc(var(--grid) * 1.5);
+}
+.data-row-panel-field-name {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--fg-tertiary);
+  margin-bottom: 4px;
+}
+.data-row-panel-field pre {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.data-row-panel-null {
+  color: var(--fg-tertiary);
+  font-style: italic;
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .data-row-panel {
+    width: 100vw;
+  }
+}
