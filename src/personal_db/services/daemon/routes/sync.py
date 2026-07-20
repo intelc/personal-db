@@ -20,11 +20,23 @@ from personal_db.services.ui.builtin_viz import repeated_failure_trackers
 _APP_VERSION_FALLBACK = "0.0.0-dev"
 
 
-def _app_version() -> str:
+def _resolve_app_version() -> str:
     try:
         return _pkg_version("personal_db")
     except PackageNotFoundError:
         return _APP_VERSION_FALLBACK
+
+
+# Resolved once at import so /health reports the version of the RUNNING code.
+# importlib.metadata reads dist-info from disk: after an in-app update swaps
+# the bundle, a per-request lookup would make a stale pre-update daemon report
+# the NEW version, defeating the shell's version-drift restart (observed on
+# the v0.1.5 -> v0.1.6 rollout: old routes rendering new templates, 500s).
+_APP_VERSION = _resolve_app_version()
+
+
+def _app_version() -> str:
+    return _APP_VERSION
 
 
 def _db_user_version(cfg: Config) -> int:

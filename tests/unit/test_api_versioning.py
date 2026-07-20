@@ -31,6 +31,23 @@ def test_health_reports_app_api_and_db_versions(tmp_root):
     assert body["status"] == "ok"
 
 
+def test_health_app_version_is_captured_at_boot_not_per_request(tmp_root, monkeypatch):
+    """A stale daemon must keep reporting the version it booted with, even
+    after an in-app update replaces the on-disk dist-info — otherwise the
+    shell's version-drift restart never fires (v0.1.5 -> v0.1.6 rollout bug)."""
+    from fastapi.testclient import TestClient
+
+    from personal_db.services.daemon.routes import sync as sync_routes
+
+    cfg = _base_cfg(tmp_root)
+    client = TestClient(build_app(cfg))
+    booted = client.get("/api/v1/health").json()["app_version"]
+
+    # Simulate the bundle on disk being swapped out from under the process.
+    monkeypatch.setattr(sync_routes, "_pkg_version", lambda _name: "99.99.99")
+    assert client.get("/api/v1/health").json()["app_version"] == booted
+
+
 def test_health_reports_db_user_version_once_db_exists(tmp_root):
     from personal_db.core.db import CORE_SCHEMA_VERSION, init_db
     from fastapi.testclient import TestClient
