@@ -2022,130 +2022,6 @@ body.pdb-agent-ask-mode * {
 }
 
 /* ==========================================================================
-   ux-pass-3: dashboard editing (dashboard.html's .page-head "Edit dashboard"
-   button + #pdb-dash-edit-panel, wired up by pdb-dashboard.js). Replaces the
-   old collapsed <details> CONFIGURE leftover. Everything below this marker
-   is scoped to `.dash-edit-*` classes.
-   ========================================================================== */
-
-.dash-edit-toggle {
-  flex-shrink: 0;
-}
-
-.dash-edit-panel {
-  margin-top: 0;
-}
-
-.dash-edit-form {
-  display: flex;
-  flex-direction: column;
-  gap: calc(var(--grid) * 1.5);
-}
-
-.dash-edit-rows {
-  border: var(--rule);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-}
-
-.dash-edit-group-head {
-  padding: 6px 10px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  color: var(--fg-tertiary);
-  background: var(--bg-inset);
-  border-top: var(--rule);
-}
-.dash-edit-group-head:first-child {
-  border-top: none;
-}
-
-.dash-edit-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--grid);
-  padding: 8px 10px;
-  border-top: var(--rule);
-}
-.dash-edit-row:first-child {
-  border-top: none;
-}
-.dash-edit-row:hover {
-  background: var(--bg-hover);
-}
-
-.dash-edit-row-main {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  cursor: pointer;
-  min-width: 0;
-}
-.dash-edit-row-main input[type="checkbox"] {
-  margin-top: 3px;
-  flex-shrink: 0;
-}
-
-.dash-edit-row-text {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-.dash-edit-row-name {
-  font-size: 13px;
-  color: var(--fg);
-}
-.dash-edit-row-desc {
-  font-size: 11px;
-  color: var(--fg-tertiary);
-}
-
-.dash-edit-row-actions {
-  display: flex;
-  gap: 2px;
-  flex-shrink: 0;
-}
-.dash-edit-move {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--fg-secondary);
-  width: 22px;
-  height: 22px;
-  line-height: 1;
-  font-size: 12px;
-  cursor: pointer;
-}
-.dash-edit-move:hover {
-  background: var(--bg-hover);
-  color: var(--fg);
-}
-
-.dash-edit-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.dash-edit-error {
-  color: var(--danger);
-  text-align: right;
-}
-
-@media (max-width: 719px) {
-  .dash-edit-row {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .dash-edit-row-actions {
-    align-self: flex-end;
-  }
-}
-
-/* ==========================================================================
    ux-pass-4: instant nav + progressive viz loading. Two pieces:
      - .nav-skeleton: <main>'s placeholder while pdb-nav.js's optimistic
        swap is waiting on a slow fetch (see pdb-nav.js's runNavigation).
@@ -2432,5 +2308,128 @@ body.pdb-agent-ask-mode * {
     --ag-panel-border-color: var(--border);
     --ag-menu-background-color: var(--bg-sidebar);
     --ag-menu-border-color: var(--border);
+  }
+}
+
+/* Tile gallery (dashboard "/") ------------------------------------------
+ * One uniform tile per installed tracker, rotating through up to 4
+ * headline metrics (services/ui/tiles.py). Rotation timing itself is
+ * pdb-tiles.js's job (per-tile phase offset + period so tiles ripple
+ * instead of flashing in unison) -- this just defines the fade/translate
+ * the JS toggles via .tile-metric-fade-out, and the failing/stale tint,
+ * matching the .tracker-status-banner-* convention used on /t/<tracker>. */
+.tile-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--grid);
+  margin: calc(var(--grid) * 2) 0;
+}
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 118px;
+  padding: 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--fg);
+  text-decoration: none;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.tile:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+.tile:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.tile-header {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--fg-secondary);
+}
+.tile-metric {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-height: 52px;
+}
+.tile-value {
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--fg);
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+.tile-label {
+  font-size: 12px;
+  color: var(--fg-secondary);
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+.tile-delta {
+  font-size: 11.5px;
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+.tile-delta-good { color: var(--ok); }
+.tile-delta-warn { color: var(--warn); }
+.tile-delta-neutral { color: var(--fg-tertiary); }
+.tile-metric-fade-out .tile-value,
+.tile-metric-fade-out .tile-label,
+.tile-metric-fade-out .tile-delta {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+.tile-metric-empty .tile-value {
+  color: var(--fg-tertiary);
+}
+.tile-dots {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.tile-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+.tile-dot.is-active {
+  background: var(--accent);
+}
+.tile-status-line {
+  font-size: 11px;
+  margin-top: 2px;
+}
+.tile-status-failing {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 6%, var(--bg));
+}
+.tile-status-failing .tile-status-line {
+  color: var(--danger);
+}
+.tile-status-failing:hover {
+  background: color-mix(in srgb, var(--danger) 10%, var(--bg));
+}
+.tile-status-stale {
+  border-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 6%, var(--bg));
+}
+.tile-status-stale .tile-status-line {
+  color: var(--warn);
+}
+.tile-status-stale:hover {
+  background: color-mix(in srgb, var(--warn) 10%, var(--bg));
+}
+@media (prefers-reduced-motion: reduce) {
+  .tile-value,
+  .tile-label,
+  .tile-delta {
+    transition: none;
   }
 }

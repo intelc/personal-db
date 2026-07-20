@@ -1,7 +1,7 @@
 """FastAPI dashboard for personal_db.
 
 Routes:
-  GET  /                          → dashboard (configured viz list)
+  GET  /                          → tile gallery: one tile per installed tracker
   GET  /v/<slug>                  → single viz on its own page
   GET  /t/<tracker>               → all viz for one tracker
   GET  /t/<tracker>/data          → read-only data browser (raw tracker tables)
@@ -18,10 +18,14 @@ Routes:
   POST /sync/<tracker>            → manual refresh button on viz pages
   POST /log_life_context          → form target for the life_context diary entry
 
-`/`, `/v/<slug>`, and `/t/<tracker>` default to deferring every viz render —
-each block ships a placeholder that pdb-lazy.js fills in via GET
-`/viz/<slug>/html` after first paint — and accept `?full=1` to restore the
-old fully-synchronous render (used by tests, `<noscript>`, and curl).
+`/` renders a tile gallery (services/ui/tiles.py + dashboard_tiles.html):
+one tile per installed tracker, server-rendered with its first metric so
+no-JS still shows something, then pdb-tiles.js hydrates and rotates through
+the rest client-side. `/v/<slug>` and `/t/<tracker>` still default to
+deferring every viz render — each block ships a placeholder that
+pdb-lazy.js fills in via GET `/viz/<slug>/html` after first paint — and
+accept `?full=1` to restore the old fully-synchronous render (used by
+tests, `<noscript>`, and curl).
 
 All programmatic endpoints live under the versioned `/api/v1/...` prefix
 (built as one `APIRouter`, see `_api_router` below); the routes above are
@@ -70,7 +74,6 @@ from personal_db.services.daemon.routes.agent import register_agent_routes
 from personal_db.services.daemon.routes.actions import register_action_routes
 from personal_db.services.daemon.routes.auth import register_auth_routes
 from personal_db.services.daemon.routes.common import validate_name as _validate_name
-from personal_db.services.daemon.routes.dashboard import register_dashboard_routes
 from personal_db.services.daemon.routes.data import register_data_routes
 from personal_db.services.daemon.routes.setup import register_setup_routes
 from personal_db.services.daemon.routes.sync import (
@@ -78,12 +81,14 @@ from personal_db.services.daemon.routes.sync import (
     _db_user_version,
     register_sync_routes,
 )
+from personal_db.services.daemon.routes.tiles import register_tiles_routes
 from personal_db.services.ui.builtin_viz import (
     build_health_page_data,
     repeated_failure_trackers,
     tracker_status_map,
 )
-from personal_db.services.ui.viz import discover, list_trackers_with_viz, load_dashboard_slugs
+from personal_db.services.ui.tiles import get_tiles
+from personal_db.services.ui.viz import discover, list_trackers_with_viz
 
 _HERE = Path(__file__).resolve().parents[2] / "ui"
 
@@ -181,51 +186,12 @@ def _tracker_title(cfg: Config, tracker: str) -> str:
     return humanize_tracker_name(tracker)
 
 
-def _dashboard_edit_panel(reg: dict[str, Any], enabled_slugs: list[str]) -> dict[str, Any]:
-    """Server-rendered data for the dashboard's "Edit dashboard" panel.
-
-    Splits every non-`auto` viz into two buckets:
-      - `enabled`: currently on the dashboard, in dashboard order. Reordered
-        client-side with per-row Up/Down buttons (pdb-dashboard.js) —
-        drag-to-reorder is out of scope.
-      - `groups`: everything else, grouped by tracker (human titles via
-        `humanize_tracker_name`) so a long list of available-but-off viz stays
-        scannable. Checking one of these rows moves it to the end of the
-        enabled order on Save (see pdb-dashboard.js's row-collection logic).
-    Auto-synthesized "recent rows" viz are omitted entirely, matching the
-    GET /api/v1/dashboard contract (they're reachable via /t/<tracker> and
-    /v/<slug> but don't clutter dashboard config).
-    """
-    order = {slug: i for i, slug in enumerate(enabled_slugs)}
-    non_auto = [v for v in reg.values() if not v.auto]
-    enabled = sorted((v for v in non_auto if v.slug in order), key=lambda v: order[v.slug])
-    disabled = [v for v in non_auto if v.slug not in order]
-
-    groups: list[dict[str, Any]] = []
-    by_tracker: dict[str, dict[str, Any]] = {}
-    for v in disabled:
-        group = by_tracker.get(v.tracker)
-        if group is None:
-            title = "General" if v.tracker == "_builtin" else humanize_tracker_name(v.tracker)
-            # Key is `viz`, not `items` -- a dict already has a built-in
-            # `.items()` method, and Jinja's `group.items` attribute lookup
-            # would resolve to that bound method (shadowing a same-named
-            # dict key) instead of the value we actually want here.
-            group = {"tracker": v.tracker, "title": title, "viz": []}
-            by_tracker[v.tracker] = group
-            groups.append(group)
-        group["viz"].append(v)
-
-    return {"enabled": enabled, "groups": groups}
-
-
 def _render_viz_fragment(cfg: Config, viz: Any) -> str:
     """Render one viz's body HTML, isolating a failing render as inline markup.
 
     Backs the standalone fragment route (GET /viz/<slug>/html, fetched by
-    pdb-lazy.js to fill in the `data-viz-src` placeholders the dashboard/
-    tracker/viz pages leave in place of a synchronous render — see
-    `_dashboard_edit_panel`'s neighbors below). Same isolation the three page
+    pdb-lazy.js to fill in the `data-viz-src` placeholders the tracker/viz
+    pages leave in place of a synchronous render). Same isolation those page
     routes have always done inline for their own `?full=1` path, just
     factored out so the fragment route and any future caller share it.
     """
@@ -383,7 +349,7 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
         validate_name=_validate_name,
         verify_same_origin_write=_verify_same_origin_write,
     )
-    register_dashboard_routes(api_router, cfg, registry=_registry)
+    register_tiles_routes(api_router, cfg)
     register_data_routes(
         app,
         api_router,
@@ -395,35 +361,21 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
     )
 
     @app.get("/", response_class=HTMLResponse)
-    async def dashboard(request: Request, full: bool = False):
-        # DEFAULT: don't render any viz synchronously — each block gets a
-        # `data-viz-src` placeholder (viz_pending macro) that pdb-lazy.js
-        # fills in concurrently after first paint. The live dashboard can be
-        # multiple seconds of blocking sqlite queries rendered inline; this
-        # is what gets the page to respond instantly. `?full=1` restores the
-        # old fully-synchronous render (tests, noscript, curl).
+    async def dashboard(request: Request):
+        # Tile gallery: one tile per installed tracker, server-rendered with
+        # its first metric already filled in (so no-JS still shows tracker
+        # names + a headline number) -- pdb-tiles.js hydrates from the
+        # inline #pdb-tiles-data JSON blob and handles rotation client-side.
+        # See services/ui/tiles.py for the per-tracker metrics loader
+        # (metrics-contract consumption, fallback derivation, TTL cache).
         reg = _registry()
-        slugs = load_dashboard_slugs(cfg, reg)
-        rendered = []
-        for slug in slugs:
-            viz = reg.get(slug)
-            if viz is None:
-                continue
-            html = None
-            if full:
-                try:
-                    html = viz.render(cfg)
-                except Exception as e:
-                    html = f'<p class="meta">error rendering {slug}: {e}</p>'
-            rendered.append({"viz": viz, "html": html})
+        tiles = get_tiles(cfg)
         return templates.TemplateResponse(
             request=request,
-            name="dashboard.html",
+            name="dashboard_tiles.html",
             context={
                 "active": "dashboard",
-                "rendered": rendered,
-                "full": full,
-                "edit_panel": _dashboard_edit_panel(reg, slugs),
+                "tiles": tiles,
                 **_nav_context(reg, active="dashboard"),
             },
         )

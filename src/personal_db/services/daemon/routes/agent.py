@@ -15,7 +15,6 @@ from personal_db.services.daemon.agent_terminal import (
     AgentTerminalManager,
     attach_terminal_websocket,
 )
-from personal_db.services.ui.viz import load_dashboard_slugs
 
 
 def _require_agent_terminal_enabled(cfg: Config) -> None:
@@ -77,22 +76,12 @@ def register_agent_routes(
             ],
         }
         if route == "/":
-            slugs = load_dashboard_slugs(cfg, reg)
-            base.update(
-                {
-                    "kind": "dashboard",
-                    "visualizations": [
-                        {
-                            "slug": slug,
-                            "name": reg[slug].name,
-                            "tracker": reg[slug].tracker,
-                            "description": reg[slug].description,
-                        }
-                        for slug in slugs
-                        if slug in reg
-                    ],
-                }
-            )
+            # "/" is now the tile gallery (services/ui/tiles.py) -- one tile
+            # per installed tracker rather than a configured viz list, so
+            # there's no per-slug "enabled visualizations" set to report
+            # here anymore. `trackers` (set unconditionally above) already
+            # covers what an agent needs to know about the gallery's contents.
+            base.update({"kind": "dashboard"})
             return base
         if route.startswith("/v/"):
             slug = route.removeprefix("/v/")

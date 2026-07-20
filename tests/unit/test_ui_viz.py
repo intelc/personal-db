@@ -1,4 +1,4 @@
-"""Tests for the visualization registry, discovery, and dashboard config."""
+"""Tests for the visualization registry and discovery."""
 
 import json
 import re
@@ -8,12 +8,11 @@ import sys
 from datetime import datetime, timedelta, timezone
 
 import pytest
-import yaml
 from fastapi.testclient import TestClient
 
 from personal_db.core.config import Config
 from personal_db.services.daemon.http import build_app
-from personal_db.services.ui.viz import discover, list_trackers_with_viz, load_dashboard_slugs
+from personal_db.services.ui.viz import discover, list_trackers_with_viz
 from tests._daemon_auth import auth_headers
 
 
@@ -58,46 +57,6 @@ def test_list_trackers_with_viz_excludes_builtin(tmp_path):
     assert "daily_time_accounting" in names
     assert "life_context" in names
     assert "_builtin" not in names
-
-
-def test_dashboard_default_includes_all_slugs(tmp_path):
-    cfg = _setup(tmp_path, "daily_time_accounting")
-    reg = discover(cfg)
-    slugs = load_dashboard_slugs(cfg, reg)
-    # No config file → all available
-    assert set(slugs) == set(reg.keys())
-
-
-@pytest.mark.darwin_only  # installs the darwin-gated life_context tracker
-def test_dashboard_config_filters_to_listed_slugs(tmp_path):
-    cfg = _setup(tmp_path, "daily_time_accounting", "life_context")
-    config_dir = cfg.root / ".config"
-    config_dir.mkdir()
-    (config_dir / "dashboard.yaml").write_text(
-        yaml.safe_dump({"viz": [
-            "daily_time_accounting:today_stack",
-            "_builtin:health",
-            "nonexistent:thing",  # should be silently filtered
-        ]})
-    )
-    reg = discover(cfg)
-    slugs = load_dashboard_slugs(cfg, reg)
-    assert slugs == ["daily_time_accounting:today_stack", "_builtin:health"]
-
-
-@pytest.mark.darwin_only  # installs the darwin-gated life_context tracker
-def test_dashboard_route_renders_each_configured_viz(tmp_path):
-    cfg = _setup(tmp_path, "daily_time_accounting", "life_context")
-    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
-    r = client.get("/")
-    assert r.status_code == 200
-    # Nav bar should show installed trackers
-    assert "daily_time_accounting" in r.text
-    assert "life_context" in r.text
-    # Each viz title appears
-    assert "TIME" in r.text  # title is "Today's Time" (apostrophe HTML-escaped)
-    assert "DIARY" in r.text
-    assert "TRACKER HEALTH" in r.text
 
 
 def test_dashboard_shows_welcome_hero_with_no_trackers(tmp_path):
@@ -171,28 +130,6 @@ def test_unknown_tracker_returns_404(tmp_path):
 _TODAY_STACK_BODY_MARKER = "no data yet for today"
 
 
-def test_dashboard_default_defers_viz_to_placeholders(tmp_path):
-    cfg = _setup(tmp_path, "daily_time_accounting")
-    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
-    r = client.get("/")
-    assert r.status_code == 200
-    # Header (title link + slug tooltip) still server-rendered.
-    assert '<a href="/v/daily_time_accounting:today_stack" class="viz-title-link" title="daily_time_accounting:today_stack">' in r.text
-    # Body is a placeholder, not the rendered viz.
-    assert 'data-viz-src="/viz/daily_time_accounting:today_stack/html"' in r.text
-    assert 'class="viz-pending"' in r.text
-    assert _TODAY_STACK_BODY_MARKER not in r.text
-
-
-def test_dashboard_full_renders_viz_body_inline(tmp_path):
-    cfg = _setup(tmp_path, "daily_time_accounting")
-    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
-    r = client.get("/?full=1")
-    assert r.status_code == 200
-    assert "viz-pending" not in r.text
-    assert _TODAY_STACK_BODY_MARKER in r.text
-
-
 def test_tracker_page_default_defers_viz_to_placeholders(tmp_path):
     cfg = _setup(tmp_path, "daily_time_accounting")
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
@@ -254,36 +191,6 @@ def test_viz_fragment_endpoint_isolates_render_error(tmp_path):
     r = client.get("/viz/daily_time_accounting:broken/html")
     assert r.status_code == 200
     assert "error rendering daily_time_accounting:broken" in r.text
-
-
-def test_broken_viz_does_not_kill_dashboard(tmp_path):
-    """If one viz raises, the others still render and the page returns 200.
-
-    The default (non-?full=1) dashboard defers every viz to a placeholder
-    (see http.py) so the broken render doesn't happen inline here -- fetch
-    it via its fragment endpoint to exercise the per-viz error isolation
-    directly. `?full=1` covers the old fully-synchronous behavior.
-    """
-    cfg = _setup(tmp_path, "daily_time_accounting")
-    # Overwrite the installed visualizations.py with a broken one
-    bad = cfg.trackers_dir / "daily_time_accounting" / "visualizations.py"
-    bad.write_text(
-        "def list_visualizations():\n"
-        "    return [{'slug': 'broken', 'name': 'Broken', 'description': '',\n"
-        "             'render': lambda cfg: 1/0}]\n"
-    )
-    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
-    r = client.get("/")
-    assert r.status_code == 200
-    assert 'data-viz-src="/viz/daily_time_accounting:broken/html"' in r.text
-
-    frag = client.get("/viz/daily_time_accounting:broken/html")
-    assert frag.status_code == 200
-    assert "error rendering" in frag.text
-
-    full = client.get("/?full=1")
-    assert full.status_code == 200
-    assert "error rendering" in full.text
 
 
 def test_refresh_button_renders_on_tracker_page(tmp_path):
@@ -440,33 +347,6 @@ def test_explicit_viz_suppresses_synthesized(tmp_path):
     reg = discover(cfg)
     assert "daily_time_accounting:today_stack" in reg
     assert "daily_time_accounting:recent" not in reg
-
-
-def test_dashboard_default_excludes_auto_viz(tmp_path):
-    """Synthetic :recent rows shouldn't clutter the dashboard by default."""
-    cfg = _setup(tmp_path, "github_commits", "daily_time_accounting")
-    _strip_viz_file(cfg, "github_commits")  # force synthesized
-    reg = discover(cfg)
-    slugs = load_dashboard_slugs(cfg, reg)
-    # Curated viz appear
-    assert "daily_time_accounting:today_stack" in slugs
-    assert "_builtin:health" in slugs
-    # Auto-synthesized do NOT appear by default
-    assert "github_commits:recent" not in slugs
-
-
-def test_dashboard_config_can_explicitly_include_auto_viz(tmp_path):
-    """User can add an auto viz to their dashboard if they want it there."""
-    cfg = _setup(tmp_path, "github_commits")
-    _strip_viz_file(cfg, "github_commits")  # force synthesized
-    config_dir = cfg.root / ".config"
-    config_dir.mkdir()
-    (config_dir / "dashboard.yaml").write_text(
-        yaml.safe_dump({"viz": ["github_commits:recent"]})
-    )
-    reg = discover(cfg)
-    slugs = load_dashboard_slugs(cfg, reg)
-    assert slugs == ["github_commits:recent"]
 
 
 def test_synthesized_viz_renders_recent_rows(tmp_path):
@@ -697,7 +577,7 @@ def test_base_uses_vendored_ag_assets(tmp_path):
     assert "/static/pdb-sync.js?v=4" in r.text
     assert "/static/pdb-nav.js?v=3" in r.text
     assert "/static/pdb-lazy.js?v=1" in r.text
-    assert "/static/pdb-dashboard.js?v=1" in r.text
+    assert "/static/pdb-tiles.js?v=1" in r.text
     assert "/static/pdb-data.js?v=2" in r.text
     assert "cdn.jsdelivr.net" not in r.text
 

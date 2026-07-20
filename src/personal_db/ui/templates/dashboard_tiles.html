@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}dashboard · personal_db{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+{% if not nav_trackers %}
+  <section class="welcome-hero">
+    <p class="welcome-kicker">PersonalDB</p>
+    <h1 class="welcome-title">Your personal data, synced into one private database</h1>
+    <p class="welcome-promise">
+      Everything lives in <code>~/personal_db</code> on this Mac — nothing leaves your machine.
+    </p>
+    <a href="/setup" class="btn-primary welcome-cta">Connect your first source &rarr;</a>
+    <div class="welcome-badges">
+      <span class="badge">Whoop</span>
+      <span class="badge">Oura</span>
+      <span class="badge">GitHub</span>
+      <span class="badge">Screen Time</span>
+    </div>
+  </section>
+{% else %}
+<header class="page-head">
+  <h1>Dashboard</h1>
+</header>
+
+{% if tiles %}
+<div class="tile-gallery" id="pdb-tile-gallery" data-tile-gallery>
+  {% for tile in tiles %}
+  <a class="tile tile-status-{{ tile.status }}" href="{{ tile.href }}" data-tile data-slug="{{ tile.slug }}">
+    <div class="tile-header">{{ tile.title }}</div>
+    {% if tile.metrics %}
+      {% set m0 = tile.metrics[0] %}
+      <div class="tile-metric" data-tile-metric>
+        <div class="tile-value" data-tile-value>{{ m0.value }}</div>
+        <div class="tile-label" data-tile-label>{{ m0.label }}</div>
+        <div
+          class="tile-delta {% if m0.good == true %}tile-delta-good{% elif m0.good == false %}tile-delta-warn{% else %}tile-delta-neutral{% endif %}"
+          data-tile-delta
+          {% if not m0.delta %}hidden{% endif %}
+        >{{ m0.delta or "" }}</div>
+      </div>
+      {% if tile.metrics|length > 1 %}
+      <div class="tile-dots" data-tile-dots role="tablist" aria-label="{{ tile.title }} metrics">
+        {% for m in tile.metrics %}
+        <span class="tile-dot {% if loop.index0 == 0 %}is-active{% endif %}" data-tile-dot data-index="{{ loop.index0 }}" role="tab" aria-label="{{ m.label }}"></span>
+        {% endfor %}
+      </div>
+      {% endif %}
+    {% else %}
+      <div class="tile-metric tile-metric-empty">
+        <div class="tile-value">—</div>
+        <div class="tile-label">no data yet</div>
+      </div>
+    {% endif %}
+    {% if tile.status_detail %}
+      <div class="tile-status-line">{{ tile.status_detail }}</div>
+    {% endif %}
+  </a>
+  {% endfor %}
+</div>
+<script type="application/json" id="pdb-tiles-data">{{ tiles | tojson }}</script>
+{% else %}
+  <section class="block">
+    <h2 class="block-h">NOTHING ON THE DASHBOARD YET</h2>
+    <p class="meta">
+      Your trackers are installed but nothing has synced yet — tiles appear
+      here as data lands. <a href="/setup">Go to Setup &rarr;</a>
+    </p>
+  </section>
+{% endif %}
+
+{% endif %}
+{% endblock %}

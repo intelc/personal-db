@@ -23,18 +23,13 @@ Contract:
 
 from __future__ import annotations
 
-import contextlib
 import importlib.util
-import os
 import sqlite3
 import sys
-import tempfile
 from dataclasses import dataclass
 from html import escape
 from pathlib import Path
 from typing import Callable
-
-import yaml
 
 from personal_db.core.config import Config
 from personal_db.core.manifest import Manifest, ManifestError, load_manifest
@@ -207,56 +202,3 @@ def list_trackers_with_viz(registry: dict[str, Visualization]) -> list[str]:
     """Tracker names that have at least one viz, sorted, excluding _builtin."""
     names = {v.tracker for v in registry.values() if v.tracker != _BUILTIN_TRACKER}
     return sorted(names)
-
-
-# ---------- dashboard config ----------
-
-_CONFIG_REL_PATH = ".config/dashboard.yaml"
-
-
-def _config_path(cfg: Config) -> Path:
-    return cfg.root / _CONFIG_REL_PATH
-
-
-def load_dashboard_slugs(cfg: Config, registry: dict[str, Visualization]) -> list[str]:
-    """Load the user's configured list of slugs to show on the dashboard.
-
-    If <root>/.config/dashboard.yaml is missing or unparseable, falls back to
-    "every available slug" (deterministic order: built-in first, then trackers
-    alphabetical, viz in declared order). Slugs not present in the registry
-    are silently filtered out (e.g. user uninstalled a tracker).
-    """
-    p = _config_path(cfg)
-    if p.exists():
-        try:
-            data = yaml.safe_load(p.read_text()) or {}
-            slugs = data.get("viz") or []
-            if isinstance(slugs, list):
-                return [s for s in slugs if s in registry]
-        except yaml.YAMLError:
-            pass
-    # Default: every curated (non-auto) viz, in registry order. Auto-synthesized
-    # "recent rows" viz are still reachable via /t/<tracker> and /v/<slug> but
-    # don't clutter the default dashboard.
-    return [slug for slug, v in registry.items() if not v.auto]
-
-
-def save_dashboard_slugs(cfg: Config, slugs: list[str]) -> None:
-    """Persist the dashboard's enabled/ordered slug list to dashboard.yaml.
-
-    Writes atomically (temp file + rename) so a crash mid-write can't leave a
-    truncated/corrupt config behind. The file's only key is `viz` -- this
-    intentionally overwrites the whole file rather than merging, matching
-    load_dashboard_slugs' "only key is viz" contract.
-    """
-    p = _config_path(cfg)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(dir=str(p.parent), prefix=f".{p.name}.", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w") as f:
-            yaml.safe_dump({"viz": list(slugs)}, f)
-        os.replace(tmp_name, p)
-    except BaseException:
-        with contextlib.suppress(FileNotFoundError):
-            os.remove(tmp_name)
-        raise
