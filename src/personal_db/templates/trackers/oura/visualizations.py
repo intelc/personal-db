@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from personal_db.config import Config
 from personal_db.ui.charts import vertical_bars
@@ -84,6 +84,74 @@ def render_hrv_30d(cfg: Config) -> str:
         '<p class="meta">oura sleep HRV (ms RMSSD) · last 30 days · higher is better</p>'
         + vertical_bars(items, color="var(--chart-green)", show_every_nth_label=5)
     )
+
+
+def _as_of(day_str: str) -> str | None:
+    """Human 'as of <date>' suffix when the reading isn't from today."""
+    try:
+        d = date.fromisoformat(day_str)
+    except (ValueError, TypeError):
+        return None
+    if d == datetime.now().date():
+        return None
+    return f"as of {d.isoformat()}"
+
+
+def _zone_good(value: int | float | None) -> bool | None:
+    if value is None:
+        return None
+    if value >= 80:
+        return True
+    if value < 60:
+        return False
+    return None
+
+
+def metrics(cfg: Config) -> list[dict]:
+    """Dashboard tile metrics: latest readiness and sleep scores. Oura syncs
+    can lag well behind 'today', so each value carries an explicit
+    'as of <date>' detail rather than hiding staleness."""
+    con = _connect(cfg)
+    if not con:
+        return []
+    out: list[dict] = []
+    try:
+        readiness = con.execute(
+            "SELECT day, score FROM oura_daily_readiness "
+            "WHERE score IS NOT NULL ORDER BY day DESC LIMIT 1"
+        ).fetchone()
+        sleep = con.execute(
+            "SELECT day, score FROM oura_daily_sleep "
+            "WHERE score IS NOT NULL ORDER BY day DESC LIMIT 1"
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        con.close()
+
+    if readiness:
+        day, score = readiness
+        out.append(
+            {
+                "label": "Readiness",
+                "value": str(int(score)),
+                "detail": _as_of(day),
+                "delta": None,
+                "good": _zone_good(score),
+            }
+        )
+    if sleep:
+        day, score = sleep
+        out.append(
+            {
+                "label": "Sleep score",
+                "value": str(int(score)),
+                "detail": _as_of(day),
+                "delta": None,
+                "good": _zone_good(score),
+            }
+        )
+    return out
 
 
 def list_visualizations() -> list[dict]:

@@ -80,6 +80,71 @@ def render_top_repos(cfg: Config) -> str:
     )
 
 
+def metrics(cfg: Config) -> list[dict]:
+    """Dashboard tile metrics: commits this week (vs previous week) and
+    active repos in the last 30 days."""
+    con = _connect(cfg)
+    if not con:
+        return []
+    out: list[dict] = []
+    try:
+        row = con.execute(
+            "SELECT "
+            "  sum(CASE WHEN committed_at >= datetime('now', '-7 days') THEN 1 ELSE 0 END), "
+            "  sum(CASE WHEN committed_at >= datetime('now', '-14 days') "
+            "           AND committed_at < datetime('now', '-7 days') THEN 1 ELSE 0 END) "
+            "FROM github_commits WHERE committed_at >= datetime('now', '-14 days')",
+        ).fetchone()
+        active_repos = con.execute(
+            "SELECT count(DISTINCT repo) FROM github_commits "
+            "WHERE committed_at >= datetime('now', '-30 days')"
+        ).fetchone()[0]
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        con.close()
+
+    this_week, prev_week = (row or (0, 0))
+    this_week = this_week or 0
+    prev_week = prev_week or 0
+
+    delta = None
+    good = None
+    if this_week != prev_week:
+        good = True if this_week > prev_week else False
+    # Percentages off a tiny baseline (e.g. 2 -> 78 = "+3800%") are more
+    # confusing than useful, so fall back to an absolute-count delta below
+    # a small-baseline threshold.
+    if prev_week >= 5:
+        pct = (this_week - prev_week) / prev_week * 100
+        sign = "+" if pct >= 0 else ""
+        delta = f"{sign}{pct:.0f}% vs last week"
+    elif this_week != prev_week:
+        diff = this_week - prev_week
+        sign = "+" if diff >= 0 else ""
+        delta = f"{sign}{int(diff)} vs last week"
+
+    out.append(
+        {
+            "label": "Commits this week",
+            "value": str(int(this_week)),
+            "detail": None,
+            "delta": delta,
+            "good": good,
+        }
+    )
+    out.append(
+        {
+            "label": "Active repos (30d)",
+            "value": str(int(active_repos or 0)),
+            "detail": None,
+            "delta": None,
+            "good": None,
+        }
+    )
+    return out
+
+
 def list_visualizations() -> list[dict]:
     return [
         {

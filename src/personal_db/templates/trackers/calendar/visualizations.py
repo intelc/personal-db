@@ -49,6 +49,90 @@ def render_reality_labels(cfg: Config) -> str:
     )
 
 
+def metrics(cfg: Config) -> list[dict]:
+    """Dashboard tile metrics: meetings today, the next event today, and
+    meeting hours this week. Excludes all-day entries (holidays etc.) and
+    soft-deleted rows (deleted_at IS NOT NULL)."""
+    con = _connect(cfg)
+    if not con:
+        return []
+    out: list[dict] = []
+    try:
+        today_rows = con.execute(
+            """
+            SELECT start_at, title FROM calendar_events
+            WHERE deleted_at IS NULL AND all_day = 0
+              AND date(start_at, 'localtime') = date('now', 'localtime')
+            ORDER BY start_at
+            """
+        ).fetchall()
+        week_hours = con.execute(
+            """
+            SELECT sum((julianday(end_at) - julianday(start_at)) * 24.0)
+            FROM calendar_events
+            WHERE deleted_at IS NULL AND all_day = 0
+              AND start_at >= datetime('now', '-7 days')
+            """
+        ).fetchone()[0]
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        con.close()
+
+    out.append(
+        {
+            "label": "Meetings today",
+            "value": str(len(today_rows)),
+            "detail": None,
+            "delta": None,
+            "good": None,
+        }
+    )
+
+    now_utc = datetime.now(UTC)
+    next_row = None
+    for start_at, title in today_rows:
+        try:
+            start_dt = datetime.fromisoformat(start_at.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if start_dt >= now_utc:
+            next_row = (start_dt, title)
+            break
+    if next_row:
+        start_dt, title = next_row
+        out.append(
+            {
+                "label": "Next event",
+                "value": start_dt.astimezone().strftime("%-I:%M %p"),
+                "detail": title,
+                "delta": None,
+                "good": None,
+            }
+        )
+    else:
+        out.append(
+            {
+                "label": "Next event",
+                "value": "none left today",
+                "detail": None,
+                "delta": None,
+                "good": None,
+            }
+        )
+
+    out.append(
+        {
+            "label": "Meeting hours (7d)",
+            "value": f"{(week_hours or 0):.1f}h",
+            "detail": None,
+            "delta": None,
+            "good": None,
+        }
+    )
+    return out
+
+
 def list_visualizations() -> list[dict]:
     return [
         {

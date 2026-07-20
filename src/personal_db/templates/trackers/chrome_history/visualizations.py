@@ -66,6 +66,85 @@ def render_hourly_heatmap(cfg: Config) -> str:
     )
 
 
+def metrics(cfg: Config) -> list[dict]:
+    """Dashboard tile metrics: browsing hours today (vs 30d daily average)
+    and today's top domain by dwell time.
+
+    Fetches raw rows bounded to the last ~2 days (a plain range predicate
+    SQLite can SEARCH via idx_chrome_visits_visited_at) and aggregates
+    "today" in Python — grouping/filtering by date(visited_at, 'localtime')
+    directly in SQL makes the planner pick a different index and scan the
+    whole 99k-row table (measured ~35-100ms vs <2ms for the bounded fetch).
+    """
+    con = _connect(cfg)
+    if not con:
+        return []
+    bound = (datetime.now() - timedelta(days=2)).isoformat()
+    try:
+        rows = con.execute(
+            "SELECT domain, duration_seconds, visited_at FROM chrome_visits "
+            "WHERE visited_at >= ? AND duration_seconds > 0",
+            (bound,),
+        ).fetchall()
+        thirty_total = con.execute(
+            "SELECT COALESCE(sum(duration_seconds), 0) FROM chrome_visits "
+            "WHERE visited_at >= datetime('now', '-30 days') AND duration_seconds > 0"
+        ).fetchone()[0]
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        con.close()
+
+    today = datetime.now().date()
+    by_domain: dict[str, float] = {}
+    today_seconds = 0.0
+    for domain, dur, visited_at in rows:
+        try:
+            ts = datetime.fromisoformat(visited_at.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            continue
+        if ts.astimezone().date() != today:
+            continue
+        dur = dur or 0.0
+        today_seconds += dur
+        if domain:
+            by_domain[domain] = by_domain.get(domain, 0.0) + dur
+
+    today_hours = today_seconds / 3600.0
+    avg_hours = (thirty_total or 0) / 3600.0 / 30.0
+
+    delta = None
+    good = None
+    if avg_hours > 0.05:
+        pct = (today_hours - avg_hours) / avg_hours * 100
+        if abs(pct) >= 5:
+            sign = "+" if pct >= 0 else ""
+            delta = f"{sign}{pct:.0f}% vs 30d avg"
+            good = False if pct >= 10 else (True if pct <= -10 else None)
+
+    out = [
+        {
+            "label": "Browsing today",
+            "value": f"{today_hours:.1f}h",
+            "detail": None,
+            "delta": delta,
+            "good": good,
+        }
+    ]
+    if by_domain:
+        top_domain, top_secs = max(by_domain.items(), key=lambda kv: kv[1])
+        out.append(
+            {
+                "label": "Top domain today",
+                "value": top_domain,
+                "detail": f"{top_secs / 3600.0:.1f}h",
+                "delta": None,
+                "good": None,
+            }
+        )
+    return out
+
+
 def list_visualizations() -> list[dict]:
     return [
         {

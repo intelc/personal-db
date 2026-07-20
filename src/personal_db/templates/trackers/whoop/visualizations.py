@@ -80,6 +80,66 @@ def render_sleep_efficiency(cfg: Config) -> str:
     )
 
 
+def _as_of(date_str: str) -> str | None:
+    """Human 'as of <date>' suffix when the reading isn't from today (local)."""
+    try:
+        d = datetime.fromisoformat(date_str.replace("Z", "+00:00")).astimezone().date()
+    except (ValueError, AttributeError):
+        return None
+    if d == datetime.now().date():
+        return None
+    return f"as of {d.isoformat()}"
+
+
+def metrics(cfg: Config) -> list[dict]:
+    """Dashboard tile metrics: latest recovery score and latest (non-nap)
+    sleep efficiency. Whoop syncs can lag by days/weeks, so each value
+    carries an explicit 'as of <date>' detail rather than hiding staleness."""
+    con = _connect(cfg)
+    if not con:
+        return []
+    out: list[dict] = []
+    try:
+        recovery = con.execute(
+            "SELECT start, recovery_score FROM whoop_recovery "
+            "WHERE recovery_score IS NOT NULL ORDER BY start DESC LIMIT 1"
+        ).fetchone()
+        sleep = con.execute(
+            "SELECT start, sleep_efficiency_pct FROM whoop_sleep "
+            "WHERE sleep_efficiency_pct IS NOT NULL AND nap = 0 "
+            "ORDER BY start DESC LIMIT 1"
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        con.close()
+
+    if recovery:
+        start, score = recovery
+        good = True if score > 66 else (False if score < 33 else None)
+        out.append(
+            {
+                "label": "Recovery",
+                "value": str(int(score)),
+                "detail": _as_of(start),
+                "delta": None,
+                "good": good,
+            }
+        )
+    if sleep:
+        start, pct = sleep
+        out.append(
+            {
+                "label": "Sleep efficiency",
+                "value": f"{pct:.0f}%",
+                "detail": _as_of(start),
+                "delta": None,
+                "good": None,
+            }
+        )
+    return out
+
+
 def list_visualizations() -> list[dict]:
     return [
         {

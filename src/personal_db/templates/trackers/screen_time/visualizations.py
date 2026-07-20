@@ -363,6 +363,109 @@ def render_device_flame_24h(cfg: Config) -> str:
     )
 
 
+def metrics(cfg: Config) -> list[dict]:
+    """Dashboard tile metrics: Mac hours today, iPhone hours today (vs 30d
+    avg), and today's top Mac app. Never raises — missing tables/files just
+    shrink the returned list."""
+    out: list[dict] = []
+
+    con = _connect(cfg)
+    if con:
+        # Bound the scan to the last 2 local days so the SQLite planner can
+        # SEARCH the start_at index instead of scanning the whole table; the
+        # date(...,'localtime') predicate then only evaluates that small slice.
+        bound = (datetime.now() - timedelta(days=2)).isoformat()
+        try:
+            mac_hours = con.execute(
+                "SELECT COALESCE(sum(seconds), 0) / 3600.0 FROM screen_time_app_usage "
+                "WHERE start_at >= ? AND date(start_at, 'localtime') = date('now', 'localtime')",
+                (bound,),
+            ).fetchone()[0]
+            top_row = con.execute(
+                "SELECT bundle_id, sum(seconds) / 3600.0 AS hours FROM screen_time_app_usage "
+                "WHERE start_at >= ? AND date(start_at, 'localtime') = date('now', 'localtime') "
+                "GROUP BY bundle_id ORDER BY hours DESC LIMIT 1",
+                (bound,),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            mac_hours, top_row = None, None
+        con.close()
+
+        if mac_hours is not None:
+            out.append(
+                {
+                    "label": "Mac today",
+                    "value": f"{mac_hours:.1f}h",
+                    "detail": None,
+                    "delta": None,
+                    "good": None,
+                }
+            )
+        if top_row and top_row[1]:
+            name_by_bundle = _load_name_cache(cfg)
+            bundle_id, hours = top_row
+            out.append(
+                {
+                    "label": "Top app today",
+                    "value": name_by_bundle.get(bundle_id, bundle_id),
+                    "detail": f"{hours:.1f}h",
+                    "delta": None,
+                    "good": None,
+                }
+            )
+
+    if _MOSSPATH_DB.exists():
+        try:
+            mcon = sqlite3.connect(f"file:{_MOSSPATH_DB}?mode=ro", uri=True)
+            now = datetime.now()
+            today_cutoff_ts = int((now - timedelta(days=2)).timestamp())
+            rows = mcon.execute(
+                "SELECT start_timestamp, duration_seconds FROM screen_time_sessions "
+                "WHERE platform = 'iphone' AND start_timestamp >= ?",
+                (today_cutoff_ts,),
+            ).fetchall()
+            thirty_cutoff_ts = (now - timedelta(days=30)).timestamp()
+            thirty_total = mcon.execute(
+                "SELECT COALESCE(sum(duration_seconds), 0) FROM screen_time_sessions "
+                "WHERE platform = 'iphone' AND start_timestamp >= ?",
+                (thirty_cutoff_ts,),
+            ).fetchone()[0]
+            mcon.close()
+        except sqlite3.OperationalError:
+            rows, thirty_total = [], 0.0
+
+        today_date = now.date()
+        today_seconds = sum(
+            dur or 0
+            for ts, dur in rows
+            if datetime.fromtimestamp(ts).date() == today_date
+        )
+        iphone_hours = today_seconds / 3600.0
+        avg_hours = (thirty_total or 0) / 3600.0 / 30.0
+
+        delta = None
+        good = None
+        if avg_hours > 0.05:
+            pct = (iphone_hours - avg_hours) / avg_hours * 100
+            if abs(pct) >= 5:
+                sign = "+" if pct >= 0 else ""
+                delta = f"{sign}{pct:.0f}% vs 30d avg"
+                # More phone screen time is not a win.
+                good = False if pct >= 10 else (True if pct <= -10 else None)
+
+        out.append(
+            {
+                "label": "iPhone today",
+                "value": f"{iphone_hours:.1f}h",
+                "detail": None,
+                "delta": delta,
+                "good": good,
+            }
+        )
+
+    return out[:4]
+
+
 def list_visualizations() -> list[dict]:
     return [
         {

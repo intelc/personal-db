@@ -751,6 +751,66 @@ def render_session_timeline(cfg: Config) -> str:
     )
 
 
+def metrics(cfg: Config) -> list[dict]:
+    """Dashboard tile metrics: agent-running hours today, prompts submitted
+    today, and sessions started today (all bucketed by local day)."""
+    con = _connect(cfg)
+    if not con:
+        return []
+    # Bound each query to the last ~2 local days so SQLite can SEARCH the
+    # relevant timestamp index instead of scanning the whole table just to
+    # evaluate date(col, 'localtime').
+    bound = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+    try:
+        running_hours = con.execute(
+            "SELECT COALESCE(sum(duration_seconds), 0) / 3600.0 "
+            "FROM code_agent_intervals "
+            "WHERE state = 'agent_running' AND start_ts >= ? "
+            "  AND date(start_ts, 'localtime') = date('now', 'localtime')",
+            (bound,),
+        ).fetchone()[0]
+        prompts_today = con.execute(
+            "SELECT count(*) FROM code_agent_events "
+            "WHERE event_type = 'prompt_submitted' AND timestamp >= ? "
+            "  AND date(timestamp, 'localtime') = date('now', 'localtime')",
+            (bound,),
+        ).fetchone()[0]
+        sessions_today = con.execute(
+            "SELECT count(*) FROM code_agent_sessions "
+            "WHERE started_at >= ? "
+            "  AND date(started_at, 'localtime') = date('now', 'localtime')",
+            (bound,),
+        ).fetchone()[0]
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        con.close()
+
+    return [
+        {
+            "label": "Agent running today",
+            "value": f"{running_hours:.1f}h",
+            "detail": None,
+            "delta": None,
+            "good": None,
+        },
+        {
+            "label": "Prompts today",
+            "value": str(int(prompts_today or 0)),
+            "detail": None,
+            "delta": None,
+            "good": None,
+        },
+        {
+            "label": "Sessions today",
+            "value": str(int(sessions_today or 0)),
+            "detail": None,
+            "delta": None,
+            "good": None,
+        },
+    ]
+
+
 def list_visualizations() -> list[dict]:
     return [
         {

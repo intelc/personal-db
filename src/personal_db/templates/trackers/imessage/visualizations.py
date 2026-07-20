@@ -158,6 +158,97 @@ def render_word_cloud(cfg: Config) -> str:
     )
 
 
+def metrics(cfg: Config) -> list[dict]:
+    """Dashboard tile metrics: messages today, messages in the last 7 days
+    (vs the previous 7 days), and the top inbound contact over 30 days."""
+    con = _connect(cfg)
+    if not con:
+        return []
+    out: list[dict] = []
+
+    # Bound the scan to the last 2 local days so SQLite can SEARCH the
+    # sent_at index (a plain range predicate) instead of scanning the whole
+    # 188k-row table just to evaluate date(sent_at, 'localtime').
+    two_day_bound = (datetime.now() - timedelta(days=2)).isoformat()
+    try:
+        today_count = con.execute(
+            "SELECT count(*) FROM imessage_messages "
+            "WHERE sent_at >= ? AND date(sent_at, 'localtime') = date('now', 'localtime')",
+            (two_day_bound,),
+        ).fetchone()[0]
+        row = con.execute(
+            "SELECT "
+            "  sum(CASE WHEN sent_at >= datetime('now', '-7 days') THEN 1 ELSE 0 END), "
+            "  sum(CASE WHEN sent_at >= datetime('now', '-14 days') "
+            "           AND sent_at < datetime('now', '-7 days') THEN 1 ELSE 0 END) "
+            "FROM imessage_messages WHERE sent_at >= datetime('now', '-14 days')",
+        ).fetchone()
+        contact_lookup = _load_contact_lookup(con)
+        top_rows = con.execute(
+            "SELECT handle, count(*) AS n FROM imessage_messages "
+            "WHERE sent_at >= datetime('now', '-30 days') "
+            "  AND is_from_me = 0 AND handle IS NOT NULL "
+            "GROUP BY handle ORDER BY n DESC LIMIT 20",
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        con.close()
+
+    out.append(
+        {
+            "label": "Messages today",
+            "value": str(int(today_count or 0)),
+            "detail": None,
+            "delta": None,
+            "good": None,
+        }
+    )
+
+    last7, prev7 = (row or (0, 0))
+    last7 = last7 or 0
+    prev7 = prev7 or 0
+    delta = None
+    # Percentages off a tiny baseline are more confusing than useful, so
+    # fall back to an absolute-count delta below a small-baseline threshold.
+    if prev7 >= 5:
+        pct = (last7 - prev7) / prev7 * 100
+        sign = "+" if pct >= 0 else ""
+        delta = f"{sign}{pct:.0f}% vs prior 7d"
+    elif last7 != prev7:
+        diff = last7 - prev7
+        sign = "+" if diff >= 0 else ""
+        delta = f"{sign}{int(diff)} vs prior 7d"
+    out.append(
+        {
+            "label": "Messages (7d)",
+            "value": str(int(last7)),
+            "detail": None,
+            "delta": delta,
+            "good": None,  # message volume isn't inherently good or bad
+        }
+    )
+
+    counts: Counter[str] = Counter()
+    for handle, n in top_rows:
+        norm = normalize_handle(handle)
+        name = contact_lookup.get(norm) if contact_lookup else None
+        counts[name or handle] += n
+    if counts:
+        top_name, top_n = counts.most_common(1)[0]
+        out.append(
+            {
+                "label": "Top contact (30d)",
+                "value": top_name,
+                "detail": f"{top_n} inbound",
+                "delta": None,
+                "good": None,
+            }
+        )
+
+    return out[:4]
+
+
 def list_visualizations() -> list[dict]:
     return [
         {
