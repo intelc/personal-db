@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>PersonalDB version mismatch</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #0f172a;
+        color: #e2e8f0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        margin: 0;
+      }
+      .card {
+        max-width: 34rem;
+        padding: 2rem;
+        text-align: center;
+      }
+      h1 { font-size: 1.25rem; margin-bottom: 0.5rem; }
+      p { color: #94a3b8; line-height: 1.5; }
+      code {
+        background: #1e293b;
+        padding: 0.15rem 0.4rem;
+        border-radius: 4px;
+        color: #2dd4bf;
+      }
+      .versions {
+        display: flex;
+        justify-content: center;
+        gap: 2rem;
+        margin: 1.25rem 0;
+      }
+      .versions .label {
+        display: block;
+        font-size: 0.75rem;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .versions .value {
+        display: block;
+        margin-top: 0.2rem;
+        font-size: 1rem;
+        font-weight: 600;
+        color: #e2e8f0;
+      }
+      .causes {
+        text-align: left;
+        margin: 1.25rem 0 0.5rem;
+        padding: 0;
+        list-style: none;
+      }
+      .causes li {
+        background: #1e293b;
+        border-radius: 6px;
+        padding: 0.75rem 1rem;
+        margin-bottom: 0.6rem;
+        font-size: 0.85rem;
+      }
+      .causes .remedy {
+        color: #94a3b8;
+        margin-top: 0.4rem;
+      }
+      .causes pre {
+        margin: 0.4rem 0 0;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      .causes code {
+        display: block;
+        padding: 0.5rem 0.6rem;
+      }
+      button {
+        margin-top: 1.25rem;
+        padding: 0.6rem 1.4rem;
+        font-size: 0.95rem;
+        border: none;
+        border-radius: 6px;
+        background: #2dd4bf;
+        color: #0f172a;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:active { transform: translateY(1px); }
+      .detail { font-size: 0.8rem; color: #64748b; margin-top: 1rem; }
+      .continue-link {
+        display: block;
+        margin-top: 0.75rem;
+        font-size: 0.8rem;
+      }
+      .continue-link a { color: #64748b; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>🟠 Another PersonalDB daemon owns 127.0.0.1:8765</h1>
+      <p>
+        Something answered PersonalDB's health check, but it isn't running the
+        version this app expects -- opening it as-is would likely just show a
+        blank window.
+      </p>
+      <div class="versions">
+        <div>
+          <span class="label">Daemon reports</span>
+          <span class="value" id="daemon-version">unknown</span>
+        </div>
+        <div>
+          <span class="label">App expects</span>
+          <span class="value" id="app-version">unknown</span>
+        </div>
+      </div>
+      <ul class="causes">
+        <li>
+          An old <code>com.personal_db.daemon</code> LaunchAgent (from a
+          previous <code>personal-db daemon install</code>, often in a dev
+          checkout) is still running and holding the port.
+          <div class="remedy">Remedy: stop and remove it, then quit &amp; reopen this app.</div>
+          <pre><code>launchctl bootout gui/$UID/com.personal_db.daemon
+rm ~/Library/LaunchAgents/com.personal_db.daemon.plist</code></pre>
+        </li>
+        <li>
+          A daemon started manually from a terminal (e.g.
+          <code>personal-db dev daemon run</code>) is holding the port.
+          <div class="remedy">Remedy: stop that process, then quit &amp; reopen this app.</div>
+        </li>
+      </ul>
+      <button id="retry">Retry</button>
+      <p class="detail" id="detail"></p>
+      <span class="continue-link"
+        ><a id="continue" href="#">Continue anyway (dev only -- may show a blank page)</a></span
+      >
+    </div>
+    <script type="module">
+      // Tauri v2 exposes the invoke bridge on window.__TAURI__ when the
+      // `withGlobalTauri` build option is enabled (see tauri.conf.json), same
+      // mechanism daemon-down.html uses for its Retry button.
+      const params = new URLSearchParams(window.location.search);
+      const daemonUrl = params.get("daemon_url");
+      const daemonVersion = params.get("daemon_version");
+      const appVersion = params.get("app_version");
+      const continueUrl = params.get("continue_url");
+      const detailEl = document.getElementById("detail");
+      const continueEl = document.getElementById("continue");
+
+      if (daemonVersion) {
+        document.getElementById("daemon-version").textContent = daemonVersion;
+      }
+      if (appVersion) {
+        document.getElementById("app-version").textContent = appVersion;
+      }
+      if (daemonUrl) {
+        detailEl.textContent = `checked ${daemonUrl}/api/v1/health`;
+      }
+      if (continueUrl) {
+        continueEl.href = continueUrl;
+      } else {
+        continueEl.style.display = "none";
+      }
+
+      document.getElementById("retry").addEventListener("click", async () => {
+        try {
+          await window.__TAURI__.core.invoke("open_dashboard");
+        } catch (e) {
+          detailEl.textContent = `retry failed: ${e}`;
+        }
+      });
+    </script>
+  </body>
+</html>

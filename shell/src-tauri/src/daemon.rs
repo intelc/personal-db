@@ -146,18 +146,35 @@ fn http_client(timeout: Duration) -> Result<reqwest::Client, String> {
 /// `GET /api/v1/health` -- exempt from token auth on the daemon side (see
 /// `services/daemon/auth.py::EXEMPT_ROUTES`), so no Authorization header is
 /// needed here, matching the plan's "GETs /api/v1/health" step.
-async fn check_health(base: &str) -> Result<(), String> {
+///
+/// On success, also best-effort parses the body for `app_version` and
+/// returns it. Reachability and version are deliberately kept as one
+/// `Result`, not two: every existing caller (`try_start_sidecar`'s poll
+/// loop, `wait_until_unreachable`) only ever asked `.is_ok()`/`.is_err()` of
+/// this, which still works unchanged against `Result<Option<String>, _>`. A
+/// body that fails to parse (or a pre-handshake daemon that never sent
+/// `app_version` at all) yields `Ok(None)` rather than failing the health
+/// check outright -- version is orthogonal to reachability, and
+/// `open_page`'s version gate (the one caller that inspects the payload) is
+/// what turns a `None`/mismatched version into user-facing guidance instead
+/// of a failed health check.
+async fn check_health(base: &str) -> Result<Option<String>, String> {
     let client = http_client(HEALTH_TIMEOUT)?;
     let resp = client
         .get(format!("{base}/api/v1/health"))
         .send()
         .await
         .map_err(|e| format!("daemon unreachable at {base}: {e}"))?;
-    if resp.status().is_success() {
-        Ok(())
-    } else {
-        Err(format!("daemon at {base} returned HTTP {}", resp.status()))
+    if !resp.status().is_success() {
+        return Err(format!("daemon at {base} returned HTTP {}", resp.status()));
     }
+    let version = resp
+        .json::<HealthPayload>()
+        .await
+        .ok()
+        .map(|payload| payload.app_version)
+        .filter(|v| !v.is_empty());
+    Ok(version)
 }
 
 /// `POST /api/v1/auth/otc` with the daemon token -- mints a single-use,
@@ -225,6 +242,52 @@ fn show_daemon_down(app: &AppHandle, base: &str, reason: &str) -> Result<(), Str
         .resizable(true)
         .build()
         .map_err(|e| format!("failed to open fallback window: {e}"))?;
+    Ok(())
+}
+
+/// Bundled version-mismatch guidance page (`dist/version-mismatch.html`),
+/// shown by `open_page`'s version gate when `check_health` succeeds (some
+/// personal_db daemon answered) but it isn't running this build's exact
+/// version -- see the long comment on that gate for the incident this
+/// exists for. Follows the same query-param, no-Rust-round-trip mechanism
+/// `show_daemon_down` uses for `daemon-down.html`.
+fn show_version_mismatch(
+    app: &AppHandle,
+    base: &str,
+    daemon_version: Option<&str>,
+    next_path: &str,
+) -> Result<(), String> {
+    close_existing_window(app);
+
+    // Pre-formatted so the page's JS can drop these straight into the DOM
+    // with no version-vs-fallback branching of its own.
+    let daemon_version_label = match daemon_version {
+        Some(v) => format!("v{v}"),
+        None => "pre-0.1.5, no version".to_string(),
+    };
+    let app_version_label = format!("v{SHELL_VERSION}");
+
+    // The "Continue anyway" link's target is the *manual* `/auth` page, not
+    // an OTC bootstrap URL: an OTC is single-use and expires in 30 seconds
+    // (see `mint_otc`'s doc comment), so baking one into a link the user
+    // might sit on this page before clicking would just be dead by the time
+    // they click it. The manual auth page has no such expiry.
+    let next = url::form_urlencoded::byte_serialize(next_path.as_bytes()).collect::<String>();
+    let continue_url = format!("{base}/auth?next={next}");
+
+    let query = format!(
+        "version-mismatch.html?daemon_url={}&daemon_version={}&app_version={}&continue_url={}",
+        url::form_urlencoded::byte_serialize(base.as_bytes()).collect::<String>(),
+        url::form_urlencoded::byte_serialize(daemon_version_label.as_bytes()).collect::<String>(),
+        url::form_urlencoded::byte_serialize(app_version_label.as_bytes()).collect::<String>(),
+        url::form_urlencoded::byte_serialize(continue_url.as_bytes()).collect::<String>(),
+    );
+    WebviewWindowBuilder::new(app, WINDOW_LABEL, WebviewUrl::App(PathBuf::from(query)))
+        .title("PersonalDB version mismatch")
+        .inner_size(620.0, 560.0)
+        .resizable(true)
+        .build()
+        .map_err(|e| format!("failed to open version-mismatch window: {e}"))?;
     Ok(())
 }
 
@@ -373,17 +436,48 @@ async fn try_start_sidecar(app: &AppHandle, base: &str) -> bool {
 pub async fn open_page(app: &AppHandle, next_path: &str) -> Result<(), String> {
     let base = base_url();
     let health = match check_health(&base).await {
-        Ok(()) => Ok(()),
+        Ok(version) => Ok(version),
         Err(reason) => {
             if try_start_sidecar(app, &base).await {
-                Ok(())
+                // Just spawned this from our own bundled sidecar payload, so
+                // it necessarily reports this shell's own version -- treat
+                // it as a match without another `/api/v1/health` round trip.
+                Ok(Some(SHELL_VERSION.to_string()))
             } else {
                 Err(reason)
             }
         }
     };
     match health {
-        Ok(()) => {
+        Ok(daemon_version) => {
+            // ---- Version handshake gate --------------------------------
+            // Incident (v0.1.4): a *different* personal_db daemon -- a
+            // stale `com.personal_db.daemon` LaunchAgent from an old dev
+            // checkout, in the case that was actually hit -- was already
+            // listening on 127.0.0.1:8765 when this shell launched.
+            // `check_health` above passed (something did answer
+            // `/api/v1/health`), so the old code went straight into the
+            // OTC/auth navigation below. But that foreign daemon's routes
+            // and templates didn't match what this build's webview
+            // expected, and the navigation rendered a blank window with no
+            // error anywhere -- indistinguishable, from the user's side,
+            // from the app just hanging. A successful health check only
+            // proves *some* personal_db daemon owns the port; it does not
+            // prove it's *this* build's daemon. So: gate on an exact
+            // version match before ever navigating to the auth flow, and
+            // route a mismatch (or a pre-handshake daemon reporting no
+            // version at all) to a diagnosable guidance page instead.
+            //
+            // Deliberately does NOT call `try_start_sidecar` here: this
+            // branch is only reached when the port is already bound (by
+            // the mismatched daemon), so spawning our own sidecar could
+            // never bind it either -- see that function's doc comment.
+            // Killing the foreign process to make room is out of scope;
+            // the guidance page tells the user how to do that themselves.
+            if daemon_version.as_deref() != Some(SHELL_VERSION) {
+                return show_version_mismatch(app, &base, daemon_version.as_deref(), next_path);
+            }
+
             let next = url::form_urlencoded::byte_serialize(next_path.as_bytes()).collect::<String>();
             let target = match read_token() {
                 Some(token) => match mint_otc(&base, &token).await {
