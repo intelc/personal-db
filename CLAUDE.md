@@ -24,6 +24,8 @@ personal-db --root ~/personal_db sync <name>
 
 This pattern is what fixed the omi `structured.title` / `structured.category` parsing bug — the template was correct but the installed copy at `~/personal_db/trackers/omi/ingest.py` was stale.
 
+**Apps mirror this exactly.** Bundled app templates live under `src/personal_db/templates/apps/<name>/`; installed copies at `<root>/apps/<name>/` shadow them via `discover_apps()`. After editing an app template, propagate with `personal-db --root ~/personal_db app reinstall <name>` (use `.venv/bin/personal-db` — the PATH one is a separate release install).
+
 ## Where things live
 
 - **Bundled templates:** `src/personal_db/templates/trackers/<name>/` — what ships with the package.
