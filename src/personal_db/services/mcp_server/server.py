@@ -5,7 +5,7 @@ import json
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import GetPromptResult, Prompt, PromptMessage, TextContent, Tool
+from mcp.types import GetPromptResult, Prompt, PromptArgument, PromptMessage, TextContent, Tool
 
 from personal_db.core.config import Config
 from personal_db.core.entrypoints import load_entrypoint
@@ -482,6 +482,29 @@ def build_server(cfg: Config) -> Server:
                 ),
                 arguments=[],
             ),
+            Prompt(
+                name=P.CREATE_CONNECTOR,
+                description=(
+                    "Walk through building a new API/source connector end-to-end — "
+                    "interviews the user about the source, writes manifest+ingest+schema "
+                    "files, validates, runs a real sync, and confirms data landed."
+                ),
+                arguments=[
+                    PromptArgument(
+                        name="slug",
+                        description="Tracker slug, if already scaffolded via /setup/new",
+                        required=False,
+                    ),
+                    PromptArgument(
+                        name="title", description="Display title, if already known", required=False
+                    ),
+                    PromptArgument(
+                        name="description",
+                        description="One-line description, if already known",
+                        required=False,
+                    ),
+                ],
+            ),
         ]
 
     @server.get_prompt()
@@ -490,6 +513,23 @@ def build_server(cfg: Config) -> Server:
             text = P.build_create_tracker_prompt(cfg)
             return GetPromptResult(
                 description="Design a derived tracker for personal_db",
+                messages=[
+                    PromptMessage(
+                        role="user",
+                        content=TextContent(type="text", text=text),
+                    )
+                ],
+            )
+        if name == P.CREATE_CONNECTOR:
+            args = arguments or {}
+            text = P.build_create_connector_prompt(
+                cfg,
+                slug=args.get("slug") or None,
+                title=args.get("title") or None,
+                description=args.get("description") or None,
+            )
+            return GetPromptResult(
+                description="Build an API/source connector for personal_db",
                 messages=[
                     PromptMessage(
                         role="user",

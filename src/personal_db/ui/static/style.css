@@ -2638,3 +2638,21 @@ html.pdb-discreet .pdb-sensitive {
   color: var(--fg-tertiary);
   font-size: 13px;
 }
+
+/* ---- Connector creation ---- */
+
+.connector-build-card {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: var(--rule);
+}
+.connector-build-card p:first-child {
+  margin-top: 0;
+}
+.connector-prompt-status {
+  margin-top: 6px;
+  font-size: 12px;
+}
+.connector-prompt-status.fail {
+  color: var(--danger);
+}

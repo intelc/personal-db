@@ -5,16 +5,19 @@ import urllib.parse
 from collections.abc import Callable
 from typing import Any
 
+import yaml
 from fastapi import APIRouter, HTTPException, Request, WebSocket
 
 from personal_db.core.apps import load_named_queries
 from personal_db.core.config import Config
-from personal_db.core.manifest import load_manifest
+from personal_db.core.manifest import ManifestError, load_manifest
 from personal_db.services.daemon import auth as _auth
 from personal_db.services.daemon.agent_terminal import (
     AgentTerminalManager,
     attach_terminal_websocket,
 )
+from personal_db.services.daemon.routes.common import NEW_SLUG_RE as _NEW_SLUG_RE
+from personal_db.services.mcp_server import prompts as P
 
 
 def _require_agent_terminal_enabled(cfg: Config) -> None:
@@ -23,6 +26,31 @@ def _require_agent_terminal_enabled(cfg: Config) -> None:
             status_code=403,
             detail="agent terminal disabled; set agent_terminal.enabled in config.yaml",
         )
+
+
+def _set_agent_terminal_enabled(cfg: Config, enabled: bool) -> None:
+    """Persist `agent_terminal.enabled` into `<root>/config.yaml`, preserving
+    every other key. No in-memory `cfg` mutation is needed: `cfg.agent_terminal`
+    (core/config.py) is a computed property that re-reads config.yaml on every
+    access rather than caching, so the very next request already sees the new
+    value -- this is the same mechanism tests/_agent_terminal_helpers.py relies
+    on to flip the gate without rebuilding the FastAPI app."""
+    config_path = cfg.root / "config.yaml"
+    data: dict[str, Any] = {}
+    if config_path.is_file():
+        try:
+            loaded = yaml.safe_load(config_path.read_text())
+        except yaml.YAMLError:
+            loaded = None
+        if isinstance(loaded, dict):
+            data = loaded
+    section = data.get("agent_terminal")
+    if not isinstance(section, dict):
+        section = {}
+    section["enabled"] = enabled
+    data["agent_terminal"] = section
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(yaml.safe_dump(data, sort_keys=False))
 
 
 def register_agent_routes(
@@ -166,6 +194,49 @@ def register_agent_routes(
             return base
         base["kind"] = "other"
         return base
+
+    @router.get("/agent/connector-prompt")
+    async def api_agent_connector_prompt(slug: str) -> dict[str, Any]:
+        """Renders the `create_connector` prompt for one already-scaffolded
+        tracker, so the setup UI can hand it to `window.pdbAgent.ask()` (or a
+        "copy prompt" button for an external agent/terminal) without needing
+        the MCP prompt machinery. NOT gated on agent_terminal.enabled -- it's
+        just text, same rationale as GET /agent/context above."""
+        if not _NEW_SLUG_RE.match(slug):
+            raise HTTPException(status_code=400, detail=f"invalid slug: {slug!r}")
+        if not (cfg.trackers_dir / slug).is_dir():
+            raise HTTPException(status_code=404, detail=f"unknown tracker: {slug}")
+        title: str | None = None
+        description: str | None = None
+        manifest_path = cfg.trackers_dir / slug / "manifest.yaml"
+        if manifest_path.is_file():
+            try:
+                manifest = load_manifest(manifest_path)
+                title = manifest.title
+                description = manifest.description
+            except ManifestError:
+                pass
+        prompt = P.build_create_connector_prompt(
+            cfg, slug=slug, title=title, description=description
+        )
+        return {"prompt": prompt}
+
+    @router.post("/settings/agent-terminal")
+    async def api_settings_agent_terminal(request: Request) -> dict[str, Any]:
+        """Toggle `config.yaml: agent_terminal.enabled` from the setup UI's
+        "Enable agent terminal" button. Never touches `auto_approve` -- that
+        stays whatever it already was (default off), this route only ever
+        writes the `enabled` key."""
+        verify_same_origin_write(request)
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        if not isinstance(body, dict) or "enabled" not in body:
+            raise HTTPException(status_code=400, detail="body must include 'enabled': bool")
+        enabled = bool(body["enabled"])
+        _set_agent_terminal_enabled(cfg, enabled)
+        return {"ok": True, "agent_terminal_enabled": enabled}
 
     @router.get("/agent/sessions")
     async def api_agent_sessions() -> dict[str, Any]:

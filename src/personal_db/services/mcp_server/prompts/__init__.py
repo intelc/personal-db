@@ -17,6 +17,7 @@ import yaml
 from personal_db.core.config import Config
 
 CREATE_TRACKER = "create_tracker"
+CREATE_CONNECTOR = "create_connector"
 
 
 def _read_template(name: str) -> str:
@@ -109,4 +110,51 @@ def build_create_tracker_prompt(cfg: Config) -> str:
         .replace("{{db_path}}", str(cfg.db_path))
         .replace("{{tables_summary}}", _format_tables(tables))
         .replace("{{installed_trackers}}", _format_trackers(trackers))
+    )
+
+
+def build_create_connector_prompt(
+    cfg: Config,
+    slug: str | None = None,
+    title: str | None = None,
+    description: str | None = None,
+) -> str:
+    """Render the create_connector prompt with the user's current personal_db state.
+
+    `slug`/`title`/`description` are optional -- set when this prompt is
+    handed to an agent for a tracker that's already been scaffolded (e.g. via
+    the `/setup/{slug}?created=1` "Build with your local agent" button), so
+    the agent doesn't have to re-derive them from scratch.
+    """
+    template = _read_template(CREATE_CONNECTOR)
+    tables = _user_tables(cfg.db_path)
+    trackers = _installed_trackers(cfg.trackers_dir)
+    scaffolded = bool(slug) and (cfg.trackers_dir / slug / "manifest.yaml").exists()
+    if slug and scaffolded:
+        scaffold_note = (
+            f"A scaffold already exists at `{cfg.trackers_dir / slug}/` (created via the "
+            '"Add your own source" setup form) -- fill in its files, don\'t re-scaffold. '
+            "Use `read_tracker_file` to see what's already there before writing."
+        )
+    elif slug:
+        scaffold_note = (
+            f"No scaffold exists yet at `{cfg.trackers_dir / slug}/` for slug `{slug}` -- "
+            "create it first via `write_tracker_file` or `personal-db dev tracker new "
+            f"{slug}`."
+        )
+    else:
+        scaffold_note = (
+            "No slug was pre-selected -- ask the user for a short lowercase slug, then "
+            "scaffold via `write_tracker_file` or `personal-db dev tracker new <slug>`."
+        )
+    return (
+        template.replace("{{root_path}}", str(cfg.root))
+        .replace("{{trackers_dir}}", str(cfg.trackers_dir))
+        .replace("{{db_path}}", str(cfg.db_path))
+        .replace("{{tables_summary}}", _format_tables(tables))
+        .replace("{{installed_trackers}}", _format_trackers(trackers))
+        .replace("{{slug}}", slug or "(not yet chosen)")
+        .replace("{{title}}", title or "(not yet chosen)")
+        .replace("{{description}}", description or "(not yet chosen)")
+        .replace("{{scaffold_note}}", scaffold_note)
     )

@@ -104,6 +104,91 @@ def test_session_command_has_no_bypass_flags_when_auto_approve_off(tmp_root, mon
     assert captured["cmd"].startswith("claude ")
 
 
+def test_settings_toggle_persists_to_config_yaml(tmp_root):
+    cfg = _cfg(tmp_root)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.post("/api/v1/settings/agent-terminal", json={"enabled": True})
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "agent_terminal_enabled": True}
+
+    import yaml
+
+    data = yaml.safe_load((tmp_root / "config.yaml").read_text())
+    assert data["agent_terminal"]["enabled"] is True
+
+
+def test_settings_toggle_flips_live_gate_without_rebuilding_app(tmp_root):
+    """A sessions request that 403'd because the terminal was off should pass
+    once the settings route flips it on -- same TestClient/app instance, no
+    restart, because cfg.agent_terminal re-reads config.yaml on every access
+    (core/config.py) rather than caching a stale value."""
+    cfg = _cfg(tmp_root)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+
+    before = client.get("/api/v1/agent/sessions")
+    assert before.status_code == 403
+
+    toggle = client.post("/api/v1/settings/agent-terminal", json={"enabled": True})
+    assert toggle.status_code == 200
+
+    after = client.get("/api/v1/agent/sessions")
+    assert after.status_code == 200
+
+
+def test_settings_toggle_can_disable_again(tmp_root):
+    cfg = _cfg(tmp_root)
+    enable_agent_terminal(cfg, auto_approve=True)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+
+    r = client.post("/api/v1/settings/agent-terminal", json={"enabled": False})
+    assert r.status_code == 200
+    assert r.json()["agent_terminal_enabled"] is False
+
+    after = client.get("/api/v1/agent/sessions")
+    assert after.status_code == 403
+
+    # auto_approve must be left untouched by this route.
+    import yaml
+
+    data = yaml.safe_load((tmp_root / "config.yaml").read_text())
+    assert data["agent_terminal"]["auto_approve"] is True
+
+
+def test_settings_toggle_preserves_other_config_keys(tmp_root):
+    cfg = _cfg(tmp_root)
+    import yaml
+
+    (tmp_root / "config.yaml").write_text(
+        yaml.safe_dump({"root": str(tmp_root), "user": {"name_tokens": ["alice"]}})
+    )
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.post("/api/v1/settings/agent-terminal", json={"enabled": True})
+    assert r.status_code == 200
+
+    data = yaml.safe_load((tmp_root / "config.yaml").read_text())
+    assert data["root"] == str(tmp_root)
+    assert data["user"]["name_tokens"] == ["alice"]
+    assert data["agent_terminal"]["enabled"] is True
+
+
+def test_settings_toggle_requires_enabled_field(tmp_root):
+    cfg = _cfg(tmp_root)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.post("/api/v1/settings/agent-terminal", json={})
+    assert r.status_code == 400
+
+
+def test_settings_toggle_rejects_cross_origin_write(tmp_root):
+    cfg = _cfg(tmp_root)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.post(
+        "/api/v1/settings/agent-terminal",
+        json={"enabled": True},
+        headers={"origin": "http://attacker.example"},
+    )
+    assert r.status_code == 403
+
+
 def test_session_command_has_bypass_flag_when_auto_approve_on(tmp_root, monkeypatch):
     monkeypatch.delenv("PERSONAL_DB_CLAUDE_COMMAND", raising=False)
     cfg = _cfg(tmp_root)
