@@ -16,3 +16,7 @@ node_modules/
 target/
 shell/src-tauri/gen/
 packaging/build/
+
+# Local Claude settings and scratch release notes
+.claude/
+RELEASE_NOTES.md
