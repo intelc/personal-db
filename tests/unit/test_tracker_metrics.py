@@ -253,8 +253,11 @@ def test_calendar_metrics_upcoming_event_today(tmp_path):
     cfg = _setup(tmp_path, "calendar")
     now = datetime.now(UTC)
     future = now + timedelta(hours=1)
-    if future.date() != now.date():
-        # Avoid a flaky test right around local midnight.
+    if future.astimezone().date() != now.astimezone().date():
+        # Avoid a flaky test right around local midnight ("today" in the
+        # metric is the LOCAL day, so the guard must compare local dates —
+        # comparing UTC dates left an 11pm-midnight window where the event
+        # landed on local-tomorrow and "Next event" was legitimately empty).
         future = now + timedelta(minutes=1)
     con = sqlite3.connect(cfg.db_path)
     con.execute(
