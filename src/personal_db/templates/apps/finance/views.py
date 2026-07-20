@@ -961,6 +961,10 @@ def _parent_draw_section(ctx: AppContext) -> str:
     draws = [-_float(row["parent_draw"]) for row in daily]
     chart = ""
     if daily:
+        # AG Charts canvas options (rendered client-side, not CSS) -- can't consume
+        # var(). positive/negative are categorical semantics left as-is out of
+        # scope; line_color="#111111" is auto-remapped to a light gray in dark
+        # mode by pdb-chart.js's literal-black remap.
         chart = agcharts.gain_loss_area_chart(
             labels,
             draws,
@@ -1014,6 +1018,9 @@ def _net_worth_section(ctx: AppContext, scope: str, title: str) -> str:
     labels = [str(row["date"])[5:] for row in rows]
     return c.section(
         title,
+        # AG Charts canvas series colors -- can't consume var(). "#111111" is
+        # auto-remapped to a light gray in dark mode by pdb-chart.js; the rest
+        # are categorical series colors intentionally left fixed.
         agcharts.multi_line_chart(
             labels,
             [
