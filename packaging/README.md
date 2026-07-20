@@ -315,6 +315,41 @@ notarization/DMG/gh). Note two dry-run caveats documented in the script
 header: it tolerates a dirty git tree, and it does not exercise the
 updater signing path itself.
 
+### Optional: passwordless updater signing from the macOS Keychain
+
+The normal release path above remains interactive. For an unattended local
+release, first store (or update) the protected updater-key password once:
+
+```bash
+./packaging/setup-updater-keychain.sh
+```
+
+The script prompts through Apple's `security` tool; it does not accept a
+password argument. It stores a login-Keychain item with service
+`com.personaldb.updater-signing` and account `updater-key-password`, and
+restricts the item's trusted application list to `/usr/bin/security`.
+Then use:
+
+```bash
+./packaging/release.sh --password-from-keychain --notes "What's new"
+```
+
+That mode does not require a TTY. `release.sh` checks that the item exists
+before any build work, reads it again only immediately before each of the two
+Tauri signing commands, and sets `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` only in
+that signer child process's environment. It never exports the password from
+the release shell or passes it to later packaging steps. If Tauri rejects the
+stored value, rerun `setup-updater-keychain.sh` to update it.
+
+This is a secret-handling convenience, not a privilege boundary: the login
+Keychain and the `/usr/bin/security` ACL are scoped to the macOS user. A
+malicious same-user process with access to that Keychain item is in the same
+trust domain. Do not use this mode on an untrusted shared login. The
+`PERSONAL_DB_UPDATER_KEYCHAIN_SERVICE`,
+`PERSONAL_DB_UPDATER_KEYCHAIN_ACCOUNT`, and
+`PERSONAL_DB_UPDATER_KEYCHAIN_SECURITY_BIN` overrides exist for controlled
+testing; production releases should use the defaults.
+
 Optional extra polish after publishing: notarize + staple the DMG itself
 (the app's staple covers the copied .app, but a stapled DMG is the
 cleanest download experience):

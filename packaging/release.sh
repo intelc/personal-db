@@ -2,13 +2,15 @@
 # One-command release: version-sync -> freeze -> build (+updater artifacts)
 # -> deep-sign + notarize -> DMG -> latest.json -> draft GitHub release.
 #
-# Run this YOURSELF in a real terminal (it prompts interactively -- see the
-# password note below). It ends with a *draft* release: nothing is public
-# until you click Publish (or `gh release edit vX.Y.Z --draft=false`).
+# Run this YOURSELF. The default mode prompts in a real terminal; optional
+# --password-from-keychain mode is non-interactive (see the password note
+# below). It ends with a *draft* release: nothing is public until you click
+# Publish (or `gh release edit vX.Y.Z --draft=false`).
 #
 # Usage:
 #   ./packaging/release.sh --notes "Fixed the foo, added the bar"
 #   ./packaging/release.sh --notes-file RELEASE_NOTES.md
+#   ./packaging/release.sh --password-from-keychain --notes "Fixed the foo"
 #   ./packaging/release.sh --dry-run
 #
 # Flags:
@@ -31,6 +33,12 @@
 #                                     pipeline runs, not the signatures. It
 #                                     also tolerates a dirty git tree (warns
 #                                     instead of aborting).
+#   --password-from-keychain          Read the updater-key password from the
+#                                     macOS login Keychain. Set it up once with
+#                                     packaging/setup-updater-keychain.sh.
+#                                     This mode can run without a TTY; the
+#                                     password is scoped only to each Tauri
+#                                     signing child process.
 #
 # Environment (all optional -- sane defaults):
 #   KEYCHAIN_PROFILE            notarytool keychain profile
@@ -40,8 +48,14 @@
 #   IDENTITY                    Developer ID Application identity for
 #                               sign-and-notarize.sh / build-dmg.sh
 #                               (default: the identity in tauri.conf.json)
+#   PERSONAL_DB_UPDATER_KEYCHAIN_SERVICE / _ACCOUNT / _SECURITY_BIN
+#                               Keychain item identity and security binary.
+#                               Defaults are for the Personal DB release;
+#                               overrides exist for controlled testing.
 #
-# THE UPDATER-KEY PASSWORD IS NEVER PUT IN THE ENVIRONMENT BY THIS SCRIPT.
+# THE UPDATER-KEY PASSWORD IS NEVER EXPORTED BY THIS SCRIPT. In optional
+# --password-from-keychain mode it is injected only into each Tauri signer
+# child process, never into this release shell or its other subprocesses.
 # Verified behavior of the Tauri v2 CLI (crates/tauri-cli/src/bundle.rs):
 # when TAURI_SIGNING_PRIVATE_KEY is set and TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 # is NOT, the CLI itself prompts interactively for the key password
@@ -106,17 +120,67 @@ retry_key_password() {
   done
 }
 
+keychain_password_preflight() {
+  local password
+  if ! password="$("$UPDATER_KEYCHAIN_SECURITY_BIN" find-generic-password \
+    -s "$UPDATER_KEYCHAIN_SERVICE" -a "$UPDATER_KEYCHAIN_ACCOUNT" -w 2>/dev/null)"; then
+    die "updater password is missing from the Keychain; run $SCRIPT_DIR/setup-updater-keychain.sh"
+  fi
+  if [[ -z "$password" ]]; then
+    unset password
+    die "updater password in the Keychain is empty; rerun $SCRIPT_DIR/setup-updater-keychain.sh"
+  fi
+  unset password
+}
+
+# Read the password immediately before one signer invocation. It is a local
+# shell value and the temporary environment assignment reaches only "$@" and
+# descendants, not the release shell or later packaging commands.
+run_with_keychain_password() {
+  local label="$1"; shift
+  local password err rc
+  if ! password="$("$UPDATER_KEYCHAIN_SECURITY_BIN" find-generic-password \
+    -s "$UPDATER_KEYCHAIN_SERVICE" -a "$UPDATER_KEYCHAIN_ACCOUNT" -w 2>/dev/null)"; then
+    die "updater password is missing from the Keychain; run $SCRIPT_DIR/setup-updater-keychain.sh"
+  fi
+  if [[ -z "$password" ]]; then
+    unset password
+    die "updater password in the Keychain is empty; rerun $SCRIPT_DIR/setup-updater-keychain.sh"
+  fi
+  err="$(mktemp "${TMPDIR:-/tmp}/release-keychain-pw-err.XXXXXX")"
+  set +e
+  TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$password" "$@" 2> >(tee "$err" >&2)
+  rc=$?
+  set -e
+  unset password
+  if [[ "$rc" -eq 0 ]]; then
+    rm -f "$err"
+    return 0
+  fi
+  # Tauri's protected-key error is unambiguous. A retry would retrieve the
+  # same stored value, so direct the releaser to update it instead.
+  sleep 1  # let the tee process substitution flush before reading (bash 3.2)
+  if grep -q "incorrect updater private key password" "$err"; then
+    rm -f "$err"
+    die "$label: stored updater-key password was rejected; rerun $SCRIPT_DIR/setup-updater-keychain.sh"
+  fi
+  rm -f "$err"
+  die "$label failed (exit $rc)"
+}
+
 # --- flags -------------------------------------------------------------------
 
 DRY_RUN=0
+PASSWORD_FROM_KEYCHAIN=0
 NOTES=""
 NOTES_FILE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) DRY_RUN=1; shift ;;
+    --password-from-keychain) PASSWORD_FROM_KEYCHAIN=1; shift ;;
     --notes) NOTES="${2:?--notes needs a value}"; shift 2 ;;
     --notes-file) NOTES_FILE="${2:?--notes-file needs a path}"; shift 2 ;;
-    -h|--help) sed -n '2,60p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,64p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "unknown argument: $1 (see --help)" ;;
   esac
 done
@@ -134,6 +198,9 @@ fi
 KEYCHAIN_PROFILE="${KEYCHAIN_PROFILE:-personal-db-notary}"
 TAURI_SIGNING_PRIVATE_KEY="${TAURI_SIGNING_PRIVATE_KEY:-$HOME/.tauri/personal-db-updater.key}"
 IDENTITY="${IDENTITY:-Developer ID Application: Yiheng Chen (T78LM3Z7A5)}"
+UPDATER_KEYCHAIN_SECURITY_BIN="${PERSONAL_DB_UPDATER_KEYCHAIN_SECURITY_BIN:-/usr/bin/security}"
+UPDATER_KEYCHAIN_SERVICE="${PERSONAL_DB_UPDATER_KEYCHAIN_SERVICE:-com.personaldb.updater-signing}"
+UPDATER_KEYCHAIN_ACCOUNT="${PERSONAL_DB_UPDATER_KEYCHAIN_ACCOUNT:-updater-key-password}"
 export KEYCHAIN_PROFILE IDENTITY
 
 # -uno: untracked files (local .claude/ config, scratch dirs) don't taint a
@@ -150,9 +217,15 @@ if [[ "$DRY_RUN" == "0" ]]; then
   [[ -f "$TAURI_SIGNING_PRIVATE_KEY" ]] \
     || die "updater signing key not found: $TAURI_SIGNING_PRIVATE_KEY"
   export TAURI_SIGNING_PRIVATE_KEY
-  # The Tauri CLI's interactive key-password prompt (see header) needs a TTY.
-  [[ -t 0 ]] || die "stdin is not a TTY -- run this in a real terminal so the \
+  if [[ "$PASSWORD_FROM_KEYCHAIN" == "1" ]]; then
+    [[ -x "$UPDATER_KEYCHAIN_SECURITY_BIN" ]] \
+      || die "security binary is not executable: $UPDATER_KEYCHAIN_SECURITY_BIN"
+    keychain_password_preflight
+  else
+    # The Tauri CLI's interactive key-password prompt (see header) needs a TTY.
+    [[ -t 0 ]] || die "stdin is not a TTY -- run this in a real terminal so the \
 Tauri CLI can prompt for the updater key password"
+  fi
   command -v gh >/dev/null 2>&1 || die "gh CLI not found"
   gh auth status >/dev/null 2>&1 || die "gh is not authenticated (run: gh auth login)"
 fi
@@ -207,7 +280,11 @@ if [[ "$DRY_RUN" == "1" ]]; then
 else
   OVERLAY='{"bundle":{"createUpdaterArtifacts":true}}'
   log "step 3: tauri build (updater artifacts ON -- the Tauri CLI will prompt"
-  log "        for the updater key password; see the script header)"
+  if [[ "$PASSWORD_FROM_KEYCHAIN" == "1" ]]; then
+    log "        for the updater key password via the macOS Keychain)"
+  else
+    log "        for the updater key password; see the script header)"
+  fi
   # `env -u CI`: with CI set, the CLI assumes an empty key password instead
   # of prompting, which fails against the protected key (see header).
   # retry_key_password: a mistyped password re-runs the build (cargo is
@@ -215,7 +292,11 @@ else
   build_with_updater_artifacts() {
     (cd "$REPO_ROOT/shell" && env -u CI npm run tauri build -- --config "$OVERLAY")
   }
-  retry_key_password "step 3 tauri build" build_with_updater_artifacts
+  if [[ "$PASSWORD_FROM_KEYCHAIN" == "1" ]]; then
+    run_with_keychain_password "step 3 tauri build" build_with_updater_artifacts
+  else
+    retry_key_password "step 3 tauri build" build_with_updater_artifacts
+  fi
 fi
 
 BUNDLE_DIR="$REPO_ROOT/shell/src-tauri/target/release/bundle/macos"
@@ -262,7 +343,11 @@ sign_updater_archive() {
   (cd "$REPO_ROOT/shell" && env -u CI -u TAURI_SIGNING_PRIVATE_KEY npx tauri signer sign \
     --private-key-path "$TAURI_SIGNING_PRIVATE_KEY" "$UPDATER_ARCHIVE")
 }
-retry_key_password "step 4b signer sign" sign_updater_archive
+if [[ "$PASSWORD_FROM_KEYCHAIN" == "1" ]]; then
+  run_with_keychain_password "step 4b signer sign" sign_updater_archive
+else
+  retry_key_password "step 4b signer sign" sign_updater_archive
+fi
 [[ -f "$UPDATER_SIG" ]] || die "tauri signer sign did not produce $UPDATER_SIG"
 
 # --- 5. DMG ------------------------------------------------------------------
