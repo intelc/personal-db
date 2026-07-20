@@ -37,6 +37,18 @@ fn spawn_open_dashboard(app: &AppHandle) {
     });
 }
 
+/// Like `spawn_open_dashboard`, but for tray items that should land on a
+/// page other than the main dashboard -- e.g. "Health" opens `/health`
+/// instead of `/`. See `daemon::open_page`.
+fn spawn_open_page(app: &AppHandle, next_path: &'static str) {
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = daemon::open_page(&handle, next_path).await {
+            eprintln!("open_page({next_path}) failed: {e}");
+        }
+    });
+}
+
 fn spawn_sync_now(app: &AppHandle) {
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -105,7 +117,7 @@ fn main() {
             let open_item = MenuItemBuilder::with_id("open_dashboard", "Open Dashboard")
                 .build(app)?;
             let sync_item = MenuItemBuilder::with_id("sync_now", "Sync Now").build(app)?;
-            let status_item = MenuItemBuilder::with_id("status", "Status").build(app)?;
+            let status_item = MenuItemBuilder::with_id("status", "Health").build(app)?;
             // Reflects the *current* launch-agent registration state at
             // build time; toggling later updates the live item via
             // `set_checked` in the event handler below rather than
@@ -163,7 +175,8 @@ fn main() {
                 .show_menu_on_left_click(true)
                 .tooltip("PersonalDB")
                 .on_menu_event(move |app, event| match event.id().as_ref() {
-                    "open_dashboard" | "status" => spawn_open_dashboard(app),
+                    "open_dashboard" => spawn_open_dashboard(app),
+                    "status" => spawn_open_page(app, "/health"),
                     "sync_now" => spawn_sync_now(app),
                     "install_cli" => spawn_install_cli(app, install_cli_item_for_update.clone()),
                     "connect_claude_code" => {

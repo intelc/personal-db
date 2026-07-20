@@ -353,17 +353,24 @@ async fn try_start_sidecar(app: &AppHandle, base: &str) -> bool {
 
 /// The full bootstrap flow described in the Phase 4 plan: locate the root,
 /// read the token, check daemon health, and either navigate to the
-/// authenticated dashboard (via the OTC bootstrap URL) or show the bundled
-/// "daemon not running" guidance page. Invoked on first launch and from the
-/// tray's "Open Dashboard"/"Status" items, and from the fallback page's
-/// Retry button (via the `open_dashboard` Tauri command).
+/// authenticated target page (via the OTC bootstrap URL, with `next` set to
+/// `next_path`) or show the bundled "daemon not running" guidance page.
+/// Invoked (via `open_dashboard` and `open_page`'s other callers) on first
+/// launch and from the tray's "Open Dashboard"/"Health" items, and from the
+/// fallback page's Retry button (via the `open_dashboard` Tauri command).
 ///
 /// If the initial health check fails, this now also tries to spawn the
 /// bundled sidecar daemon (see `try_start_sidecar`) before falling back to
 /// the guidance page -- a signed release build should self-heal a
 /// not-yet-running daemon instead of only ever telling the user how to
 /// start it themselves.
-pub async fn open_dashboard(app: &AppHandle) -> Result<(), String> {
+///
+/// `next_path` is percent-encoded into the `next` query param of both the
+/// OTC bootstrap URL and the manual-auth fallback URL -- it's the path the
+/// daemon's auth flow redirects to post-auth (or immediately, if no auth is
+/// needed). Pass `"/"` for the main dashboard, `"/health"` for the daemon's
+/// health page, etc.
+pub async fn open_page(app: &AppHandle, next_path: &str) -> Result<(), String> {
     let base = base_url();
     let health = match check_health(&base).await {
         Ok(()) => Ok(()),
@@ -377,26 +384,35 @@ pub async fn open_dashboard(app: &AppHandle) -> Result<(), String> {
     };
     match health {
         Ok(()) => {
+            let next = url::form_urlencoded::byte_serialize(next_path.as_bytes()).collect::<String>();
             let target = match read_token() {
                 Some(token) => match mint_otc(&base, &token).await {
                     Ok(otc) => format!(
-                        "{base}/auth/bootstrap?otc={}&next=%2F",
+                        "{base}/auth/bootstrap?otc={}&next={next}",
                         url::form_urlencoded::byte_serialize(otc.as_bytes()).collect::<String>()
                     ),
                     // OTC mint failed for some transient reason (token
                     // rotated mid-flight, etc.) -- fall back to the manual
                     // paste-the-token page rather than crash the flow.
-                    Err(_) => format!("{base}/auth?next=%2F"),
+                    Err(_) => format!("{base}/auth?next={next}"),
                 },
                 // No token file yet (daemon never started, or a fresh root)
                 // -- still worth pointing at the manual auth page rather
                 // than erroring, in case the daemon comes up moments later.
-                None => format!("{base}/auth?next=%2F"),
+                None => format!("{base}/auth?next={next}"),
             };
             show_external(app, &target)
         }
         Err(reason) => show_daemon_down(app, &base, &reason),
     }
+}
+
+/// Convenience wrapper around `open_page` for the main dashboard (`next=/`)
+/// -- the common case used by first launch, the tray's "Open Dashboard"
+/// item, and the daemon-down fallback page's Retry button (via the
+/// zero-argument `open_dashboard` Tauri command in `main.rs`).
+pub async fn open_dashboard(app: &AppHandle) -> Result<(), String> {
+    open_page(app, "/").await
 }
 
 /// `POST /api/v1/sync_due` with the daemon token, surfaced as a native
