@@ -8,6 +8,16 @@ SQLite + per-tracker ingest scripts + MCP server. macOS only in v0.
 
 ## Install
 
+### The app (recommended)
+
+Download **PersonalDB.app** from the [latest release](https://github.com/intelc/personal-db/releases/latest) (signed + notarized DMG, Apple Silicon).
+
+It's a menu-bar app that runs everything: the dashboard in a native window, background sync (no launchd setup needed — the app manages its own daemon), and one-click "Connect AI Apps" for Claude Code / Claude Desktop / Cursor. It updates itself (a quiet check shortly after launch, plus "Check for Updates…" in the tray), and an update cleanly replaces the running background daemon — no manual restarts.
+
+The app being signed is not cosmetic: macOS grants Full Disk Access to a *binary identity*, so the FDA prompt says "PersonalDB" instead of "Python", and the grant survives every update. With the CLI install, a `brew upgrade python` can silently revoke it.
+
+### CLI install
+
 ```bash
 bash <(curl -LsSf https://raw.githubusercontent.com/intelc/personal-db/main/install.sh)
 ```
@@ -38,19 +48,19 @@ cd personal-db
 source .venv/bin/activate
 ```
 
-## Native app (in development)
+## How the app is built
 
-A Tauri menu-bar app that wraps the daemon — tray icon, "Open Dashboard"
-launches the same web UI in a native window, "Sync Now", no dock icon — is
-in progress under [`shell/`](shell/README.md). It's currently unsigned and
-local-build-only; see [`packaging/`](packaging/README.md) for the
-freeze-daemon-into-a-standalone-binary and sign/notarize/DMG story that
-turns it into a real distributable app. Until that lands, the CLI + browser
-dashboard above is the primary way to use personal_db.
+The native app is a Tauri menu-bar shell ([`shell/`](shell/README.md)) around a frozen,
+code-signed Python daemon — same architecture as Screenpipe's shell + sidecar. The
+freeze/sign/notarize/DMG/release pipeline lives in [`packaging/`](packaging/README.md)
+and runs as one command (`packaging/release.sh`). The CLI install and the app share
+the same data root, daemon, and web UI — the app is a managed way to run them.
 
 ## Quick start
 
-`personal-db setup` is the only command you need to run after install. It walks through tracker selection, configuration, daemon install, and agent wire-up in one flow.
+**Using the app?** There's nothing to run — first launch opens the dashboard, and Settings → "Add source" starts the same guided setup shown below. The rest of this section is the CLI path.
+
+`personal-db setup` is the only command you need to run after a CLI install. It walks through tracker selection, configuration, daemon install, and agent wire-up in one flow.
 
 ```bash
 personal-db setup
@@ -60,15 +70,17 @@ personal-db setup
 
 You'll be asked which mode you want:
 
-- **Browser** (recommended) — opens a visual wizard at `http://127.0.0.1:8765/setup` with a tracker list, form-based per-tracker setup, and click-through buttons for finalize steps.
+- **Browser** (recommended) — opens Settings at `http://127.0.0.1:8765/setup`: a searchable sources list (status, last sync, what each connection needs), and a guided step-by-step wizard per source — external steps like creating an OAuth app come with clickable links and a copy button for the exact redirect URI, and setup ends with a verified first sync.
 - **Terminal** — questionary-driven prompts in your shell.
 - **Skip** — exits cleanly; run `personal-db setup` again whenever you're ready.
 
-![browser setup wizard](docs/demos/screenshots/setup-overview.png)
+![sources list in settings](docs/demos/screenshots/setup-overview.png)
+
+![guided per-source setup wizard](docs/demos/screenshots/setup-wizard.png)
 
 After you finish configuring trackers, finalize steps run automatically:
 
-1. **Daemon** — installs a launchd agent (`~/Library/LaunchAgents/com.personal_db.daemon.plist`) that keeps a long-running `personal-db dev daemon run` process alive. The daemon is the single writer-of-record: it serves the local HTTP API + dashboard (every route but health requires a token, see below), and an in-process scheduler thread runs `sync_due` (and any declared per-tracker/app background jobs) on their own cadences — there's no separate scheduler process anymore. If a command ever prints `personal-db daemon not running`, the fix is `personal-db daemon install`; `personal-db status` gives a one-screen readout of daemon/tracker/FDA/MCP state.
+1. **Daemon** — installs a launchd agent (`~/Library/LaunchAgents/com.personal_db.daemon.plist`) that keeps a long-running `personal-db dev daemon run` process alive. (With the native app, skip this — the app spawns and manages the daemon itself.) The daemon is the single writer-of-record: it serves the local HTTP API + dashboard (every route but health requires a token, see below), and an in-process scheduler thread runs `sync_due` (and any declared per-tracker/app background jobs) on their own cadences — there's no separate scheduler process anymore. A source that keeps failing backs off (30m → 2h → 8h) and then **pauses** instead of retrying forever; it shows as Paused in Settings, and fixing it there (or any manual sync that succeeds) resumes it. If a command ever prints `personal-db daemon not running`, the fix is `personal-db daemon install`; `personal-db status` gives a one-screen readout of daemon/tracker/FDA/MCP state.
 2. **MCP server** — auto-installs `personal_db` into the agents you choose (Claude Code, Claude Desktop, Cursor). Behind the scenes this calls `claude mcp add` (Code), or merges into `~/Library/Application Support/Claude/claude_desktop_config.json` (Desktop), or `~/.cursor/mcp.json` (Cursor).
 3. **Dashboard** (optional) — offers to launch the menu bar + dashboard via `personal-db ui`. Default is skip; agents read your data over MCP regardless of the dashboard being open.
 
