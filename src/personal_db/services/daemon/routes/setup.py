@@ -17,15 +17,29 @@ from personal_db.core.config import Config
 from personal_db.core.db import apply_tracker_schema, init_db
 from personal_db.core.global_writes import blocked_reason
 from personal_db.core.installer import install_template, list_bundled
-from personal_db.core.manifest import OAuthStep, PlatformUnsupportedError, load_manifest
+from personal_db.core.manifest import (
+    EnvVarStep,
+    OAuthStep,
+    PlatformUnsupportedError,
+    load_manifest,
+)
 from personal_db.core.migrations import apply_pending_migrations
 from personal_db.core.oauth import ensure_adapter_from_manifest, start_web_oauth
 from personal_db.core.runtime_env import is_app_bundle
 from personal_db.core.scaffold import apply_manifest_overrides, scaffold_tracker
 from personal_db.services.daemon.routes.common import NEW_SLUG_RE as _NEW_SLUG_RE
-from personal_db.services.ui.setup_runner import list_overview, list_step_views, process_form
+from personal_db.services.ui.setup_runner import (
+    StepResult,
+    _process_step,
+    list_overview,
+    list_step_views,
+    oauth_token_present,
+    process_form,
+    run_first_sync,
+)
 from personal_db.services.wizard.env_file import read_env
 from personal_db.services.wizard.mcp_setup import _TARGETS as _MCP_TARGETS
+from personal_db.services.wizard.status import compute_icon
 
 
 def _validate_new_slug(cfg: Config, slug: str) -> str | None:
@@ -166,6 +180,7 @@ def register_setup_routes(
 
     @app.post("/setup/install/{name}")
     async def setup_install(name: str):
+        fresh_install = True
         try:
             dest = install_template(cfg, name)
             manifest = load_manifest(dest / "manifest.yaml")
@@ -175,7 +190,13 @@ def register_setup_routes(
         except (FileExistsError, ValueError, PlatformUnsupportedError):
             # Already installed, unknown, or unsupported on this OS -- the
             # per-tracker page handles the final state.
-            pass
+            fresh_install = False
+        # A brand-new install has no configuration yet -- send the user into
+        # the step-per-page wizard rather than the (denser) settings page.
+        # Already-installed / unknown / unsupported all fall back to the
+        # settings page exactly as before.
+        if fresh_install:
+            return RedirectResponse(url=f"/setup/{name}/wizard", status_code=303)
         return RedirectResponse(url=f"/setup/{name}", status_code=303)
 
     @app.post("/setup/oauth/{name}")
@@ -199,6 +220,28 @@ def register_setup_routes(
             raise HTTPException(status_code=400, detail="step_index out of range")
         step = oauth_steps[idx]
 
+        # Optional bounce-back to the step-per-page wizard: the wizard's
+        # Authorize button includes a hidden `wizard_step` field (the
+        # settings page's button does not, so this is None there and every
+        # redirect below falls back to today's /setup/{name}?msg= behavior).
+        # Built from cfg-validated `name` (validate_name above) and this
+        # parsed int only -- never from a client-supplied path string.
+        wizard_step: int | None = None
+        raw_wizard_step = form.get("wizard_step")
+        if raw_wizard_step not in (None, ""):
+            try:
+                parsed = int(str(raw_wizard_step))
+                if parsed >= 1:
+                    wizard_step = parsed
+            except ValueError:
+                wizard_step = None
+
+        def _bounce_path(msg: str) -> str:
+            q = urllib.parse.quote(msg)
+            if wizard_step is not None:
+                return f"/setup/{name}/wizard/{wizard_step}?msg={q}"
+            return f"/setup/{name}?msg={q}"
+
         ensure_adapter_from_manifest(cfg.trackers_dir / name, step)
 
         env_file = read_env(cfg.root / ".env")
@@ -209,24 +252,21 @@ def register_setup_routes(
                 f"Set {step.client_id_env} and {step.client_secret_env} on this "
                 "page first, then click Authorize."
             )
-            return RedirectResponse(
-                url=f"/setup/{name}?msg={urllib.parse.quote(msg)}",
-                status_code=303,
-            )
+            return RedirectResponse(url=_bounce_path(msg), status_code=303)
         if step.redirect_port is None:
             msg = (
                 "This tracker's manifest doesn't pin a redirect port — finish OAuth "
                 f"with `personal-db tracker setup {name}` in your terminal."
             )
-            return RedirectResponse(
-                url=f"/setup/{name}?msg={urllib.parse.quote(msg)}",
-                status_code=303,
-            )
+            return RedirectResponse(url=_bounce_path(msg), status_code=303)
 
-        success_msg = urllib.parse.quote(
-            f"OAuth completed for {step.provider} — click 'save & test sync' to verify."
-        )
-        success_redirect = f"{str(request.base_url).rstrip('/')}/setup/{name}?msg={success_msg}"
+        if wizard_step is not None:
+            success_msg = f"OAuth completed for {step.provider} — continue to finish setup."
+        else:
+            success_msg = (
+                f"OAuth completed for {step.provider} — click 'save & test sync' to verify."
+            )
+        success_redirect = f"{str(request.base_url).rstrip('/')}{_bounce_path(success_msg)}"
         try:
             auth_url = start_web_oauth(
                 cfg,
@@ -248,10 +288,7 @@ def register_setup_routes(
                 msg = str(e)
             else:
                 msg = f"could not bind callback port {step.redirect_port}: {e}"
-            return RedirectResponse(
-                url=f"/setup/{name}?msg={urllib.parse.quote(msg)}",
-                status_code=303,
-            )
+            return RedirectResponse(url=_bounce_path(msg), status_code=303)
         return RedirectResponse(url=auth_url, status_code=303)
 
     @app.get("/setup/finish")
@@ -360,6 +397,173 @@ def register_setup_routes(
             },
         )
 
+    # --- step-per-page first-run wizard (/setup/{name}/wizard/...) --------
+    #
+    # Registered before the catch-all GET /setup/{name} below for
+    # readability (a reader scanning top-to-bottom sees the more specific
+    # routes first). FastAPI/Starlette match on segment count + literal vs.
+    # typed-path-param regex, so this ordering isn't load-bearing: none of
+    # these routes actually collide with the two-segment /setup/{name}
+    # pattern, and the `{i:int}` converter on the numbered-step routes
+    # already can't match the literal "finish" segment either way.
+    #
+    # The one-page /setup/{name} settings form (below) stays as-is for
+    # already-configured sources; this is only the guided first-time path.
+
+    @app.get("/setup/{name}/wizard")
+    async def setup_wizard_root(name: str):
+        manifest_path = cfg.trackers_dir / name / "manifest.yaml"
+        if not manifest_path.exists():
+            raise HTTPException(status_code=404, detail=f"unknown tracker: {name}")
+        manifest = load_manifest(manifest_path)
+        if not manifest.setup_steps:
+            return RedirectResponse(url=f"/setup/{name}/wizard/finish", status_code=303)
+        return RedirectResponse(url=f"/setup/{name}/wizard/1", status_code=303)
+
+    @app.get("/setup/{name}/wizard/finish", response_class=HTMLResponse)
+    async def setup_wizard_finish_get(request: Request, name: str, msg: str = ""):
+        reg = registry()
+        manifest_path = cfg.trackers_dir / name / "manifest.yaml"
+        if not manifest_path.exists():
+            raise HTTPException(status_code=404, detail=f"unknown tracker: {name}")
+        manifest = load_manifest(manifest_path)
+        return templates.TemplateResponse(
+            request=request,
+            name="setup_wizard.html",
+            context={
+                "active": "setup",
+                "tracker_name": name,
+                "tracker_title": manifest.display_title(),
+                "manifest": manifest,
+                "steps": list_step_views(cfg, manifest),
+                "step": None,
+                "step_number": None,
+                "total_steps": len(manifest.setup_steps),
+                "step_result": None,
+                "run_result": None,
+                "finish": True,
+                "flash": msg,
+                **nav_context(reg, None),
+            },
+        )
+
+    @app.post("/setup/{name}/wizard/finish", response_class=HTMLResponse)
+    async def setup_wizard_finish_post(request: Request, name: str):
+        reg = registry()
+        manifest_path = cfg.trackers_dir / name / "manifest.yaml"
+        if not manifest_path.exists():
+            raise HTTPException(status_code=404, detail=f"unknown tracker: {name}")
+        manifest = load_manifest(manifest_path)
+        has_env_step = any(isinstance(s, EnvVarStep) for s in manifest.setup_steps)
+        run_result = run_first_sync(cfg, name, saved_prefix=has_env_step)
+        return templates.TemplateResponse(
+            request=request,
+            name="setup_wizard.html",
+            context={
+                "active": "setup",
+                "tracker_name": name,
+                "tracker_title": manifest.display_title(),
+                "manifest": manifest,
+                "steps": list_step_views(cfg, manifest),
+                "step": None,
+                "step_number": None,
+                "total_steps": len(manifest.setup_steps),
+                "step_result": None,
+                "run_result": run_result,
+                "finish": True,
+                "flash": "",
+                **nav_context(reg, None),
+            },
+        )
+
+    @app.get("/setup/{name}/wizard/{i}", response_class=HTMLResponse)
+    async def setup_wizard_step_get(request: Request, name: str, i: int, msg: str = ""):
+        reg = registry()
+        manifest_path = cfg.trackers_dir / name / "manifest.yaml"
+        if not manifest_path.exists():
+            raise HTTPException(status_code=404, detail=f"unknown tracker: {name}")
+        manifest = load_manifest(manifest_path)
+        steps = list_step_views(cfg, manifest)
+        if i < 1 or i > len(steps):
+            return RedirectResponse(url=f"/setup/{name}/wizard", status_code=303)
+        return templates.TemplateResponse(
+            request=request,
+            name="setup_wizard.html",
+            context={
+                "active": "setup",
+                "tracker_name": name,
+                "tracker_title": manifest.display_title(),
+                "manifest": manifest,
+                "steps": steps,
+                "step": steps[i - 1],
+                "step_number": i,
+                "total_steps": len(steps),
+                "step_result": None,
+                "run_result": None,
+                "finish": False,
+                "flash": msg,
+                **nav_context(reg, None),
+            },
+        )
+
+    @app.post("/setup/{name}/wizard/{i}", response_class=HTMLResponse)
+    async def setup_wizard_step_post(request: Request, name: str, i: int):
+        reg = registry()
+        manifest_path = cfg.trackers_dir / name / "manifest.yaml"
+        if not manifest_path.exists():
+            raise HTTPException(status_code=404, detail=f"unknown tracker: {name}")
+        manifest = load_manifest(manifest_path)
+        setup_steps = manifest.setup_steps
+        if i < 1 or i > len(setup_steps):
+            return RedirectResponse(url=f"/setup/{name}/wizard", status_code=303)
+
+        form = dict(await request.form())
+        step = setup_steps[i - 1]
+        env_path = cfg.root / ".env"
+        result = _process_step(i - 1, step, cfg, env_path, form, name)
+
+        # _process_step reports "skipped" for an oauth step with no token on
+        # disk yet -- correct for the settings page (it just points at the
+        # Authorize button), but a dead end for the wizard: without this
+        # override, an unauthorized oauth step would silently let Continue
+        # through and the tracker would never actually get configured. The
+        # one exception is the terminal-only case (no redirect_port pinned
+        # in the manifest) -- the web flow can't drive OAuth there at all,
+        # so "skipped" genuinely is the correct end state and Continue must
+        # still work.
+        if (
+            isinstance(step, OAuthStep)
+            and step.redirect_port is not None
+            and not oauth_token_present(cfg, step)
+        ):
+            result = StepResult("failed", "Click Authorize above before continuing.")
+
+        if result.status in ("ok", "skipped"):
+            if i >= len(setup_steps):
+                return RedirectResponse(url=f"/setup/{name}/wizard/finish", status_code=303)
+            return RedirectResponse(url=f"/setup/{name}/wizard/{i + 1}", status_code=303)
+
+        steps = list_step_views(cfg, manifest)
+        return templates.TemplateResponse(
+            request=request,
+            name="setup_wizard.html",
+            context={
+                "active": "setup",
+                "tracker_name": name,
+                "tracker_title": manifest.display_title(),
+                "manifest": manifest,
+                "steps": steps,
+                "step": steps[i - 1],
+                "step_number": i,
+                "total_steps": len(steps),
+                "step_result": result,
+                "run_result": None,
+                "finish": False,
+                "flash": "",
+                **nav_context(reg, None),
+            },
+        )
+
     @app.get("/setup/{name}", response_class=HTMLResponse)
     async def setup_tracker_get(request: Request, name: str, msg: str = "", created: str = ""):
         reg = registry()
@@ -382,6 +586,7 @@ def register_setup_routes(
                 "just_created": created == "1",
                 "tracker_root": str(cfg.trackers_dir / name),
                 "agent_terminal_enabled": cfg.agent_terminal.enabled,
+                "never_configured": compute_icon(cfg, name) == "✗",
                 **nav_context(reg, None),
             },
         )

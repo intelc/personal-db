@@ -6,32 +6,17 @@
   <h1>Settings</h1>
 </header>
 
-<section class="block">
-  <h2 class="block-h">APPEARANCE</h2>
-  <div class="theme-picker" data-theme-picker role="group" aria-label="Color theme">
-    <button type="button" class="theme-option" data-theme-option="auto">Auto</button>
-    <button type="button" class="theme-option" data-theme-option="light">Light</button>
-    <button type="button" class="theme-option" data-theme-option="dark">Dark</button>
-    <button type="button" class="theme-option" data-theme-option="morandi">Morandi 莫兰迪</button>
-  </div>
-  <p class="meta">Auto and Morandi follow the system light/dark setting.</p>
-</section>
-
-<section class="block">
-  <p class="meta">
-    Connect your data sources. Each one takes a minute or two — an API key, a
-    permission grant — and then it syncs on its own from here on. Everything
-    stays on this Mac.
-  </p>
-</section>
-
 {% set installed_trackers = trackers | selectattr('installed') | list %}
 <section class="block">
   <div class="settings-section-head">
     <h2 class="block-h">SOURCES</h2>
     <a href="/setup/browse" class="btn-primary btn-sm">Add source →</a>
   </div>
-
+  <p class="meta">
+    Connect your data sources. Each one takes a minute or two — an API key, a
+    permission grant — and then it syncs on its own from here on. Everything
+    stays on this Mac.
+  </p>
   {% if installed_trackers %}
   <div class="filter-tabs" role="tablist" aria-label="Filter sources" data-source-filter-tabs>
     <button type="button" class="filter-tab is-active" data-filter="all" role="tab" aria-selected="true">All</button>
@@ -61,7 +46,13 @@
           <span class="status-chip {{ t.status_class }}">{{ t.status_label }}</span>
         {% endif %}
         {% if t.last_sync_age %}
-          <span class="sync-age">Synced {{ t.last_sync_age }}{% if t.next_sync %} · {{ t.next_sync }}{% endif %}</span>
+          <span class="sync-age">
+            {%- if t.manual -%}
+              Last entry {{ t.last_sync_age }}
+            {%- else -%}
+              Synced {{ t.last_sync_age }}{% if t.next_sync %} · {{ t.next_sync }}{% endif %}
+            {%- endif -%}
+          </span>
         {% endif %}
         <a href="/setup/{{ t.name }}" class="btn-link">configure →</a>
       </div>
@@ -177,5 +168,16 @@
     Historical backfills are running in the background — answers get richer as
     they complete. Tail logs at <code>&lt;root&gt;/state/backfill_*.log</code>.
   </p>
+</section>
+
+<section class="block">
+  <h2 class="block-h">APPEARANCE</h2>
+  <div class="theme-picker" data-theme-picker role="group" aria-label="Color theme">
+    <button type="button" class="theme-option" data-theme-option="auto">Auto</button>
+    <button type="button" class="theme-option" data-theme-option="light">Light</button>
+    <button type="button" class="theme-option" data-theme-option="dark">Dark</button>
+    <button type="button" class="theme-option" data-theme-option="morandi">Morandi 莫兰迪</button>
+  </div>
+  <p class="meta">Auto and Morandi follow the system light/dark setting.</p>
 </section>
 {% endblock %}

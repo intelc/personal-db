@@ -142,10 +142,13 @@ def test_setup_browse_breadcrumb_label(tmp_path):
 def test_setup_install_creates_tracker_dir(tmp_path):
     cfg = _init(tmp_path)
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
-    # follow_redirects=False so we can assert the 303 → /setup/<name>
+    # follow_redirects=False so we can assert the 303 → the first-run wizard
+    # (see test_ui_wizard.py for the wizard routes themselves, and
+    # test_install_already_installed_redirects_to_settings_not_wizard for the
+    # already-installed case, which still lands on /setup/<name>).
     r = client.post("/setup/install/habits", follow_redirects=False)
     assert r.status_code == 303
-    assert r.headers["location"] == "/setup/habits"
+    assert r.headers["location"] == "/setup/habits/wizard"
     assert (cfg.trackers_dir / "habits" / "manifest.yaml").exists()
 
 
@@ -176,7 +179,7 @@ def test_setup_tracker_post_runs_steps_and_status(tmp_path):
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.post("/setup/habits", data={"_ack_0": "1"})
     assert r.status_code == 200
-    assert "✓ DONE" in r.text
+    assert "✓ Connected" in r.text
     assert "test sync passed" in r.text
 
 
@@ -862,7 +865,7 @@ def test_setup_overview_marks_installed_with_icon(tmp_path):
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.get("/setup")
     # The overview card shows a status chip reflecting the tracker's state.
-    assert "Needs setup" in r.text or "Ready" in r.text
+    assert "Needs attention" in r.text or "Ready" in r.text
 
 
 def test_recent_successful_sync_outranks_stale_needs_setup(tmp_path):
@@ -877,14 +880,16 @@ def test_recent_successful_sync_outranks_stale_needs_setup(tmp_path):
 
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     before = client.get("/setup")
-    assert "Needs setup" in before.text  # habits: 1 step, never test-synced
+    # The status-chip text, not the "Needs attention" filter tab (which is
+    # always present regardless of tracker state).
+    assert 'status-chip warn">Needs attention' in before.text  # habits: never test-synced
 
     (cfg.state_dir / "last_run.json").write_text(
         json.dumps({"habits": datetime.now(UTC).isoformat()})
     )
     after = client.get("/setup")
     assert "● Ready" in after.text
-    assert "Needs setup" not in after.text
+    assert 'status-chip warn">Needs attention' not in after.text
 
 
 @pytest.mark.darwin_only  # installs the darwin-gated code_agent_activity tracker

@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+{% block title %}setup · {{ tracker_name }} · personal_db{% endblock %}
+
+{% block content %}
+<section class="block">
+  <div class="page-head">
+    <div>
+      <h1 title="{{ tracker_name }}">{{ tracker_title }}</h1>
+      {% if manifest.platform or (manifest.permission_type and manifest.permission_type != 'none') %}
+      <div class="badge-row">
+        {% for p in (manifest.platform or []) %}
+          <span class="badge">{{ platform_label(p) }}</span>
+        {% endfor %}
+        {% if manifest.permission_type and manifest.permission_type != 'none' %}
+          <span class="badge{% if manifest.permission_type == 'full_disk_access' %} badge-fda{% endif %}">{{ permission_label(manifest.permission_type) }}</span>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  <p class="meta">{{ manifest.description }}</p>
+</section>
+
+<section class="block">
+  {% if finish %}
+    <p class="wizard-progress">Final step</p>
+  {% else %}
+    <p class="wizard-progress">Step {{ step_number }} of {{ total_steps }}</p>
+  {% endif %}
+  <nav class="wizard-stepper" aria-label="Setup progress">
+    {% for s in steps %}
+      {% set is_done = finish or (step_number and loop.index < step_number) %}
+      {% set is_current = (not finish) and step_number and loop.index == step_number %}
+      <div class="wizard-stepper-item{% if is_done %} done{% elif is_current %} current{% else %} upcoming{% endif %}">
+        <span class="wizard-stepper-dot">{% if is_done %}&#10003;{% else %}{{ loop.index }}{% endif %}</span>
+        <span class="wizard-stepper-label">{{ s.label }}</span>
+      </div>
+    {% endfor %}
+    <div class="wizard-stepper-item{% if finish %} current{% else %} upcoming{% endif %}">
+      <span class="wizard-stepper-dot">{% if finish %}&#9679;{% else %}{{ (steps|length) + 1 }}{% endif %}</span>
+      <span class="wizard-stepper-label">Run first sync</span>
+    </div>
+  </nav>
+</section>
+
+{% if flash %}
+  <section class="block setup-result {% if 'error' in flash|lower or 'fail' in flash|lower %}fail{% else %}ok{% endif %}">
+    <p class="meta">{{ flash }}</p>
+  </section>
+{% endif %}
+
+{% if finish %}
+  <section class="block setup-step{% if run_result %}{{ ' ok' if run_result.success else ' fail' }}{% endif %}">
+    {% if run_result %}
+      <h2 class="block-h">
+        {% if run_result.success %}&#10003; {{ tracker_title }} connected{% else %}&#10007; FAILED{% endif %}
+      </h2>
+      <p class="meta">{{ run_result.detail }}</p>
+      {% if run_result.success %}
+        <p class="setup-result-actions">
+          <a href="/t/{{ tracker_name }}" class="btn-primary">View data &rarr;</a>
+          <a href="/setup" class="btn-link">Done</a>
+        </p>
+      {% endif %}
+    {% else %}
+      <h3 class="block-h">Run first sync</h3>
+      <p class="meta">
+        This verifies the connection with a one-off test sync, then kicks off
+        a historical backfill in the background.
+      </p>
+    {% endif %}
+    {% if not run_result or not run_result.success %}
+      <form method="post" action="/setup/{{ tracker_name }}/wizard/finish">
+        <button type="submit" class="btn-primary">{% if run_result %}Retry{% else %}Run first sync{% endif %}</button>
+      </form>
+    {% endif %}
+  </section>
+{% else %}
+  <form method="post" action="/setup/{{ tracker_name }}/wizard/{{ step_number }}" class="setup-form">
+    <section class="block setup-step{% if step_result and step_result.status == 'failed' %} fail{% elif step_result and step_result.status == 'ok' %} ok{% endif %}"{% if step.type_ in ('install_hooks', 'verify_hooks') %} data-step-type="{{ step.type_ }}" data-tracker="{{ tracker_name }}"{% elif step.type_ == 'action' %} data-step-type="action" data-tracker="{{ tracker_name }}" data-action="{{ step.action }}" data-status-action="{{ step.status_action or '' }}"{% endif %}>
+      <h3 class="block-h">{{ step.label }}</h3>
+
+      {% if step.type_ == 'env_var' %}
+        <p class="meta">{{ step.description }}</p>
+        <input type="text"
+               name="{{ step.field_name }}"
+               class="setup-input{% if step.secret %} masked{% endif %}"
+               value="{% if not step.secret %}{{ step.current_value or '' }}{% endif %}"
+               placeholder="{% if step.secret and step.current_value %}(saved — leave blank to keep){% else %}{{ step.label }}{% endif %}"
+               autocomplete="off"
+               autocorrect="off"
+               autocapitalize="off"
+               spellcheck="false"
+               data-form-type="other"
+               data-1p-ignore
+               data-lpignore="true">
+        {% if step.secret %}
+          <p class="meta">stored to <code>&lt;root&gt;/.env</code> (mode 0600).</p>
+        {% endif %}
+        <p><button type="submit" class="btn-primary">Save &amp; continue</button></p>
+
+      {% elif step.type_ == 'instructions' %}
+        <pre class="setup-instructions">{{ step.description | urlize(target="_blank") }}</pre>
+        <label class="setup-ack">
+          <input type="checkbox" name="{{ step.field_name }}" value="1">
+          I've read this and completed any external steps.
+        </label>
+        <p><button type="submit" class="btn-primary">Continue</button></p>
+
+      {% elif step.type_ == 'fda_check' %}
+        <p class="meta">{{ step.description }}</p>
+        <p>
+          <a href="{{ step.settings_url }}" class="btn-link" target="_blank">
+            Open System Settings &rarr;
+          </a>
+        </p>
+        <p><button type="submit" class="btn-primary">Check access &amp; continue</button></p>
+
+      {% elif step.type_ == 'command_test' %}
+        <p class="meta">{{ step.description }}</p>
+        <p><button type="submit" class="btn-primary">Run check &amp; continue</button></p>
+
+      {% elif step.type_ == 'install_hooks' %}
+        {% if step.description %}<p class="meta">{{ step.description }}</p>{% endif %}
+        <p>
+          <button
+            type="button"
+            class="btn-primary"
+            onclick="installHooks(this, '{{ tracker_name }}')"
+          >Install hooks</button>
+        </p>
+        <pre class="action-output" hidden></pre>
+        <p><button type="submit" class="btn-primary">Continue</button></p>
+
+      {% elif step.type_ == 'verify_hooks' %}
+        <p><span class="hook-status-badge">checking…</span></p>
+        <p><button type="submit" class="btn-primary">Continue</button></p>
+
+      {% elif step.type_ == 'note' %}
+        <p class="meta">{{ step.description }}</p>
+        <p><button type="submit" class="btn-primary">Continue</button></p>
+
+      {% elif step.type_ == 'action' %}
+        {% if step.description %}<p class="meta">{{ step.description }}</p>{% endif %}
+        {% if step.status_action %}
+          <p class="meta">
+            {{ step.status_label or "Status" }}:
+            <span class="tracker-action-status">checking…</span>
+          </p>
+        {% endif %}
+        <p>
+          <button
+            type="button"
+            class="btn-primary"
+            onclick="runTrackerAction(this, '{{ tracker_name }}', '{{ step.action }}')"
+          >{{ step.button_label }}</button>
+        </p>
+        <pre class="action-output" hidden></pre>
+        <p><button type="submit" class="btn-primary">Continue</button></p>
+
+      {% elif step.type_ == 'oauth' %}
+        <p class="meta">{{ step.description }}</p>
+        {% if step.redirect_uri %}
+          <p class="meta">
+            Redirect URI: <code>{{ step.redirect_uri }}</code>
+            <button type="button" class="copy-btn" onclick="copyRedirectUri(this, '{{ step.redirect_uri }}')">copy</button>
+          </p>
+        {% endif %}
+        <input type="hidden" name="wizard_step" value="{{ step_number }}">
+        {% if step.oauth_authorized %}
+          <p class="meta">&#10003; Authorized with {{ step.provider }}</p>
+          <p>
+            <button type="submit" class="btn-primary">Continue</button>
+            <button type="submit"
+                    class="btn-link"
+                    formaction="/setup/oauth/{{ tracker_name }}"
+                    formmethod="post"
+                    formnovalidate
+                    name="step_index"
+                    value="{{ step.oauth_index }}">
+              re-authorize
+            </button>
+          </p>
+        {% elif step.redirect_uri is none %}
+          {# Terminal-only case: manifest doesn't pin a redirect port, so the
+             web flow can't drive OAuth at all -- step.description (rendered
+             above) already points the user at `personal-db tracker setup
+             <name>`. "skipped" is the correct end state here, so Continue
+             must still work rather than being a dead end. #}
+          <p><button type="submit" class="btn-primary">Continue</button></p>
+        {% else %}
+          {% set oauth_ready = step.oauth_creds_present %}
+          <p>
+            <button type="submit"
+                    class="btn-primary"
+                    formaction="/setup/oauth/{{ tracker_name }}"
+                    formmethod="post"
+                    formnovalidate
+                    {% if not oauth_ready %}disabled{% endif %}
+                    name="step_index"
+                    value="{{ step.oauth_index }}">
+              Authorize with {{ step.provider }} &rarr;
+            </button>
+          </p>
+          {% if not oauth_ready %}
+            <p class="meta">Enter and save your Client ID and Secret above to enable authorization.</p>
+          {% endif %}
+        {% endif %}
+      {% endif %}
+
+      {% if step_result %}
+        {% if step.type_ == 'instructions' and step_result.status == 'failed' %}
+          <p class="setup-step-result failed">&#10007; Please confirm you've completed these steps.</p>
+        {% else %}
+          <p class="setup-step-result {{ step_result.status }}">
+            {% if step_result.status == 'ok' %}&#10003;{% elif step_result.status == 'failed' %}&#10007;{% else %}&mdash;{% endif %}
+            {{ step_result.detail }}
+          </p>
+        {% endif %}
+      {% endif %}
+    </section>
+  </form>
+{% endif %}
+
+<script src="/static/pdb-setup-actions.js?v=1"></script>
+{% endblock %}

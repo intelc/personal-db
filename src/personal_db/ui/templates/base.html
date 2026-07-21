@@ -79,7 +79,7 @@
       <div class="sidebar-footer" id="sidebar-status">
         <a href="/health" class="sidebar-status" title="Health" {% if active=='health' %}aria-current="page"{% endif %}>
           <span class="sidebar-status-dot {% if nav_failing %}is-danger{% else %}is-ok{% endif %}"></span>
-          <span class="sidebar-status-label">{% if nav_failing %}{{ nav_failing|length }} failing{% else %}All sources syncing{% endif %}</span>
+          <span class="sidebar-status-label">{% if nav_failing %}{% if nav_failing|length == 1 %}1 needs attention{% else %}{{ nav_failing|length }} need attention{% endif %}{% else %}All sources syncing{% endif %}</span>
         </a>
         <button
           type="button"
@@ -124,11 +124,19 @@
       {% elif _path == '/setup' %}
         {% set crumbs = [{'label': 'Settings', 'href': None}] %}
       {% elif _path.startswith('/setup/') %}
-        {% set _seg = _path.split('/')[2] %}
+        {% set _parts = _path.split('/') %}
+        {% set _seg = _parts[2] %}
         {% set _known = {'new': 'Add a source', 'browse': 'Browse'} %}
         {% set _tracker_title = (nav_trackers|selectattr('slug', 'equalto', _seg)|map(attribute='title')|first) %}
         {% set _label = _known.get(_seg) or _tracker_title or (_seg|replace('_', ' ')|replace('-', ' ')|title) %}
-        {% set crumbs = [{'label': 'Settings', 'href': '/setup'}, {'label': _label, 'href': None}] %}
+        {% if _parts|length > 3 and _parts[3] == 'wizard' %}
+          {# /setup/{name}/wizard, /setup/{name}/wizard/{i}, and
+             /setup/{name}/wizard/finish all land here -- one extra crumb
+             linking back to the tracker's settings page. #}
+          {% set crumbs = [{'label': 'Settings', 'href': '/setup'}, {'label': _label, 'href': '/setup/' + _seg}, {'label': 'Setup', 'href': None}] %}
+        {% else %}
+          {% set crumbs = [{'label': 'Settings', 'href': '/setup'}, {'label': _label, 'href': None}] %}
+        {% endif %}
       {% else %}
         {% set crumbs = [{'label': 'PersonalDB', 'href': '/'}] %}
       {% endif %}

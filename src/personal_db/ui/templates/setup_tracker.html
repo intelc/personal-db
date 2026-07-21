@@ -3,7 +3,6 @@
 
 {% block content %}
 <section class="block">
-  <p class="meta"><a href="/setup">← back to settings</a></p>
   <div class="page-head">
     <div>
       <h1 title="{{ tracker_name }}">{{ tracker_title }}</h1>
@@ -21,6 +20,16 @@
   </div>
   <p class="meta">{{ manifest.description }}</p>
 </section>
+
+{% if never_configured %}
+  <section class="block setup-not-configured-banner">
+    <p class="setup-not-configured-title">This source isn't set up yet.</p>
+    <p class="meta">Step through the guided setup instead of this all-in-one form.</p>
+    <p>
+      <a href="/setup/{{ tracker_name }}/wizard" class="btn-primary">Set up step-by-step →</a>
+    </p>
+  </section>
+{% endif %}
 
 {% if just_created %}
   <section class="block created-notice" id="just-created-notice">
@@ -71,13 +80,13 @@
 {% if run_result %}
   <section class="block setup-result {{ 'ok' if run_result.success else 'fail' }}">
     <h2 class="block-h">
-      {% if run_result.success %}✓ DONE{% else %}✗ FAILED{% endif %}
+      {% if run_result.success %}✓ Connected{% else %}✗ FAILED{% endif %}
     </h2>
     <p class="meta">{{ run_result.detail }}</p>
     {% if run_result.success %}
-      <p class="meta">
-        <a href="/setup">← back to settings</a> ·
-        <a href="/t/{{ tracker_name }}">view this tracker →</a>
+      <p class="setup-result-actions">
+        <a href="/t/{{ tracker_name }}" class="btn-primary">View data →</a>
+        <a href="/setup" class="btn-link">Done</a>
       </p>
     {% endif %}
   </section>
@@ -98,7 +107,6 @@
     <section class="block setup-step{% if r and r.status == 'failed' %} fail{% elif r and r.status == 'ok' %} ok{% endif %}"{% if step.type_ in ('install_hooks', 'verify_hooks') %} data-step-type="{{ step.type_ }}" data-tracker="{{ tracker_name }}"{% elif step.type_ == 'action' %} data-step-type="action" data-tracker="{{ tracker_name }}" data-action="{{ step.action }}" data-status-action="{{ step.status_action or '' }}"{% endif %}>
       <h3 class="block-h">
         {{ loop.index }}. {{ step.label }}
-        <span class="setup-step-type">[{{ step.type_ }}]</span>
       </h3>
 
       {% if step.type_ == 'env_var' %}
@@ -120,7 +128,7 @@
         {% endif %}
 
       {% elif step.type_ == 'instructions' %}
-        <pre class="setup-instructions">{{ step.description }}</pre>
+        <pre class="setup-instructions">{{ step.description | urlize(target="_blank") }}</pre>
         <label class="setup-ack">
           <input type="checkbox" name="{{ step.field_name }}" value="1">
           I've read this and completed any external steps.
@@ -173,18 +181,27 @@
 
       {% elif step.type_ == 'oauth' %}
         <p class="meta">{{ step.description }}</p>
-        {% if step.oauth_creds_present or step.oauth_authorized %}
-          <p>
-            <button type="submit"
-                    class="btn-primary"
-                    formaction="/setup/oauth/{{ tracker_name }}"
-                    formmethod="post"
-                    formnovalidate
-                    name="step_index"
-                    value="{{ step.oauth_index }}">
-              {% if step.oauth_authorized %}re-authorize{% else %}authorize via browser →{% endif %}
-            </button>
+        {% if step.redirect_uri %}
+          <p class="meta">
+            Redirect URI: <code>{{ step.redirect_uri }}</code>
+            <button type="button" class="copy-btn" onclick="copyRedirectUri(this, '{{ step.redirect_uri }}')">copy</button>
           </p>
+        {% endif %}
+        {% set oauth_ready = step.oauth_creds_present or step.oauth_authorized %}
+        <p>
+          <button type="submit"
+                  class="btn-primary"
+                  formaction="/setup/oauth/{{ tracker_name }}"
+                  formmethod="post"
+                  formnovalidate
+                  {% if not oauth_ready %}disabled{% endif %}
+                  name="step_index"
+                  value="{{ step.oauth_index }}">
+            {% if step.oauth_authorized %}re-authorize{% else %}authorize via browser →{% endif %}
+          </button>
+        </p>
+        {% if not oauth_ready %}
+          <p class="meta">Enter and save your Client ID and Secret above to enable authorization.</p>
         {% endif %}
       {% endif %}
 
@@ -267,99 +284,8 @@
 </section>
 {% endif %}
 
+<script src="/static/pdb-setup-actions.js?v=1"></script>
 <script>
-async function installHooks(button, tracker) {
-  button.disabled = true;
-  const out = button.parentElement.querySelector('.action-output');
-  out.hidden = false;
-  out.textContent = "installing…";
-  out.classList.remove("error");   // reset stale error styling on retry
-  try {
-    const r = await fetch(`/api/v1/trackers/${tracker}/actions/install_hooks`, {method: "POST"});
-    const body = await r.json();
-    out.textContent = body.message || JSON.stringify(body);
-    if (!body.ok) out.classList.add("error");
-    document.querySelectorAll(`[data-step-type="verify_hooks"]`).forEach(refreshHookStatus);
-  } catch (err) {
-    out.textContent = `Daemon not reachable — run \`personal-db daemon install\``;
-    out.classList.add("error");
-  } finally {
-    button.disabled = false;
-  }
-}
-
-async function refreshHookStatus(el) {
-  const tracker = el.dataset.tracker;
-  const badge = el.querySelector(".hook-status-badge");
-  if (!badge) return;
-  try {
-    const r = await fetch(`/api/v1/trackers/${tracker}/actions/verify_hooks`, {method: "POST"});
-    const body = await r.json();
-    badge.textContent = body.ours_present ? "✓ installed" : "✗ not installed";
-    badge.className = `hook-status-badge ${body.ours_present ? "ok" : "warn"}`;
-  } catch {
-    badge.textContent = "daemon unreachable";
-    badge.className = "hook-status-badge error";
-  }
-}
-
-document.querySelectorAll(`[data-step-type="verify_hooks"]`).forEach(refreshHookStatus);
-
-function summarizeActionStatus(body) {
-  if (Number.isInteger(body.item_count)) {
-    const label = body.item_count === 1 ? "1 linked Item" : `${body.item_count} linked Items`;
-    const backups = Number.isInteger(body.backup_count) ? ` · ${body.backup_count} backups` : "";
-    const names = Array.isArray(body.items)
-      ? body.items.map((item) => item.institution_name || item.institution_id || item.item_id).filter(Boolean)
-      : [];
-    if (body.item_count > 0) {
-      return `✓ ${label}${backups}${names.length ? " · " + names.join(", ") : ""}`;
-    }
-    return `— no linked Items yet${backups}`;
-  }
-  return body.message || JSON.stringify(body);
-}
-
-async function refreshTrackerActionStatus(el) {
-  const tracker = el.dataset.tracker;
-  const statusAction = el.dataset.statusAction;
-  const badge = el.querySelector(".tracker-action-status");
-  if (!badge || !statusAction) return;
-  try {
-    const r = await fetch(`/api/v1/trackers/${tracker}/actions/${statusAction}`, {method: "POST"});
-    const body = await r.json();
-    badge.textContent = summarizeActionStatus(body);
-    badge.className = `tracker-action-status ${body.ok ? "ok" : "warn"}`;
-  } catch {
-    badge.textContent = "daemon unreachable";
-    badge.className = "tracker-action-status error";
-  }
-}
-
-async function runTrackerAction(button, tracker, action) {
-  button.disabled = true;
-  const section = button.closest(".setup-step");
-  const out = section.querySelector('.action-output');
-  out.hidden = false;
-  out.textContent = "running…";
-  out.classList.remove("error");
-  try {
-    const r = await fetch(`/api/v1/trackers/${tracker}/actions/${action}`, {method: "POST"});
-    const body = await r.json();
-    out.textContent = body.message || JSON.stringify(body, null, 2);
-    if (body.url) window.open(body.url, "_blank", "noopener");
-    if (!body.ok) out.classList.add("error");
-    await refreshTrackerActionStatus(section);
-  } catch {
-    out.textContent = `Daemon not reachable — run \`personal-db daemon install\``;
-    out.classList.add("error");
-  } finally {
-    button.disabled = false;
-  }
-}
-
-document.querySelectorAll(`[data-step-type="action"]`).forEach(refreshTrackerActionStatus);
-
 function money(value) {
   const num = Number(value || 0);
   return num.toLocaleString(undefined, {style: "currency", currency: "USD", maximumFractionDigits: 0});

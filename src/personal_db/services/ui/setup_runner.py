@@ -81,6 +81,11 @@ class TrackerOverview:
     status_class: str | None = None  # "ok" | "warn"
     last_sync_age: str | None = None  # e.g. "38m ago"
     next_sync: str | None = None  # e.g. "next in ~2h" -- only for `every` schedules
+    # True when the manifest has no periodic schedule (no `every`/`cron`) --
+    # e.g. habits, contacts, life_context. These never auto-sync, so the
+    # overview card reads "Last entry {age} ago" instead of "Synced {age}
+    # ago" and never shows a next-sync ETA (see setup.html).
+    manual: bool = False
     # False only for bundled-but-not-installed trackers whose manifest.platform
     # excludes the current OS (see check_platform_supported) -- drives the
     # greyed-out, no-install-button card on /setup/browse. Installed trackers
@@ -101,9 +106,11 @@ class StepView:
     secret: bool = False
     settings_url: str | None = None  # FDA deep-link, when applicable
     # OAuth-specific (only populated for type_ == 'oauth')
+    provider: str | None = None  # step.provider, e.g. "oura" -- for template copy
     oauth_index: int | None = None  # nth OAuth step in the manifest (0-based)
     oauth_authorized: bool = False  # token already saved on disk
     oauth_creds_present: bool = False  # client_id_env + client_secret_env both set
+    redirect_uri: str | None = None  # computed from redirect_port, when pinned
     action: str | None = None
     button_label: str | None = None
     status_action: str | None = None
@@ -117,6 +124,17 @@ class StepResult:
 
 
 _FDA_SETTINGS_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
+
+
+def oauth_token_present(cfg: Config, step: OAuthStep) -> bool:
+    """Whether an OAuth token has already been saved for `step.provider`.
+
+    Shared by `_process_step` (settings-page form submit) and the wizard
+    routes (`daemon/routes/setup.py`), which need the exact same check to
+    decide whether an oauth step can be treated as "Continue"-able without
+    silently letting an unauthorized step through as skipped.
+    """
+    return (cfg.state_dir / "oauth" / f"{step.provider}.json").exists()
 
 
 def list_overview(cfg: Config) -> list[TrackerOverview]:
@@ -149,8 +167,14 @@ def list_overview(cfg: Config) -> list[TrackerOverview]:
                 except ValueError:
                     last_sync_age = None
                     last_run_dt = None
+            manual = not (
+                manifest.schedule and (manifest.schedule.every or manifest.schedule.cron)
+            )
+            # A broken/needs-attention source's "next in ~X"/"due now" ETA is
+            # misleading -- it implies the schedule is on track when it isn't.
+            # Only show it once the tracker is actually Ready.
             next_sync = None
-            if manifest.schedule and manifest.schedule.every:
+            if status_class != "warn" and manifest.schedule and manifest.schedule.every:
                 next_sync = compute_next_sync(manifest.schedule, last_run_dt, now)
             out.append(
                 TrackerOverview(
@@ -166,6 +190,7 @@ def list_overview(cfg: Config) -> list[TrackerOverview]:
                     status_class=status_class,
                     last_sync_age=last_sync_age,
                     next_sync=next_sync,
+                    manual=manual,
                 )
             )
         except Exception as e:
@@ -289,6 +314,12 @@ def list_step_views(cfg: Config, manifest: Manifest) -> list[StepView]:
                     f"Click Authorize to open {step.provider} in a new tab. After you "
                     "approve, you'll be sent back to this page."
                 )
+            redirect_uri = None
+            if step.redirect_port is not None:
+                redirect_uri = (
+                    f"{step.scheme}://{step.redirect_host}:{step.redirect_port}"
+                    f"{step.redirect_path}"
+                )
             views.append(
                 StepView(
                     index=i,
@@ -297,10 +328,12 @@ def list_step_views(cfg: Config, manifest: Manifest) -> list[StepView]:
                     description=description,
                     field_name=None,
                     current_value=None,
+                    provider=step.provider,
                     oauth_index=oauth_counter,
                     oauth_authorized=already,
                     oauth_creds_present=creds_present
                     and step.redirect_port is not None,
+                    redirect_uri=redirect_uri,
                 )
             )
             oauth_counter += 1
@@ -374,6 +407,23 @@ def process_form(
         write_status(cfg, name, success=False, detail=detail)
         return results, RunResult(success=False, detail=detail)
 
+    has_env_step = any(isinstance(step, EnvVarStep) for step in manifest.setup_steps)
+    run_result = run_first_sync(cfg, name, saved_prefix=has_env_step)
+    return results, run_result
+
+
+def run_first_sync(cfg: Config, name: str, *, saved_prefix: bool = False) -> RunResult:
+    """Run the test sync + kick off the historical backfill for a tracker whose
+    setup_steps have already all passed. Shared by `process_form` (one-page
+    settings form) and the step-per-page wizard's finish route
+    (`POST /setup/{name}/wizard/finish`) so the "run first sync, persist
+    status, start backfill" tail isn't duplicated between them.
+
+    `saved_prefix` prepends "Settings saved. " to a failure detail -- set it
+    when the caller just persisted env vars/etc. so a test-sync failure
+    doesn't read as "nothing was saved" (see `process_form`'s prior inline
+    comment, preserved here).
+
     # TODO(python_deps): the terminal wizard (wizard/runner.py::run_tracker)
     # auto-installs manifest.python_deps via core.pack_deps.install_tracker_deps
     # before the test sync. The web wizard doesn't do this yet -- wiring it in
@@ -385,16 +435,19 @@ def process_form(
     # import them will just fail "test sync failed: No module named ..." below
     # (with the CLI-facing `personal-db tracker deps <name>` hint appended by
     # core/sync.py) -- workable but not as smooth as the terminal flow.
+    """
     try:
         sync_one(cfg, name)
     except Exception as e:
-        write_status(cfg, name, success=False, detail=f"test sync failed: {e}")
-        return results, RunResult(success=False, detail=f"test sync failed: {e}")
+        prefix = "Settings saved. " if saved_prefix else ""
+        detail = f"{prefix}Test sync failed — {e}"
+        write_status(cfg, name, success=False, detail=detail)
+        return RunResult(success=False, detail=detail)
 
     write_status(cfg, name, success=True, detail="test sync passed")
     # Detached historical backfill — same as the terminal wizard does.
     backfill_mod.start_async(cfg, name)
-    return results, RunResult(success=True, detail="test sync passed; backfill running in background")
+    return RunResult(success=True, detail="test sync passed; backfill running in background")
 
 
 def _process_step(
@@ -445,8 +498,7 @@ def _process_step(
         return StepResult("ok", "command verified")
 
     if isinstance(step, OAuthStep):
-        token_path = cfg.state_dir / "oauth" / f"{step.provider}.json"
-        if token_path.exists():
+        if oauth_token_present(cfg, step):
             return StepResult("ok", f"OAuth token present for {step.provider}")
         return StepResult(
             "skipped",
@@ -507,7 +559,7 @@ def _status_chip(icon: str) -> tuple[str | None, str | None]:
     if icon in ("—", "✓"):
         return "● Ready", "ok"
     if icon in ("✗", "!"):
-        return "Needs setup", "warn"
+        return "Needs attention", "warn"
     return None, None
 
 
