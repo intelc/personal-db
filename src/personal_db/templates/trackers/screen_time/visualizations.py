@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import html
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from personal_db.config import Config
@@ -47,12 +47,162 @@ def _load_name_cache(cfg: Config) -> dict[str, str]:
         con.close()
 
 
+def _local_sessions(cfg: Config, cutoff_ts: float, now_ts: float) -> list[tuple]:
+    """Return Mac sessions already imported by this tracker.
+
+    ``knowledgeC.db`` is the required source for this tracker.  Mosspath is an
+    optional companion that may contribute iPhone sessions, so visualizations
+    must not make the Mac half of the page depend on its database existing.
+    """
+    con = _connect(cfg)
+    if not con:
+        return []
+    cutoff_iso = datetime.fromtimestamp(cutoff_ts, UTC).isoformat()
+    now_iso = datetime.fromtimestamp(now_ts, UTC).isoformat()
+    try:
+        rows = con.execute(
+            "SELECT bundle_id, start_at, end_at, seconds "
+            "FROM screen_time_app_usage "
+            "WHERE end_at > ? AND start_at < ? ORDER BY start_at",
+            (cutoff_iso, now_iso),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        con.close()
+
+    sessions: list[tuple] = []
+    for bundle_id, start_at, end_at, seconds in rows:
+        try:
+            start_ts = datetime.fromisoformat(start_at.replace("Z", "+00:00")).timestamp()
+            end_ts = datetime.fromisoformat(end_at.replace("Z", "+00:00")).timestamp()
+        except (AttributeError, TypeError, ValueError):
+            continue
+        if end_ts > start_ts:
+            sessions.append(("mac", bundle_id, start_ts, end_ts, seconds or end_ts - start_ts))
+    return sessions
+
+
+def _local_top_apps(cfg: Config, cutoff: datetime) -> tuple[list[tuple], int]:
+    """Top Mac apps and number of active Mac days over the requested window."""
+    con = _connect(cfg)
+    if not con:
+        return [], 0
+    try:
+        rows = con.execute(
+            "SELECT bundle_id, sum(seconds) / 3600.0 AS hours, count(*) AS sessions "
+            "FROM screen_time_app_usage WHERE end_at > ? "
+            "GROUP BY bundle_id ORDER BY hours DESC LIMIT 20",
+            (cutoff.astimezone(UTC).isoformat(),),
+        ).fetchall()
+        active_days = con.execute(
+            "SELECT count(DISTINCT date(start_at, 'localtime')) "
+            "FROM screen_time_app_usage WHERE end_at > ?",
+            (cutoff.astimezone(UTC).isoformat(),),
+        ).fetchone()[0]
+        return rows, active_days or 0
+    except sqlite3.OperationalError:
+        return [], 0
+    finally:
+        con.close()
+
+
+def _latest_local_usage(cfg: Config) -> datetime | None:
+    """Most recent imported Mac session, for an actionable empty-state hint."""
+    con = _connect(cfg)
+    if not con:
+        return None
+    try:
+        row = con.execute("SELECT max(end_at) FROM screen_time_app_usage").fetchone()
+    except sqlite3.OperationalError:
+        return None
+    finally:
+        con.close()
+    if not row or not row[0]:
+        return None
+    try:
+        return datetime.fromisoformat(row[0].replace("Z", "+00:00"))
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _mac_freshness_hint(cfg: Config) -> str:
+    """Explain when a successful sync has no recent source rows to import."""
+    latest = _latest_local_usage(cfg)
+    if not latest:
+        return ""
+    if latest.astimezone(UTC) >= datetime.now(UTC) - timedelta(hours=24):
+        return ""
+    return f" · latest Mac usage ended {latest.astimezone().strftime('%Y-%m-%d %H:%M %Z')}"
+
+
+def _mosspath_sessions(platform: str, cutoff_ts: float, now_ts: float) -> list[tuple]:
+    """Read optional Mosspath sessions for one platform, if available."""
+    if not _MOSSPATH_DB.exists():
+        return []
+    try:
+        con = sqlite3.connect(f"file:{_MOSSPATH_DB}?mode=ro", uri=True)
+        rows = con.execute(
+            "SELECT platform, bundle_id, start_timestamp, end_timestamp, duration_seconds "
+            "FROM screen_time_sessions "
+            "WHERE platform = ? AND end_timestamp > ? AND start_timestamp < ? "
+            "ORDER BY start_timestamp",
+            (platform, cutoff_ts, now_ts),
+        ).fetchall()
+        con.close()
+        return rows
+    except sqlite3.OperationalError:
+        return []
+
+
+def _phone_source_status() -> str:
+    """Human-readable state of optional Mosspath iPhone capture."""
+    if not _MOSSPATH_DB.exists():
+        return "iPhone not connected"
+    try:
+        con = sqlite3.connect(f"file:{_MOSSPATH_DB}?mode=ro", uri=True)
+        row = con.execute(
+            "SELECT max(end_timestamp) FROM screen_time_sessions WHERE platform = 'iphone'"
+        ).fetchone()
+        con.close()
+    except sqlite3.OperationalError:
+        return "iPhone source unavailable"
+    if not row or row[0] is None:
+        return "no iPhone sessions captured yet"
+    latest = datetime.fromtimestamp(row[0], UTC).astimezone()
+    if latest < datetime.now().astimezone() - timedelta(hours=24):
+        return f"latest iPhone session ended {latest.strftime('%Y-%m-%d %H:%M %Z')}"
+    return "iPhone data from Mosspath"
+
+
 def _render_top_apps_for_platform(cfg: Config, platform: str, label: str) -> str:
-    """Top apps over last 30 days for a given Mosspath platform, in hours/day average."""
+    """Top apps over last 30 days, in hours/day average.
+
+    Mac usage comes from this tracker's own imported table.  Only iPhone
+    usage is optional Mosspath data.
+    """
+    if platform == "mac":
+        rows, days_with_data = _local_top_apps(cfg, datetime.now() - timedelta(days=30))
+        if not rows or not days_with_data:
+            return '<p class="meta">no Mac data in last 30 days</p>'
+
+        name_by_bundle = _load_name_cache(cfg)
+        items = [
+            (f"{name_by_bundle.get(bundle_id, bundle_id)} ({sessions} sess)", round(hours / days_with_data, 2))
+            for bundle_id, hours, sessions in rows
+            if hours
+        ]
+        return (
+            f'<p class="meta">top 20 Mac apps · last 30 days · '
+            f'hours per day, averaged over {days_with_data} active days · '
+            'session count in parens · data from macOS Screen Time</p>'
+            + horizontal_bars(items, value_fmt=lambda v: f"{v} h/day")
+        )
+
     if not _MOSSPATH_DB.exists():
         return (
-            '<p class="meta">Mosspath events.sqlite not found at '
-            f'<code>{html.escape(str(_MOSSPATH_DB))}</code> — phone/per-platform data unavailable.</p>'
+            '<p class="meta">no iPhone data in last 30 days — this tracker imports Mac usage '
+            'from macOS; install Mosspath to add iPhone sessions.</p>'
         )
     cutoff_ts = int((datetime.now() - timedelta(days=30)).timestamp())
     try:
@@ -71,10 +221,10 @@ def _render_top_apps_for_platform(cfg: Config, platform: str, label: str) -> str
         ).fetchone()[0]
         con.close()
     except sqlite3.OperationalError as e:
-        return f'<p class="meta">cannot read Mosspath events.sqlite: {html.escape(str(e))}</p>'
+        return f'<p class="meta">cannot read optional iPhone data: {html.escape(str(e))}</p>'
 
     if not rows or not days_with_data:
-        return f'<p class="meta">no {label} data in last 30 days</p>'
+        return f'<p class="meta">no {label} data in last 30 days · {_phone_source_status()}</p>'
 
     name_by_bundle = _load_name_cache(cfg)
     items: list[tuple[str, float]] = []
@@ -133,35 +283,25 @@ def render_hourly_heatmap(cfg: Config) -> str:
 
 
 def render_device_split_30d(cfg: Config) -> str:
-    """Mac vs iPhone hours per day, last 30 days, sourced from Mosspath."""
-    if not _MOSSPATH_DB.exists():
+    """Mac vs iPhone hours per day, sourced independently when possible."""
+    now = datetime.now()
+    cutoff = now - timedelta(days=30)
+    cutoff_ts = cutoff.timestamp()
+    now_ts = now.timestamp()
+    mac_sessions = _local_sessions(cfg, cutoff_ts, now_ts)
+    phone_sessions = _mosspath_sessions("iphone", cutoff_ts, now_ts)
+    if not mac_sessions and not phone_sessions:
         return (
-            '<p class="meta">Mosspath events.sqlite not found at '
-            f'<code>{html.escape(str(_MOSSPATH_DB))}</code> — phone data unavailable. '
-            'Install Mosspath and let it run to capture iPhone screen time.</p>'
+            '<p class="meta">no Mac or iPhone screen-time sessions in the last 30 days'
+            f'{_mac_freshness_hint(cfg)} · {_phone_source_status()}.</p>'
         )
 
-    cutoff_ts = int((datetime.now() - timedelta(days=30)).timestamp())
-    try:
-        con = sqlite3.connect(f"file:{_MOSSPATH_DB}?mode=ro", uri=True)
-        rows = con.execute(
-            "SELECT platform, "
-            "       date(start_timestamp, 'unixepoch', 'localtime') AS d, "
-            "       sum(duration_seconds)/3600.0 AS hours "
-            "FROM screen_time_sessions "
-            "WHERE platform IN ('mac', 'iphone') AND start_timestamp >= ? "
-            "GROUP BY platform, d",
-            (cutoff_ts,),
-        ).fetchall()
-        con.close()
-    except sqlite3.OperationalError as e:
-        return f'<p class="meta">cannot read Mosspath events.sqlite: {html.escape(str(e))}</p>'
+    by: dict[tuple[str, str], float] = {}
+    for platform, _bundle, start_ts, _end_ts, duration in mac_sessions + phone_sessions:
+        day = datetime.fromtimestamp(start_ts).date().isoformat()
+        by[(day, platform)] = by.get((day, platform), 0) + (duration or 0) / 3600.0
 
-    if not rows:
-        return '<p class="meta">no Mac or iPhone screen-time sessions in the last 30 days</p>'
-
-    by: dict[tuple[str, str], float] = {(d, p): h for p, d, h in rows}
-    today = datetime.now().date()
+    today = now.date()
     bars = []
     total_mac = 0.0
     total_phone = 0.0
@@ -186,7 +326,9 @@ def render_device_split_30d(cfg: Config) -> str:
         f'<p class="meta">last 30 days · '
         f'<span style="color:var(--chart-accent)">●</span> mac {round(total_mac, 1)}h · '
         f'<span style="color:#d97706">●</span> iphone {round(total_phone, 1)}h · '
-        f'data from Mosspath events.sqlite</p>'
+        'Mac data from macOS Screen Time'
+        + _mac_freshness_hint(cfg)
+        + f' · {_phone_source_status()}</p>'
         + stacked_vertical_bars(bars, value_unit="h")
     )
 
@@ -234,34 +376,18 @@ def render_device_flame_24h(cfg: Config) -> str:
     cross-device overlap is visible. Each rectangle is one (merged) session;
     hover via native SVG <title> reveals app name, duration, and time range.
     """
-    if not _MOSSPATH_DB.exists():
-        return (
-            '<p class="meta">Mosspath events.sqlite not found at '
-            f'<code>{html.escape(str(_MOSSPATH_DB))}</code> — phone data unavailable.</p>'
-        )
-
     now = datetime.now()
     cutoff = now - timedelta(hours=24)
     cutoff_ts = cutoff.timestamp()
     now_ts = now.timestamp()
-
-    try:
-        con = sqlite3.connect(f"file:{_MOSSPATH_DB}?mode=ro", uri=True)
-        rows = con.execute(
-            "SELECT platform, bundle_id, start_timestamp, end_timestamp, "
-            "       duration_seconds "
-            "FROM screen_time_sessions "
-            "WHERE platform IN ('mac', 'iphone') "
-            "  AND end_timestamp > ? AND start_timestamp < ? "
-            "ORDER BY start_timestamp",
-            (cutoff_ts, now_ts),
-        ).fetchall()
-        con.close()
-    except sqlite3.OperationalError as e:
-        return f'<p class="meta">cannot read Mosspath events.sqlite: {html.escape(str(e))}</p>'
+    rows = _local_sessions(cfg, cutoff_ts, now_ts)
+    rows.extend(_mosspath_sessions("iphone", cutoff_ts, now_ts))
 
     if not rows:
-        return '<p class="meta">no Mac or iPhone screen-time sessions in the last 24 hours</p>'
+        return (
+            '<p class="meta">no Mac or iPhone screen-time sessions in the last 24 hours'
+            f'{_mac_freshness_hint(cfg)} · {_phone_source_status()}.</p>'
+        )
 
     sessions = _merge_sessions(rows)
     name_by_bundle = _load_name_cache(cfg)
@@ -358,7 +484,8 @@ def render_device_flame_24h(cfg: Config) -> str:
         f'<p class="meta">{len(sessions)} merged sessions ({len(rows)} raw) · last 24h · '
         f'<span style="color:var(--chart-accent)">●</span> mac {round(total_mac, 1)}h · '
         f'<span style="color:#d97706">●</span> iphone {round(total_phone, 1)}h · '
-        'hover any rectangle for app · data from Mosspath</p>'
+        'hover any rectangle for app · Mac data from macOS Screen Time'
+        + f' · {_phone_source_status()}</p>'
         + "".join(parts)
     )
 
