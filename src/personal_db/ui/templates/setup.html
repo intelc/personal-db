@@ -63,7 +63,9 @@
         {% endif %}
       </span>
       <span class="source-row-timing">
-        {%- if t.last_sync_age -%}
+        {%- if t.paused -%}
+          Auto-sync paused after {{ t.paused_failures }} failures
+        {%- elif t.last_sync_age -%}
           {%- if t.manual -%}
             Last entry {{ t.last_sync_age }}
           {%- else -%}

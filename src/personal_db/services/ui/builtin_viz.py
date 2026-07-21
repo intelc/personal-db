@@ -18,6 +18,7 @@ from personal_db.core.manifest import (
     humanize_tracker_name,
     load_manifest,
 )
+from personal_db.core.sync_backoff import paused_trackers as _paused_trackers
 
 
 def humanize_age(d: timedelta) -> str:
@@ -185,14 +186,22 @@ def repeated_failure_trackers(
         except json.JSONDecodeError:
             last_runs = {}
 
-    result = []
+    result = set()
     for tracker, count in counts.items():
         if count < min_count:
             continue
         last_run_dt = _parse_ts(last_runs.get(tracker))
         error_dt = latest_error_ts[tracker]
         if last_run_dt is None or error_dt > last_run_dt:
-            result.append(tracker)
+            result.add(tracker)
+
+    # A paused tracker (see core.sync_backoff) stops generating new
+    # sync_errors.jsonl records -- sync_due no longer attempts it -- so its
+    # last real failure eventually ages out of `window_hours` above even
+    # though it's still failing from the user's perspective. Union in every
+    # currently-paused tracker unconditionally so it doesn't silently drop
+    # out of this list just because the scheduler stopped retrying it.
+    result.update(_paused_trackers(cfg))
     return sorted(result)
 
 

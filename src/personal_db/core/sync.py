@@ -17,6 +17,7 @@ from personal_db.core.manifest import OAuthStep, check_platform_supported, load_
 from personal_db.core.migrations import apply_pending_migrations
 from personal_db.core.oauth import ensure_adapter_from_manifest
 from personal_db.core.runtime_env import activate_lib_dir
+from personal_db.core.sync_backoff import blocked_reason, record_failure, record_success
 from personal_db.core.tracker import Tracker
 from personal_db.core.transforms import TransformError, make_context, topo_sort, validate
 from personal_db.core.validation import ensure_validated
@@ -202,30 +203,41 @@ def _register_oauth_adapters(tracker_dir: Path, manifest) -> None:
 
 
 def sync_one(cfg: Config, name: str) -> None:
-    tracker_dir = cfg.trackers_dir / name
-    manifest = load_manifest(tracker_dir / "manifest.yaml")
-    check_platform_supported(manifest)
-    init_db(cfg.db_path)
-    ensure_validated(cfg, name, tracker_dir)
-    _register_oauth_adapters(tracker_dir, manifest)
-    _ensure_schema(cfg, name, tracker_dir, manifest)
-    # Re-check <root>/lib on every sync, not just at process startup: a
-    # long-running daemon may have started before `tracker deps <name>`
-    # populated <root>/lib for the first time, in which case the one-time
-    # activate_lib_dir call at daemon startup (services/daemon/server.py)
-    # would have no-op'd. This call is cheap and idempotent (see
-    # core/runtime_env.py) so paying it on every sync is fine.
-    activate_lib_dir(cfg)
+    """Run a single tracker's sync, unconditionally (no due-check, no backoff
+    gate — see `sync_due` for that). This is the entry point for manual syncs
+    (CLI, HTTP API, the settings-page test-sync button), so it's also the
+    resume mechanism for `sync_backoff`: every call records its outcome
+    (`record_success`/`record_failure`), and a manual success clears a
+    tracker's backoff state, unpausing it."""
     try:
-        mod = _load_ingest_module(tracker_dir, name)
-        mod.sync(Tracker(name=name, cfg=cfg, manifest=manifest))
-    except (ImportError, ModuleNotFoundError) as e:
-        _reraise_with_deps_hint(e, name, manifest)
-    except (sqlite3.OperationalError, PermissionError) as e:
-        _reraise_with_fda_hint(e, name, manifest)
-    _run_transforms(cfg, name, mod, tracker_dir)
-    _write_last_run(cfg, name, datetime.now(UTC).isoformat())
-    _store_horizon(cfg, name, manifest)
+        tracker_dir = cfg.trackers_dir / name
+        manifest = load_manifest(tracker_dir / "manifest.yaml")
+        check_platform_supported(manifest)
+        init_db(cfg.db_path)
+        ensure_validated(cfg, name, tracker_dir)
+        _register_oauth_adapters(tracker_dir, manifest)
+        _ensure_schema(cfg, name, tracker_dir, manifest)
+        # Re-check <root>/lib on every sync, not just at process startup: a
+        # long-running daemon may have started before `tracker deps <name>`
+        # populated <root>/lib for the first time, in which case the one-time
+        # activate_lib_dir call at daemon startup (services/daemon/server.py)
+        # would have no-op'd. This call is cheap and idempotent (see
+        # core/runtime_env.py) so paying it on every sync is fine.
+        activate_lib_dir(cfg)
+        try:
+            mod = _load_ingest_module(tracker_dir, name)
+            mod.sync(Tracker(name=name, cfg=cfg, manifest=manifest))
+        except (ImportError, ModuleNotFoundError) as e:
+            _reraise_with_deps_hint(e, name, manifest)
+        except (sqlite3.OperationalError, PermissionError) as e:
+            _reraise_with_fda_hint(e, name, manifest)
+        _run_transforms(cfg, name, mod, tracker_dir)
+        _write_last_run(cfg, name, datetime.now(UTC).isoformat())
+        _store_horizon(cfg, name, manifest)
+    except Exception:
+        record_failure(cfg, name)
+        raise
+    record_success(cfg, name)
 
 
 def backfill_one(cfg: Config, name: str, start: str | None, end: str | None) -> None:
@@ -249,21 +261,31 @@ def backfill_one(cfg: Config, name: str, start: str | None, end: str | None) -> 
 
 
 def sync_due(cfg: Config, sync_one_fn=None) -> dict[str, str]:
-    """Run every due tracker. Returns {name: 'ok'|'<error>'}.
+    """Run every due tracker. Returns {name: 'ok'|'skip'|'backoff'|'paused'|'<error>'}.
 
     ``sync_one_fn`` defaults to :func:`sync_one`. Pass a wrapper (e.g. a
     lock-acquiring variant) to intercept each per-tracker call without
     changing the scheduling or error-recording logic.
+
+    Trackers in `sync_backoff`'s escalation window or paused state are
+    skipped here *before* the due-check, regardless of the tracker's own
+    schedule — this is the only gate `sync_backoff` applies; `sync_one`
+    itself is never gated (see its docstring), so manual syncs always run
+    and a manual success is what clears the backoff/pause.
     """
     if sync_one_fn is None:
         sync_one_fn = sync_one
     results: dict[str, str] = {}
+    now = datetime.now(UTC)
     for tracker_dir in sorted(cfg.trackers_dir.iterdir()):
         if not tracker_dir.is_dir():
             continue
         name = tracker_dir.name
         try:
-            if _is_due(cfg, name):
+            reason = blocked_reason(cfg, name, now)
+            if reason is not None:
+                results[name] = reason
+            elif _is_due(cfg, name):
                 sync_one_fn(cfg, name)
                 results[name] = "ok"
             else:

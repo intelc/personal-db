@@ -57,6 +57,7 @@ from personal_db.core.manifest import (
 )
 from personal_db.core.permissions import probe_sqlite_access
 from personal_db.core.sync import sync_one
+from personal_db.core.sync_backoff import tracker_state
 from personal_db.services.ui.builtin_viz import compute_next_sync, humanize_age
 from personal_db.services.wizard.env_file import read_env, upsert_env
 from personal_db.services.wizard.runner import RunResult
@@ -108,6 +109,17 @@ class TrackerOverview:
     tint: int = 0
     kind: str | None = None
     logo: str | None = None
+    # `sync_backoff` pause state (see core/sync_backoff.py). When `paused`,
+    # the compact row's timing column shows `paused_failures` instead of the
+    # usual sync age/ETA -- an auto-sync that's been paused for repeated
+    # failures reporting a stale "Synced 3d ago" would read as healthy when
+    # it isn't. The status chip's label is overridden to "Paused" (see
+    # `list_overview`) but keeps status_class "warn" so the Needs-attention
+    # filter and sidebar count still include it. A tracker merely in backoff
+    # (not yet paused) gets no special treatment here -- it keeps whatever
+    # chip/timing its wizard status already produced.
+    paused: bool = False
+    paused_failures: int | None = None
 
 
 @dataclass
@@ -266,6 +278,13 @@ def list_overview(cfg: Config) -> list[TrackerOverview]:
             next_sync = None
             if status_class != "warn" and manifest.schedule and manifest.schedule.every:
                 next_sync = compute_next_sync(manifest.schedule, last_run_dt, now)
+            paused = False
+            paused_failures = None
+            backoff_entry = tracker_state(cfg, name)
+            if backoff_entry and backoff_entry.get("paused"):
+                paused = True
+                paused_failures = backoff_entry.get("consecutive_failures")
+                status_label, status_class = "Paused", "warn"
             out.append(
                 TrackerOverview(
                     name=name,
@@ -285,6 +304,8 @@ def list_overview(cfg: Config) -> list[TrackerOverview]:
                     tint=compute_tint(name),
                     kind=compute_kind(manifest),
                     logo=logo_url(name),
+                    paused=paused,
+                    paused_failures=paused_failures,
                 )
             )
         except Exception as e:
