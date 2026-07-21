@@ -597,11 +597,33 @@ pub async fn open_page(app: &AppHandle, next_path: &str) -> Result<(), String> {
                     };
 
                     if already_attempted {
+                        // The guard being taken doesn't mean the attempt is
+                        // over -- at startup the health poll's immediate
+                        // first tick races this launch path, and losing that
+                        // race used to strand the window on the mismatch
+                        // page while the poll's restart succeeded in the
+                        // background (v0.1.9 -> v0.1.10 update incident).
+                        // Give the in-flight attempt the same window a fresh
+                        // spawn gets before concluding it failed.
                         eprintln!(
-                            "open_page: daemon still reports stale {version_key} (shell is \
-                             v{SHELL_VERSION}) after a prior restart attempt for this version \
-                             this session -- leaving it alone"
+                            "open_page: a restart for stale {version_key} was already attempted \
+                             or is in flight -- waiting up to {SIDECAR_START_TIMEOUT:?} for the \
+                             daemon to come up at v{SHELL_VERSION}"
                         );
+                        let deadline = tokio::time::Instant::now() + SIDECAR_START_TIMEOUT;
+                        while tokio::time::Instant::now() < deadline {
+                            if let Ok(Some(v)) = check_health(&base).await {
+                                if v == SHELL_VERSION {
+                                    eprintln!(
+                                        "open_page: concurrent restart succeeded, daemon now v{v}"
+                                    );
+                                    daemon_version = Some(v);
+                                    healed = true;
+                                    break;
+                                }
+                            }
+                            tokio::time::sleep(SIDECAR_POLL_INTERVAL).await;
+                        }
                     } else {
                         eprintln!(
                             "open_page: daemon reports {version_key} (shell is v{SHELL_VERSION}) \
@@ -945,9 +967,18 @@ async fn wait_until_unreachable(base: &str, timeout: Duration) {
 /// than this shell (or reporting no version at all): stop it (killing our
 /// own sidecar handle if we have one, otherwise asking it to shut down via
 /// the admin route with the on-disk token), wait briefly for it to actually
-/// go quiet, spawn a fresh sidecar, and reload the "main" window (if one is
-/// open) so its UI picks up routes that match the newly-spawned daemon's
-/// templates.
+/// go quiet, and spawn a fresh sidecar. Returns whether the replacement
+/// daemon came up healthy at this shell's own version.
+///
+/// Deliberately does NOT touch the "main" window itself -- callers own that.
+/// It used to end with a `location.reload()`, which is exactly wrong when
+/// the window is showing the bundled version-mismatch page: reloading a
+/// static guidance page just re-renders the guidance page (v0.1.9 ->
+/// v0.1.10 update incident: the daemon was replaced successfully while the
+/// user sat on a mismatch screen that a reload could never dismiss). The
+/// poll-path caller re-enters the full `open_page` flow instead; the
+/// launch-path caller is already inside that flow and falls through to the
+/// normal navigation on success.
 ///
 /// Called from two places: `check_version_drift` (the poll-path trigger) and
 /// `open_page`'s version-mismatch gate (the launch-path trigger added for
@@ -962,7 +993,7 @@ async fn wait_until_unreachable(base: &str, timeout: Duration) {
 /// spawn a fresh sidecar anyway -- which, per `try_start_sidecar`'s doc
 /// comment, will correctly fail to bind (rather than falsely "succeed") if
 /// the stale process is somehow still holding the port at that point.
-async fn restart_stale_daemon(app: &AppHandle, base: &str) {
+async fn restart_stale_daemon(app: &AppHandle, base: &str) -> bool {
     let had_own_sidecar = {
         let state = app.state::<SidecarState>();
         let mut guard = state.0.lock().unwrap();
@@ -1013,15 +1044,13 @@ async fn restart_stale_daemon(app: &AppHandle, base: &str) {
 
     if try_start_sidecar(app, base).await {
         eprintln!("version drift: restarted daemon");
+        true
     } else {
         eprintln!(
             "version drift: failed to restart the daemon after shutdown -- will leave it and \
              keep polling health normally"
         );
-    }
-
-    if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
-        let _ = window.eval("location.reload()");
+        false
     }
 }
 
@@ -1091,7 +1120,24 @@ async fn check_version_drift(app: &AppHandle, base: &str, daemon_version: &str) 
         "version drift detected: daemon reports v{daemon_version}, shell is v{SHELL_VERSION} -- \
          attempting one restart"
     );
-    restart_stale_daemon(app, base).await;
+    let restarted = restart_stale_daemon(app, base).await;
+
+    // Window recovery. If a "main" window is open right now it is almost
+    // certainly showing something served by (or about) the stale daemon --
+    // most likely the bundled version-mismatch guidance page, if `open_page`
+    // lost the once-per-version race to this poll (both fire at startup; the
+    // poll's first tick is immediate). Re-enter the full open flow rather
+    // than reloading in place: a reload of the static mismatch page can
+    // never dismiss it (the v0.1.9 -> v0.1.10 update incident), while
+    // `open_page` health-checks the fresh daemon and navigates to the real
+    // dashboard. No cycle: `open_page`'s own mismatch branch calls
+    // `restart_stale_daemon`, never back into this function.
+    if restarted && app.get_webview_window(WINDOW_LABEL).is_some() {
+        eprintln!("version drift: re-entering the open flow to replace the stale window");
+        if let Err(e) = open_page(app, "/").await {
+            eprintln!("version drift: failed to reopen the dashboard after restart: {e}");
+        }
+    }
 }
 
 /// `GET /api/v1/health` on a timer (see `HEALTH_POLL_INTERVAL` /
