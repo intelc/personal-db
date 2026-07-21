@@ -356,6 +356,12 @@ log "step 5: build the DMG"
 DMG_PATH="$("$SCRIPT_DIR/build-dmg.sh")"
 [[ -f "$DMG_PATH" ]] || die "build-dmg.sh did not report a DMG path"
 
+# Stable-named copy of the same (signed, stapled) DMG, so
+# releases/latest/download/PersonalDB_aarch64.dmg is an evergreen URL —
+# the website's download button points at it.
+DMG_ALIAS="$SCRIPT_DIR/build/PersonalDB_aarch64.dmg"
+cp -f "$DMG_PATH" "$DMG_ALIAS"
+
 # --- 6. latest.json ----------------------------------------------------------
 
 log "step 6: assemble latest.json"
@@ -388,7 +394,7 @@ gh release create "$TAG" \
   --draft \
   --title "PersonalDB $TAG" \
   --notes "$NOTES" \
-  "$DMG_PATH" "$UPDATER_ARCHIVE" "$UPDATER_SIG" "$LATEST_JSON"
+  "$DMG_PATH" "$DMG_ALIAS" "$UPDATER_ARCHIVE" "$UPDATER_SIG" "$LATEST_JSON"
 
 RELEASE_URL="$(gh release view "$TAG" --json url --jq .url)"
 log "done. Draft release: $RELEASE_URL"
