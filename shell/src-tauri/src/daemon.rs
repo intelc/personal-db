@@ -291,15 +291,66 @@ fn show_version_mismatch(
     Ok(())
 }
 
+/// Environment variables that must never leak from the shell's own
+/// environment into the frozen daemon sidecar: Python interpreter overrides
+/// (a dev checkout's PYTHONPATH/venv would shadow the bundle's own
+/// site-packages -- see the incident note at the spawn site) and TLS trust
+/// overrides that `requests`/curl honor over the bundle's certifi. PYTHONHOME
+/// is also stripped here even though the spawn re-sets it explicitly --
+/// belt-and-suspenders so the explicit value is the only one that can win.
+const SIDECAR_ENV_DENYLIST: &[&str] = &[
+    "PYTHONPATH",
+    "PYTHONHOME",
+    "PYTHONSTARTUP",
+    "PYTHONUSERBASE",
+    "PYTHONEXECUTABLE",
+    "VIRTUAL_ENV",
+    "__PYVENV_LAUNCHER__",
+    "REQUESTS_CA_BUNDLE",
+    "CURL_CA_BUNDLE",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+];
+
+fn env_var_is_sidecar_safe(key: &str) -> bool {
+    !SIDECAR_ENV_DENYLIST.contains(&key)
+}
+
+/// The parent process's environment minus `SIDECAR_ENV_DENYLIST` -- what the
+/// sidecar spawn rebuilds its child env from (after `env_clear()`), so PATH/
+/// HOME/locale survive but developer-Python and TLS overrides never do.
+/// Non-UTF-8 entries are dropped (`env::vars` skips them); nothing the
+/// daemon needs is non-UTF-8.
+fn sanitized_parent_env() -> Vec<(String, String)> {
+    env::vars()
+        .filter(|(k, _)| env_var_is_sidecar_safe(k))
+        .collect()
+}
+
 /// Attempts to spawn the frozen daemon payload (`packaging/freeze-daemon.sh`,
 /// wired in as `bundle.externalBin` in tauri.conf.json) when nothing answers
-/// health at `base` yet. Returns `true` once the spawned daemon becomes
-/// healthy, `false` if there's no sidecar for this build (e.g. a `tauri dev`
-/// run without the payload at the expected relative path -- not an error,
-/// just "nothing to spawn"), if it's already been spawned once this session,
-/// or if it never became healthy within `SIDECAR_START_TIMEOUT`. Callers
-/// treat `false` the same as "daemon down" and fall back to the guidance
-/// page.
+/// health at `base` yet. Returns `true` once the spawned daemon answers
+/// `/api/v1/health` reporting *exactly* this shell's own `SHELL_VERSION`,
+/// `false` if there's no sidecar for this build (e.g. a `tauri dev` run
+/// without the payload at the expected relative path -- not an error, just
+/// "nothing to spawn"), if it's already been spawned once this session, or
+/// if it never reported a matching version within `SIDECAR_START_TIMEOUT`.
+///
+/// The success check used to accept ANY successful `check_health` -- but
+/// that's exactly what let the v0.1.8 -> v0.1.9 self-update incident slip
+/// past this function: the OLD sidecar (spawned by the pre-update shell
+/// process, still holding the port after the update relaunched the shell but
+/// not the daemon) answered health just fine, so a restart attempt that
+/// "spawned" on top of it read as success even though nothing new was
+/// actually listening and the foreign, stale process was the one still
+/// serving traffic. Requiring the exact version match closes that hole: only
+/// a daemon that is truly this build's own freshly-spawned process can
+/// satisfy it, so callers (this function's own poll loop, plus
+/// `restart_stale_daemon`) can no longer mistake "something on the port
+/// answered" for "our spawn worked".
+///
+/// Callers treat `false` the same as "daemon down" and fall back to the
+/// guidance page.
 async fn try_start_sidecar(app: &AppHandle, base: &str) -> bool {
     let state = app.state::<SidecarState>();
     {
@@ -344,7 +395,9 @@ async fn try_start_sidecar(app: &AppHandle, base: &str) -> bool {
     let python_home = match app.path().resource_dir() {
         Ok(dir) => dir.join("python"),
         Err(e) => {
-            eprintln!("failed to resolve bundle resource dir for PYTHONHOME, not spawning sidecar: {e}");
+            eprintln!(
+                "failed to resolve bundle resource dir for PYTHONHOME, not spawning sidecar: {e}"
+            );
             return false;
         }
     };
@@ -357,7 +410,20 @@ async fn try_start_sidecar(app: &AppHandle, base: &str) -> bool {
         python_home.display()
     );
 
+    // The frozen daemon must never see a developer Python environment.
+    // Incident (2026-07-20): a shell launched from a session that exported
+    // PYTHONPATH into a repo venv left the *bundled* python3.11 importing
+    // `requests`/`certifi` from a since-deleted python3.12 site-packages --
+    // every HTTPS call then died with "invalid path: .../.venv/lib/
+    // python3.12/site-packages/certifi/cacert.pem". PYTHONHOME (set below)
+    // pins the stdlib but does NOT override PYTHONPATH's prepended entries,
+    // and requests also honors the *_CA_BUNDLE / SSL_CERT_* overrides
+    // directly. So the spawn env is rebuilt from a sanitized copy of the
+    // parent env instead of inherited wholesale.
+
     let sidecar = sidecar
+        .env_clear()
+        .envs(sanitized_parent_env())
         .env("PERSONAL_DB_ROOT", root.to_string_lossy().to_string())
         .env("PYTHONHOME", python_home.to_string_lossy().to_string())
         .args([
@@ -405,12 +471,18 @@ async fn try_start_sidecar(app: &AppHandle, base: &str) -> bool {
 
     let attempts = (SIDECAR_START_TIMEOUT.as_millis() / SIDECAR_POLL_INTERVAL.as_millis()) as u32;
     for _ in 0..attempts {
-        if check_health(base).await.is_ok() {
-            return true;
+        // `Ok(Some(v)) if v == SHELL_VERSION`, not a bare `.is_ok()` -- see
+        // this function's doc comment for the incident that requires this.
+        if let Ok(Some(v)) = check_health(base).await {
+            if v == SHELL_VERSION {
+                return true;
+            }
         }
         tokio::time::sleep(SIDECAR_POLL_INTERVAL).await;
     }
-    eprintln!("sidecar spawned but never became healthy within {SIDECAR_START_TIMEOUT:?}");
+    eprintln!(
+        "sidecar spawned but never reported v{SHELL_VERSION} within {SIDECAR_START_TIMEOUT:?}"
+    );
     false
 }
 
@@ -439,9 +511,12 @@ pub async fn open_page(app: &AppHandle, next_path: &str) -> Result<(), String> {
         Ok(version) => Ok(version),
         Err(reason) => {
             if try_start_sidecar(app, &base).await {
-                // Just spawned this from our own bundled sidecar payload, so
-                // it necessarily reports this shell's own version -- treat
-                // it as a match without another `/api/v1/health` round trip.
+                // Just spawned this from our own bundled sidecar payload, and
+                // `try_start_sidecar` returning `true` at all now means its
+                // own health poll already confirmed `v == SHELL_VERSION`
+                // (see that function's doc comment) -- so this is enforced,
+                // not merely assumed, and needs no extra `/api/v1/health`
+                // round trip here.
                 Ok(Some(SHELL_VERSION.to_string()))
             } else {
                 Err(reason)
@@ -449,7 +524,7 @@ pub async fn open_page(app: &AppHandle, next_path: &str) -> Result<(), String> {
         }
     };
     match health {
-        Ok(daemon_version) => {
+        Ok(mut daemon_version) => {
             // ---- Version handshake gate --------------------------------
             // Incident (v0.1.4): a *different* personal_db daemon -- a
             // stale `com.personal_db.daemon` LaunchAgent from an old dev
@@ -468,17 +543,91 @@ pub async fn open_page(app: &AppHandle, next_path: &str) -> Result<(), String> {
             // route a mismatch (or a pre-handshake daemon reporting no
             // version at all) to a diagnosable guidance page instead.
             //
-            // Deliberately does NOT call `try_start_sidecar` here: this
-            // branch is only reached when the port is already bound (by
+            // Deliberately does NOT call `try_start_sidecar` here directly:
+            // this branch is only reached when the port is already bound (by
             // the mismatched daemon), so spawning our own sidecar could
             // never bind it either -- see that function's doc comment.
-            // Killing the foreign process to make room is out of scope;
-            // the guidance page tells the user how to do that themselves.
+            //
+            // Incident (v0.1.8 -> v0.1.9 self-update): the in-app updater
+            // replaced the bundle and relaunched the shell, but the OLD
+            // sidecar daemon (spawned by the pre-update shell process) was
+            // still holding the port. This gate correctly caught the version
+            // mismatch, but at the time the only move from here was straight
+            // to the guidance page -- "killing the foreign process to make
+            // room is out of scope" was the call as of that comment. That
+            // scope decision is reversed now: when the answering daemon is
+            // STRICTLY OLDER than `SHELL_VERSION` (per `parse_semver_lenient`)
+            // or reports no version at all (`None` -- pre-0.1.5 daemons
+            // predate the version handshake and are older by definition),
+            // attempt one self-heal via `restart_stale_daemon` (which now has
+            // a verified kill-by-port fallback, see its doc comment) before
+            // falling through to the guidance page. Equal-or-newer daemons
+            // are never touched here -- that's the same launchd-dev-daemon
+            // safety case `check_version_drift` documents, just enforced on
+            // this launch path too, not only the health-poll path.
+            // `VersionDriftState` is shared with `check_version_drift` as the
+            // once-per-version guard on this path as well (keyed on the
+            // daemon's exact reported version string, or a sentinel for "no
+            // version"), so a user who bounces between launching the app and
+            // the background health poll doesn't get a restart attempted
+            // twice for the same stale version.
             if daemon_version.as_deref() != Some(SHELL_VERSION) {
-                return show_version_mismatch(app, &base, daemon_version.as_deref(), next_path);
+                let is_older_or_unversioned = match daemon_version.as_deref() {
+                    None => true,
+                    Some(v) => matches!(
+                        (parse_semver_lenient(v), parse_semver_lenient(SHELL_VERSION)),
+                        (Some(dv), Some(sv)) if dv < sv
+                    ),
+                };
+
+                let mut healed = false;
+                if is_older_or_unversioned {
+                    let version_key = daemon_version
+                        .clone()
+                        .unwrap_or_else(|| "<none>".to_string());
+                    let already_attempted = {
+                        let state = app.state::<VersionDriftState>();
+                        let mut guard = state.0.lock().unwrap();
+                        if guard.as_deref() == Some(version_key.as_str()) {
+                            true
+                        } else {
+                            *guard = Some(version_key.clone());
+                            false
+                        }
+                    };
+
+                    if already_attempted {
+                        eprintln!(
+                            "open_page: daemon still reports stale {version_key} (shell is \
+                             v{SHELL_VERSION}) after a prior restart attempt for this version \
+                             this session -- leaving it alone"
+                        );
+                    } else {
+                        eprintln!(
+                            "open_page: daemon reports {version_key} (shell is v{SHELL_VERSION}) \
+                             on launch -- attempting one self-heal restart before falling back \
+                             to guidance"
+                        );
+                        restart_stale_daemon(app, &base).await;
+                        if let Ok(Some(v)) = check_health(&base).await {
+                            if v == SHELL_VERSION {
+                                eprintln!(
+                                    "open_page: self-heal restart succeeded, daemon now v{v}"
+                                );
+                                daemon_version = Some(v);
+                                healed = true;
+                            }
+                        }
+                    }
+                }
+
+                if !healed {
+                    return show_version_mismatch(app, &base, daemon_version.as_deref(), next_path);
+                }
             }
 
-            let next = url::form_urlencoded::byte_serialize(next_path.as_bytes()).collect::<String>();
+            let next =
+                url::form_urlencoded::byte_serialize(next_path.as_bytes()).collect::<String>();
             let target = match read_token() {
                 Some(token) => match mint_otc(&base, &token).await {
                     Ok(otc) => format!(
@@ -533,7 +682,10 @@ pub async fn sync_now(app: &AppHandle) -> Result<String, String> {
         .json()
         .await
         .map_err(|e| format!("sync_due response was not valid JSON: {e}"))?;
-    let results = body.get("results").cloned().unwrap_or(serde_json::Value::Null);
+    let results = body
+        .get("results")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
     let (ok, err) = summarize_results(&results);
     let summary = format!("{ok} synced, {err} errored");
     notify(app, "Sync complete", &summary);
@@ -599,7 +751,10 @@ fn parse_semver_lenient(s: &str) -> Option<(u64, u64, u64)> {
     let major = parts.next()?.parse().ok()?;
     let minor = parts.next()?.parse().ok()?;
     let patch_raw = parts.next()?;
-    let patch_digits: String = patch_raw.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let patch_digits: String = patch_raw
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
     let patch = patch_digits.parse().ok()?;
     Some((major, minor, patch))
 }
@@ -624,6 +779,155 @@ async fn shutdown_daemon_via_route(base: &str, token: &str) -> Result<(), String
     Ok(())
 }
 
+/// Pure signature check gating the kill-by-port fallback in
+/// `kill_stale_daemon_by_port` -- kept as a standalone function (rather than
+/// inlined) specifically so it can be unit-tested without spawning any real
+/// processes. True when `command_line` looks like it's a personal_db daemon
+/// process, by either of two shapes seen in practice:
+///   - the frozen sidecar binary, whose argv0 is literally
+///     `personal-db-daemon` (see `SIDECAR_NAME` / `packaging/freeze-daemon.sh`
+///     step 4 -- it's a renamed copy of the frozen python3 Mach-O, not a
+///     wrapper script);
+///   - a `python -m personal_db ...` invocation -- a dev checkout's launchd
+///     `KeepAlive` daemon, or a bare `.venv/bin/python -m personal_db.cli...`
+///     run.
+/// Both `python` and `personal_db` are required together (an AND, not two
+/// independent checks) precisely so this doesn't false-positive on some
+/// unrelated process that merely happens to mention Python -- e.g.
+/// `/usr/bin/python3 -m http.server 8765` contains "python" but not
+/// "personal_db", and correctly does not match. This function is the only
+/// thing standing between a SIGTERM/SIGKILL and an arbitrary PID that
+/// happened to be listening on the daemon's port; callers must never signal
+/// a PID whose command line fails this check.
+fn looks_like_personal_db_daemon(command_line: &str) -> bool {
+    command_line.contains("personal-db-daemon")
+        || (command_line.contains("python") && command_line.contains("personal_db"))
+}
+
+/// Runs `/usr/sbin/lsof -nP -ti tcp:{port} -sTCP:LISTEN` to enumerate PIDs
+/// currently listening on `port`. Absolute path (not just `lsof`) since an
+/// app bundle's inherited PATH can't be relied on to contain it. `-n`/`-P`
+/// skip hostname/port-name resolution (irrelevant for a loopback port,
+/// and just slows things down); `-t` gives bare newline-separated PIDs, the
+/// exact shape this needs to parse. An `lsof` failure (missing binary,
+/// nothing listening, etc.) is logged and yields an empty list rather than
+/// erroring the caller -- "couldn't find anyone to kill" and "found no one
+/// listening" look the same to the caller either way.
+fn listener_pids(port: u16) -> Vec<u32> {
+    let output = match std::process::Command::new("/usr/sbin/lsof")
+        .args(["-nP", "-ti", &format!("tcp:{port}"), "-sTCP:LISTEN"])
+        .output()
+    {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("version drift: lsof failed, cannot enumerate port {port} listeners: {e}");
+            return Vec::new();
+        }
+    };
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| line.trim().parse::<u32>().ok())
+        .collect()
+}
+
+/// Runs `ps -o command= -p {pid}` to fetch a PID's full command line (argv0
+/// plus arguments -- `command=`, not `comm=`, since the signature check in
+/// `looks_like_personal_db_daemon` needs to see e.g. `-m personal_db` in the
+/// arguments, not just an interpreter's argv0). Returns `None` if the PID is
+/// gone by the time this runs, or `ps` itself fails -- either way, "can't
+/// verify" and the caller treats that the same as "signature check failed":
+/// refuse to signal it.
+fn command_line_for_pid(pid: u32) -> Option<String> {
+    let output = std::process::Command::new("ps")
+        .args(["-o", "command=", "-p", &pid.to_string()])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if text.is_empty() {
+        None
+    } else {
+        Some(text)
+    }
+}
+
+/// Verified kill-by-port fallback, used by `restart_stale_daemon` only after
+/// its graceful `/api/v1/admin/shutdown` request (or the lack of a token to
+/// send one with) failed to actually clear the port. Enumerates listening
+/// PIDs via `lsof`, signature-checks each one's command line with
+/// `looks_like_personal_db_daemon` *before ever touching it*, SIGTERMs the
+/// verified matches, waits again for the port to go quiet, and only
+/// escalates to SIGKILL if it's still answering health after that. A PID
+/// whose command line fails the signature check (or can't be read at all)
+/// is never signaled -- it's logged and left alone, and the guidance page
+/// remains the final fallback for the user to sort out by hand.
+async fn kill_stale_daemon_by_port(base: &str) {
+    let port = daemon_port(base);
+    let pids = listener_pids(port);
+    if pids.is_empty() {
+        eprintln!("version drift: no lsof listener found on port {port}, nothing to kill");
+        return;
+    }
+
+    let mut verified_pids = Vec::new();
+    for pid in pids {
+        match command_line_for_pid(pid) {
+            Some(cmd) if looks_like_personal_db_daemon(&cmd) => {
+                eprintln!(
+                    "version drift: pid {pid} on port {port} looks like a personal_db daemon \
+                     ({cmd:?}) -- will signal it"
+                );
+                verified_pids.push(pid);
+            }
+            Some(cmd) => {
+                eprintln!(
+                    "version drift: pid {pid} on port {port} does NOT look like a personal_db \
+                     daemon ({cmd:?}) -- refusing to signal it"
+                );
+            }
+            None => {
+                eprintln!(
+                    "version drift: could not read command line for pid {pid} on port {port} \
+                     -- refusing to signal it"
+                );
+            }
+        }
+    }
+
+    if verified_pids.is_empty() {
+        eprintln!(
+            "version drift: no verified personal_db daemon pids to signal on port {port} -- \
+             leaving it for the guidance page"
+        );
+        return;
+    }
+
+    for pid in &verified_pids {
+        eprintln!("version drift: sending SIGTERM to pid {pid}");
+        let _ = std::process::Command::new("kill")
+            .args(["-TERM", &pid.to_string()])
+            .status();
+    }
+
+    wait_until_unreachable(base, SHUTDOWN_WAIT_TIMEOUT).await;
+
+    if check_health(base).await.is_ok() {
+        eprintln!(
+            "version drift: port {port} still answers health after SIGTERM -- escalating to \
+             SIGKILL"
+        );
+        for pid in &verified_pids {
+            eprintln!("version drift: sending SIGKILL to pid {pid}");
+            let _ = std::process::Command::new("kill")
+                .args(["-KILL", &pid.to_string()])
+                .status();
+        }
+        wait_until_unreachable(base, SHUTDOWN_WAIT_TIMEOUT).await;
+    }
+}
+
 /// Polls `check_health` until it fails or `timeout` elapses, so callers that
 /// just asked a daemon to shut down can wait for the port to actually go
 /// quiet before spawning a replacement on top of it.
@@ -637,12 +941,27 @@ async fn wait_until_unreachable(base: &str, timeout: Duration) {
     }
 }
 
-/// Replaces a daemon that `check_version_drift` has determined is running an
-/// older version than this shell: stop it (killing our own sidecar handle if
-/// we have one, otherwise asking it to shut down via the admin route with
-/// the on-disk token), wait briefly for it to actually go quiet, spawn a
-/// fresh sidecar, and reload the "main" window (if one is open) so its UI
-/// picks up routes that match the newly-spawned daemon's templates.
+/// Replaces a daemon that's been determined to be running an older version
+/// than this shell (or reporting no version at all): stop it (killing our
+/// own sidecar handle if we have one, otherwise asking it to shut down via
+/// the admin route with the on-disk token), wait briefly for it to actually
+/// go quiet, spawn a fresh sidecar, and reload the "main" window (if one is
+/// open) so its UI picks up routes that match the newly-spawned daemon's
+/// templates.
+///
+/// Called from two places: `check_version_drift` (the poll-path trigger) and
+/// `open_page`'s version-mismatch gate (the launch-path trigger added for
+/// the v0.1.8 -> v0.1.9 self-update incident -- see that function's comment).
+///
+/// The graceful `/api/v1/admin/shutdown` request can fail to actually clear
+/// the port: the stale daemon may predate that route entirely, its on-disk
+/// token may have rotated out from under it, or it may just be hung. So if
+/// `wait_until_unreachable` times out and the port still answers health
+/// after the graceful attempt, this escalates to a verified kill-by-port
+/// fallback (see `kill_stale_daemon_by_port`) before giving up and trying to
+/// spawn a fresh sidecar anyway -- which, per `try_start_sidecar`'s doc
+/// comment, will correctly fail to bind (rather than falsely "succeed") if
+/// the stale process is somehow still holding the port at that point.
 async fn restart_stale_daemon(app: &AppHandle, base: &str) {
     let had_own_sidecar = {
         let state = app.state::<SidecarState>();
@@ -679,6 +998,19 @@ async fn restart_stale_daemon(app: &AppHandle, base: &str) {
 
     wait_until_unreachable(base, SHUTDOWN_WAIT_TIMEOUT).await;
 
+    // The graceful request above didn't necessarily work -- see this
+    // function's doc comment for the three ways it can fail. If the port
+    // still answers health after waiting, escalate to the verified
+    // kill-by-port fallback before attempting the fresh spawn below.
+    if check_health(base).await.is_ok() {
+        eprintln!(
+            "version drift: port {} still answers health after the graceful shutdown attempt \
+             (and the wait for it to go quiet) -- trying verified kill-by-port fallback",
+            daemon_port(base)
+        );
+        kill_stale_daemon_by_port(base).await;
+    }
+
     if try_start_sidecar(app, base).await {
         eprintln!("version drift: restarted daemon");
     } else {
@@ -701,7 +1033,7 @@ async fn restart_stale_daemon(app: &AppHandle, base: &str) {
 ///
 /// SAFETY CASE: on a developer machine the daemon is often launchd-managed
 /// (`launchctl` `KeepAlive`) and intentionally runs ahead-of-release repo
-/// code, whose reported `app_version` may equal or exceed the shell's. Two
+/// code, whose reported `app_version` may equal or exceed the shell's. Three
 /// separate guards keep this mechanism from ever fighting that setup or
 /// restart-looping in general:
 ///   1. **Older-only**: a restart is only attempted when the daemon's
@@ -717,6 +1049,17 @@ async fn restart_stale_daemon(app: &AppHandle, base: &str) {
 ///      observes that exact version only logs; it does not try again. (A
 ///      *different* stale version -- e.g. the shell itself updated again --
 ///      gets its own single attempt.)
+///   3. **Signature-verified kill only**: `restart_stale_daemon`'s
+///      kill-by-port fallback (`kill_stale_daemon_by_port`, added for the
+///      v0.1.8 -> v0.1.9 self-update incident where the graceful shutdown
+///      route alone didn't clear a stale sidecar) only ever signals a PID
+///      whose command line matches `looks_like_personal_db_daemon` -- some
+///      unrelated process that happens to be squatting on the port is never
+///      touched. A launchd `KeepAlive` dev daemon is doubly protected here in
+///      practice: even though its command line *would* match the signature
+///      check, guard #1 above means `restart_stale_daemon` (and therefore the
+///      kill-by-port fallback inside it) is never even reached for it, since
+///      it's excluded by the older-only rule before any of this runs.
 async fn check_version_drift(app: &AppHandle, base: &str, daemon_version: &str) {
     let Some(daemon_v) = parse_semver_lenient(daemon_version) else {
         return;
@@ -836,7 +1179,9 @@ pub async fn poll_health_status(app: &AppHandle) {
         return;
     }
 
-    eprintln!("daemon health poll: was healthy, now unreachable at {base} -- attempting one restart");
+    eprintln!(
+        "daemon health poll: was healthy, now unreachable at {base} -- attempting one restart"
+    );
     if try_start_sidecar(app, &base).await {
         let state = app.state::<HealthState>();
         *state.0.lock().unwrap() = Some(true);
@@ -852,5 +1197,86 @@ pub async fn poll_health_status(app: &AppHandle) {
     } else if let Some(tray) = tray {
         let _ = tray.set_tooltip(Some("PersonalDB — daemon not running"));
         let _ = tray.set_title(Some("!"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Real command lines observed via `ps -o command=` while diagnosing the
+    // v0.1.8 -> v0.1.9 stale-sidecar incident -- see
+    // `looks_like_personal_db_daemon`'s doc comment for why the check is an
+    // AND of "python" and "personal_db", not two independent ORs.
+
+    #[test]
+    fn sidecar_env_denylist_strips_python_and_tls_overrides() {
+        for poison in [
+            "PYTHONPATH",
+            "PYTHONHOME",
+            "VIRTUAL_ENV",
+            "REQUESTS_CA_BUNDLE",
+            "SSL_CERT_FILE",
+        ] {
+            assert!(
+                !env_var_is_sidecar_safe(poison),
+                "{poison} must be stripped"
+            );
+        }
+        for safe in ["PATH", "HOME", "LANG", "PERSONAL_DB_ROOT", "TMPDIR"] {
+            assert!(env_var_is_sidecar_safe(safe), "{safe} must survive");
+        }
+    }
+
+    #[test]
+    fn sanitized_parent_env_preserves_path_and_drops_pythonpath() {
+        // std::env mutation is process-global; this test relies on PATH being
+        // present in any real test environment rather than setting vars.
+        let env = sanitized_parent_env();
+        assert!(env.iter().any(|(k, _)| k == "PATH"));
+        assert!(env.iter().all(|(k, _)| env_var_is_sidecar_safe(k)));
+    }
+
+    #[test]
+    fn matches_frozen_sidecar_binary() {
+        assert!(looks_like_personal_db_daemon(
+            "/Applications/PersonalDB.app/Contents/MacOS/personal-db-daemon -m personal_db dev \
+             daemon run --port 8765"
+        ));
+    }
+
+    #[test]
+    fn matches_dev_venv_python_invocation() {
+        assert!(looks_like_personal_db_daemon(
+            "/Users/x/repo/.venv/bin/python -m personal_db.cli.main --root ... init"
+        ));
+    }
+
+    #[test]
+    fn does_not_match_unrelated_node_process() {
+        assert!(!looks_like_personal_db_daemon("node server.js"));
+    }
+
+    #[test]
+    fn does_not_match_python_without_personal_db() {
+        // Contains "python" but not "personal_db" -- must not match, since
+        // this is exactly the kind of unrelated process squatting on a port
+        // that the signature check exists to protect.
+        assert!(!looks_like_personal_db_daemon(
+            "/usr/bin/python3 -m http.server 8765"
+        ));
+    }
+
+    #[test]
+    fn parse_semver_lenient_handles_prerelease_suffix() {
+        assert_eq!(parse_semver_lenient("0.1.2-dev3"), Some((0, 1, 2)));
+        assert_eq!(parse_semver_lenient("0.1.9"), Some((0, 1, 9)));
+        assert_eq!(parse_semver_lenient("not-a-version"), None);
+    }
+
+    #[test]
+    fn parse_semver_lenient_orders_as_expected() {
+        assert!(parse_semver_lenient("0.1.8").unwrap() < parse_semver_lenient("0.1.9").unwrap());
+        assert!(parse_semver_lenient("0.1.9").unwrap() >= parse_semver_lenient("0.1.9").unwrap());
     }
 }
