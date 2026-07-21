@@ -210,6 +210,16 @@ own separate notarization pass, since Gatekeeper checks the outer disk
 image too — the 2026-07-17 DMG is exactly such a pre-notarization build,
 fine for local testing, rebuild it after notarizing).
 
+Since 2026-07-21 the script also handles that separate DMG pass itself:
+when notarization credentials are present (`KEYCHAIN_PROFILE`, or the
+`APPLE_ID`/`TEAM_ID`/`APP_PASSWORD` trio — same gating as
+sign-and-notarize.sh), it submits the signed DMG, staples the ticket, and
+verifies with `spctl -t open`. `release.sh` exports `KEYCHAIN_PROFILE`,
+so full releases get a stapled DMG automatically; sign-only local runs
+skip it as before. (The v0.1.11 DMG and earlier predate this — their
+inner .app is stapled but the outer image is not, so first open does an
+online notary check.)
+
 ## TCC / Full Disk Access notes
 
 This is the actual product reason the whole Tauri-shell-plus-signing effort
@@ -350,9 +360,10 @@ trust domain. Do not use this mode on an untrusted shared login. The
 `PERSONAL_DB_UPDATER_KEYCHAIN_SECURITY_BIN` overrides exist for controlled
 testing; production releases should use the defaults.
 
-Optional extra polish after publishing: notarize + staple the DMG itself
-(the app's staple covers the copied .app, but a stapled DMG is the
-cleanest download experience):
+DMG stapling is automatic as of 2026-07-21: `build-dmg.sh` notarizes and
+staples the DMG itself whenever notarization credentials are set (see
+step 5), so release runs need no extra command. The manual equivalent,
+for retro-stapling an already-published DMG:
 `xcrun notarytool submit <dmg> --keychain-profile personal-db-notary --wait`
 then `xcrun stapler staple <dmg>`. Verify with
 `spctl -a -vv -t open --context context:primary-signature <dmg>` →
