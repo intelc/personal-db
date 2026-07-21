@@ -10,7 +10,7 @@ SQLite + per-tracker ingest scripts + MCP server. macOS only in v0.
 
 ### The app (recommended)
 
-Download **PersonalDB.app** from the [latest release](https://github.com/intelc/personal-db/releases/latest) (signed + notarized DMG, Apple Silicon).
+[**Download PersonalDB.dmg**](https://github.com/intelc/personal-db/releases/latest/download/PersonalDB_aarch64.dmg) (signed + notarized, Apple Silicon) — or browse [all releases](https://github.com/intelc/personal-db/releases).
 
 It's a menu-bar app that runs everything: the dashboard in a native window, background sync (no launchd setup needed — the app manages its own daemon), and one-click "Connect AI Apps" for Claude Code / Claude Desktop / Cursor. It updates itself (a quiet check shortly after launch, plus "Check for Updates…" in the tray), and an update cleanly replaces the running background daemon — no manual restarts.
 
