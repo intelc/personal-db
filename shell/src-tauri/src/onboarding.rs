@@ -40,7 +40,10 @@ fn any_mcp_target_configured() -> bool {
         home_join("Library/Application Support/Claude/claude_desktop_config.json"),
         home_join(".claude.json"),
     ];
-    candidates.into_iter().flatten().any(|p| contains_personal_db(&p))
+    candidates
+        .into_iter()
+        .flatten()
+        .any(|p| contains_personal_db(&p))
 }
 
 fn contains_personal_db(path: &Path) -> bool {

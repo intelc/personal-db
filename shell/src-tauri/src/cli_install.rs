@@ -200,11 +200,8 @@ mod tests {
     /// never collide.
     fn scratch_dir() -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let dir = env::temp_dir().join(format!(
-            "pdb-cli-install-test-{}-{}",
-            std::process::id(),
-            n
-        ));
+        let dir =
+            env::temp_dir().join(format!("pdb-cli-install-test-{}-{}", std::process::id(), n));
         fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -298,7 +295,12 @@ mod tests {
     fn install_creates_missing_parent_dir() {
         let dir = scratch_dir();
         let wrapper = make_wrapper(&dir);
-        let link = dir.join("nested").join("does").join("not").join("exist").join("personal-db");
+        let link = dir
+            .join("nested")
+            .join("does")
+            .join("not")
+            .join("exist")
+            .join("personal-db");
         install_or_repair_at(&wrapper, &link).expect("should create parent dirs");
         assert!(link.is_symlink());
     }

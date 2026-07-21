@@ -114,8 +114,8 @@ fn main() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(ActivationPolicy::Accessory);
 
-            let open_item = MenuItemBuilder::with_id("open_dashboard", "Open Dashboard")
-                .build(app)?;
+            let open_item =
+                MenuItemBuilder::with_id("open_dashboard", "Open Dashboard").build(app)?;
             let sync_item = MenuItemBuilder::with_id("sync_now", "Sync Now").build(app)?;
             let status_item = MenuItemBuilder::with_id("status", "Health").build(app)?;
             // Reflects the *current* launch-agent registration state at
@@ -145,7 +145,9 @@ fn main() {
             let connect_items: Vec<_> = mcp_connect::TARGETS
                 .iter()
                 .copied()
-                .map(|(id, label)| MenuItemBuilder::with_id(format!("connect_{id}"), label).build(app))
+                .map(|(id, label)| {
+                    MenuItemBuilder::with_id(format!("connect_{id}"), label).build(app)
+                })
                 .collect::<Result<_, _>>()?;
             let connect_submenu = {
                 let mut builder = SubmenuBuilder::new(app, "Connect AI Apps");
@@ -179,9 +181,7 @@ fn main() {
                     "status" => spawn_open_page(app, "/health"),
                     "sync_now" => spawn_sync_now(app),
                     "install_cli" => spawn_install_cli(app, install_cli_item_for_update.clone()),
-                    "connect_claude_code" => {
-                        spawn_mcp_connect(app, "claude_code", "Claude Code")
-                    }
+                    "connect_claude_code" => spawn_mcp_connect(app, "claude_code", "Claude Code"),
                     "connect_claude_desktop" => {
                         spawn_mcp_connect(app, "claude_desktop", "Claude Desktop")
                     }

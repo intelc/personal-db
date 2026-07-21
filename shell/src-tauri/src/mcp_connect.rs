@@ -74,6 +74,9 @@ pub fn install(app: &AppHandle, target: &str) -> Result<String, String> {
     } else if !stdout.is_empty() {
         Err(stdout)
     } else {
-        Err(format!("mcp install {target} exited with {}", output.status))
+        Err(format!(
+            "mcp install {target} exited with {}",
+            output.status
+        ))
     }
 }
