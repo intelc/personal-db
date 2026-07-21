@@ -12,6 +12,18 @@
   "use strict";
 
   const MAX_ERROR_LEN = 140;
+  let statusId = 0;
+
+  // Tauri's WebKit view can defer painting a click handler's DOM changes until
+  // the next task.  A large local sync (notably a first iMessage import) can
+  // immediately put enough pressure on the machine for that next paint to be
+  // noticeably delayed. Yield after setting the pending state so the user
+  // sees feedback before the request starts.
+  function waitForPaint() {
+    return new Promise((resolve) => {
+      requestAnimationFrame(() => setTimeout(resolve, 0));
+    });
+  }
 
   // The inline error span (.pdb-sync-error) is inserted as the button's next
   // sibling within the form on failure, and removed on the next submit
@@ -39,6 +51,41 @@
     span.title = message;
   }
 
+  function clearStatus(button) {
+    const form = button.closest("form");
+    const status = form && form.querySelector(".pdb-sync-status");
+    if (status) status.remove();
+    if (form) {
+      form.classList.remove("is-syncing");
+      form.removeAttribute("aria-busy");
+    }
+    button.classList.remove("is-loading");
+    button.removeAttribute("aria-busy");
+    button.removeAttribute("aria-describedby");
+  }
+
+  async function showPending(button, message) {
+    const form = button.closest("form");
+    if (form) {
+      form.classList.add("is-syncing");
+      form.setAttribute("aria-busy", "true");
+    }
+    button.disabled = true;
+    button.classList.add("is-loading");
+    button.setAttribute("aria-busy", "true");
+
+    const status = document.createElement("span");
+    status.className = "pdb-sync-status";
+    status.id = `pdb-sync-status-${++statusId}`;
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+    status.textContent = message;
+    button.insertAdjacentElement("afterend", status);
+    button.setAttribute("aria-describedby", status.id);
+
+    await waitForPaint();
+  }
+
   // "Sync all due" (health.html, [data-sync-all] via the sync_all_btn macro)
   // -- POSTs the daemon's sync-everything-due route directly, since (unlike
   // single-tracker sync) there's no plain-form browser route for it. In-flight
@@ -50,11 +97,11 @@
     if (!button) return;
 
     const originalLabel = button.textContent;
-    button.disabled = true;
     button.textContent = "Syncing all…";
     button.classList.remove("error");
     button.removeAttribute("title");
     clearError(button);
+    await showPending(button, "Syncing all due trackers…");
 
     try {
       const r = await fetch("/api/v1/sync_due", { method: "POST" });
@@ -71,6 +118,7 @@
     } catch (err) {
       button.disabled = false;
       button.textContent = originalLabel;
+      clearStatus(button);
       button.classList.add("error");
       const message = (err && err.message) || "sync all failed";
       button.title = message;
@@ -94,11 +142,11 @@
 
     event.preventDefault();
     const originalLabel = button.textContent;
-    button.disabled = true;
     button.textContent = "Syncing…";
     button.classList.remove("error");
     button.removeAttribute("title");
     clearError(button);
+    await showPending(button, `Syncing ${tracker}…`);
 
     try {
       const r = await fetch(`/api/v1/sync/${encodeURIComponent(tracker)}`, {
@@ -117,6 +165,7 @@
     } catch (err) {
       button.disabled = false;
       button.textContent = originalLabel;
+      clearStatus(button);
       button.classList.add("error");
       const message = (err && err.message) || "sync failed";
       button.title = message;

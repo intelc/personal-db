@@ -9,14 +9,23 @@ mod mcp_connect;
 mod onboarding;
 mod updater;
 
+use serde::Serialize;
 #[cfg(target_os = "macos")]
 use tauri::ActivationPolicy;
 use tauri::{
-    menu::{CheckMenuItemBuilder, MenuBuilder, MenuItem, MenuItemBuilder, SubmenuBuilder},
+    menu::{
+        CheckMenuItem, CheckMenuItemBuilder, MenuBuilder, MenuItem, MenuItemBuilder, SubmenuBuilder,
+    },
     tray::TrayIconBuilder,
-    AppHandle,
+    AppHandle, Manager,
 };
 use tauri_plugin_autostart::ManagerExt;
+
+/// The tray state which can also be changed from the Settings page.
+#[derive(Clone)]
+struct TrayMenuState {
+    start_at_login: CheckMenuItem<tauri::Wry>,
+}
 
 /// Exposed to the WebView so the bundled `daemon-down.html` fallback page's
 /// Retry button can re-run the bootstrap flow without a full app restart.
@@ -61,11 +70,15 @@ fn spawn_sync_now(app: &AppHandle) {
 /// Runs `cli_install::install_or_repair` on a background thread (it may
 /// block for a while on the `osascript` admin-privileges prompt) and
 /// updates the menu item's title + shows a notification once it settles.
-fn spawn_install_cli(app: &AppHandle, item: MenuItem<tauri::Wry>) {
+/// `item` is only present for the tray caller; Settings uses the same action
+/// and receives the same native notification, but has no menu item to relabel.
+fn spawn_install_cli(app: &AppHandle, item: Option<MenuItem<tauri::Wry>>) {
     let handle = app.clone();
     std::thread::spawn(move || match cli_install::install_or_repair(&handle) {
         Ok(link) => {
-            let _ = item.set_text(cli_install::menu_title(cli_install::LinkState::Correct));
+            if let Some(item) = item {
+                let _ = item.set_text(cli_install::menu_title(cli_install::LinkState::Correct));
+            }
             daemon::notify(
                 &handle,
                 "Command Line Tool Installed",
@@ -76,6 +89,78 @@ fn spawn_install_cli(app: &AppHandle, item: MenuItem<tauri::Wry>) {
             daemon::notify(&handle, "Command Line Tool Install Failed", &e);
         }
     });
+}
+
+/// Toggle the one app preference that is represented as a checked tray item.
+/// Keeping it here makes the Settings control and tray checkbox update the
+/// same launch-agent registration rather than maintaining two preferences.
+fn toggle_start_at_login(app: &AppHandle) -> Result<bool, String> {
+    let mgr = app.autolaunch();
+    let currently_enabled = mgr
+        .is_enabled()
+        .map_err(|e| format!("could not read Start at Login: {e}"))?;
+    if currently_enabled {
+        mgr.disable()
+            .map_err(|e| format!("could not disable Start at Login: {e}"))?;
+    } else {
+        mgr.enable()
+            .map_err(|e| format!("could not enable Start at Login: {e}"))?;
+    }
+    let enabled = !currently_enabled;
+    let _ = app
+        .state::<TrayMenuState>()
+        .start_at_login
+        .set_checked(enabled);
+    Ok(enabled)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TrayActionResult {
+    start_at_login: Option<bool>,
+}
+
+/// Shared dispatcher for both the tray menu and Settings. Native work never
+/// moves into the WebView, which prevents the two entry points from drifting.
+fn dispatch_tray_action(
+    app: &AppHandle,
+    action: &str,
+    install_cli_item: Option<MenuItem<tauri::Wry>>,
+) -> Result<TrayActionResult, String> {
+    let mut result = TrayActionResult {
+        start_at_login: None,
+    };
+    match action {
+        "open_dashboard" => spawn_open_dashboard(app),
+        "sync_now" => spawn_sync_now(app),
+        "health" | "status" => spawn_open_page(app, "/health"),
+        "install_cli" => spawn_install_cli(app, install_cli_item),
+        "connect_claude_code" => spawn_mcp_connect(app, "claude_code", "Claude Code"),
+        "connect_claude_desktop" => spawn_mcp_connect(app, "claude_desktop", "Claude Desktop"),
+        "connect_cursor" => spawn_mcp_connect(app, "cursor", "Cursor"),
+        "check_updates" => updater::spawn_check(app),
+        "start_at_login_status" => {
+            result.start_at_login = Some(
+                app.autolaunch()
+                    .is_enabled()
+                    .map_err(|e| format!("could not read Start at Login: {e}"))?,
+            )
+        }
+        "toggle_start_at_login" | "start_at_login" => {
+            result.start_at_login = Some(toggle_start_at_login(app)?)
+        }
+        "quit" => app.exit(0),
+        _ => return Err(format!("unknown PersonalDB app action: {action}")),
+    }
+    Ok(result)
+}
+
+/// The Settings page is deliberately a peer of the tray menu: native actions
+/// still run in Rust, so it remains useful when macOS has hidden the tray icon
+/// behind its menu-bar overflow area.
+#[tauri::command]
+async fn run_tray_action(app: AppHandle, action: String) -> Result<TrayActionResult, String> {
+    dispatch_tray_action(&app, &action, None)
 }
 
 /// Runs `<cli> mcp install <target>` on a background thread and reports the
@@ -106,7 +191,7 @@ fn main() {
         .manage(daemon::SidecarState::default())
         .manage(daemon::HealthState::default())
         .manage(daemon::VersionDriftState::default())
-        .invoke_handler(tauri::generate_handler![open_dashboard])
+        .invoke_handler(tauri::generate_handler![open_dashboard, run_tray_action])
         .setup(|app| {
             // No dock icon / app switcher entry -- this is a menu-bar-only
             // app. macOS-only API; other platforms would need their own
@@ -120,8 +205,7 @@ fn main() {
             let status_item = MenuItemBuilder::with_id("status", "Health").build(app)?;
             // Reflects the *current* launch-agent registration state at
             // build time; toggling later updates the live item via
-            // `set_checked` in the event handler below rather than
-            // rebuilding the whole menu.
+            // `TrayMenuState` rather than rebuilding the whole menu.
             let check_updates_item =
                 MenuItemBuilder::with_id("check_updates", "Check for Updates…").build(app)?;
             let autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
@@ -169,49 +253,25 @@ fn main() {
                 .items(&[&quit_item])
                 .build()?;
 
-            let start_login_item_for_toggle = start_login_item.clone();
+            // Settings updates this exact item through `TrayMenuState`, so
+            // the checkbox is correct again when the menu-bar icon appears.
+            app.manage(TrayMenuState {
+                start_at_login: start_login_item.clone(),
+            });
             let install_cli_item_for_update = install_cli_item.clone();
             let _tray = TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
                 .show_menu_on_left_click(true)
                 .tooltip("PersonalDB")
-                .on_menu_event(move |app, event| match event.id().as_ref() {
-                    "open_dashboard" => spawn_open_dashboard(app),
-                    "status" => spawn_open_page(app, "/health"),
-                    "sync_now" => spawn_sync_now(app),
-                    "install_cli" => spawn_install_cli(app, install_cli_item_for_update.clone()),
-                    "connect_claude_code" => spawn_mcp_connect(app, "claude_code", "Claude Code"),
-                    "connect_claude_desktop" => {
-                        spawn_mcp_connect(app, "claude_desktop", "Claude Desktop")
+                .on_menu_event(move |app, event| {
+                    if let Err(e) = dispatch_tray_action(
+                        app,
+                        event.id().as_ref(),
+                        Some(install_cli_item_for_update.clone()),
+                    ) {
+                        eprintln!("tray action failed: {e}");
                     }
-                    "connect_cursor" => spawn_mcp_connect(app, "cursor", "Cursor"),
-                    "check_updates" => updater::spawn_check(app),
-                    "start_at_login" => {
-                        // `tauri-plugin-autostart` is the *interim*
-                        // mechanism for "Start at Login" -- see
-                        // packaging/README.md and
-                        // packaging/smappservice/RegisterAgent.swift for the
-                        // documented TODO to move to SMAppService once the
-                        // app is signed (autostart's LaunchAgent plist
-                        // approach works unsigned, which SMAppService does
-                        // not reliably).
-                        let mgr = app.autolaunch();
-                        let currently_enabled = mgr.is_enabled().unwrap_or(false);
-                        let result = if currently_enabled {
-                            mgr.disable()
-                        } else {
-                            mgr.enable()
-                        };
-                        match result {
-                            Ok(()) => {
-                                let _ = start_login_item_for_toggle.set_checked(!currently_enabled);
-                            }
-                            Err(e) => eprintln!("autostart toggle failed: {e}"),
-                        }
-                    }
-                    "quit" => app.exit(0),
-                    _ => {}
                 })
                 .build(app)?;
 

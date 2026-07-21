@@ -125,6 +125,26 @@
   {% endif %}
 </section>
 
+{% if app_managed %}
+<section class="block" data-app-actions>
+  <h2 class="block-h">PERSONALDB APP</h2>
+  <p class="meta">
+    These controls mirror the menu-bar menu, so the app remains fully usable
+    when macOS hides its menu-bar icon.
+  </p>
+  <div class="app-action-list" role="group" aria-label="PersonalDB app controls">
+    <button type="button" class="btn-link" data-shell-action="open_dashboard">Open dashboard</button>
+    <button type="button" class="btn-link" data-shell-action="sync_now">Sync now</button>
+    <button type="button" class="btn-link" data-shell-action="health">Health</button>
+    <button type="button" class="btn-link" data-shell-action="install_cli">Install command line tool…</button>
+    <button type="button" class="btn-link" data-shell-action="check_updates">Check for updates…</button>
+    <button type="button" class="btn-link" data-shell-action="toggle_start_at_login">Toggle Start at Login</button>
+    <button type="button" class="btn-link app-action-danger" data-shell-action="quit">Quit PersonalDB</button>
+  </div>
+  <p class="meta" data-shell-action-status role="status" aria-live="polite"></p>
+</section>
+{% endif %}
+
 <section class="block">
   <h2 class="block-h">CONNECT AN AI AGENT</h2>
   <p class="meta">
@@ -154,9 +174,13 @@
         <td class="setup-col-name"><code>{{ t.key }}</code></td>
         <td class="setup-col-desc">{{ t.label }}</td>
         <td class="setup-col-action">
+          {% if app_managed %}
+          <button type="button" class="btn-link" data-shell-action="connect_{{ t.key }}">install →</button>
+          {% else %}
           <form method="post" action="/setup/mcp/install/{{ t.key }}" class="inline-form">
             <button type="submit" class="btn-link">install →</button>
           </form>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}
@@ -165,8 +189,7 @@
 
   {% if app_managed %}
   <p class="meta">
-    Prefer to do it yourself? Use the menu bar app's tray menu → "Connect AI
-    Apps" for the same per-target install.
+    Install uses the same native action as the menu bar's “Connect AI Apps” menu.
   </p>
   {% else %}
   <p class="meta">

@@ -6,6 +6,7 @@ import sqlite3
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -574,12 +575,28 @@ def test_base_uses_vendored_ag_assets(tmp_path):
     assert "/static/apps/finance-categorize.js?v=1" in r.text
     assert "/static/apps/finance-rules.js?v=1" in r.text
     assert "/static/pdb-finance.js?v=10" in r.text
-    assert "/static/pdb-sync.js?v=4" in r.text
+    assert "/static/pdb-sync.js?v=5" in r.text
     assert "/static/pdb-nav.js?v=4" in r.text
     assert "/static/pdb-lazy.js?v=1" in r.text
     assert "/static/pdb-tiles.js?v=4" in r.text
     assert "/static/pdb-data.js?v=5" in r.text
     assert "cdn.jsdelivr.net" not in r.text
+
+
+def test_sync_script_paints_pending_state_before_starting_request():
+    """Slow local imports must visibly enter their loading state first.
+
+    This is particularly important for iMessage: its first import can be
+    large enough that WebKit otherwise appears frozen before it repaints.
+    """
+    script = (
+        Path(__file__).resolve().parents[2]
+        / "src/personal_db/ui/static/pdb-sync.js"
+    ).read_text()
+    assert "requestAnimationFrame" in script
+    assert script.count("await showPending(") == 2
+    assert script.index("await showPending(") < script.index("await fetch(")
+    assert "aria-live" in script
 
 
 def test_health_page_lists_installed_tracker_with_humanized_title(tmp_path):

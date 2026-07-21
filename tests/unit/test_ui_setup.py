@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import urllib.parse
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -440,6 +442,73 @@ def test_setup_app_managed_hides_install_button_and_shows_status(tmp_path, monke
     assert r.status_code == 200
     assert "managed by the PersonalDB app" in r.text
     assert 'action="/setup/finish/install-daemon"' not in r.text
+    # Every tray action is reachable from Settings when macOS has overflowed
+    # the menu-bar icon. MCP targets use the same native tray dispatcher too.
+    for action in (
+        "open_dashboard",
+        "sync_now",
+        "health",
+        "install_cli",
+        "check_updates",
+        "toggle_start_at_login",
+        "quit",
+        "connect_claude_code",
+        "connect_claude_desktop",
+        "connect_cursor",
+    ):
+        assert f'data-shell-action="{action}"' in r.text
+    assert 'action="/setup/mcp/install/claude_code"' not in r.text
+
+
+def test_setup_native_app_controls_are_not_rendered_outside_the_bundle(tmp_path):
+    """The desktop invoke bridge does not exist in a normal browser/CLI UI."""
+    cfg = _init(tmp_path)
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/setup")
+    assert r.status_code == 200
+    assert "PERSONALDB APP" not in r.text
+    assert 'data-shell-action="sync_now"' not in r.text
+    # Browser/CLI installs retain the server-side MCP form fallback.
+    assert 'action="/setup/mcp/install/claude_code"' in r.text
+
+
+def test_settings_native_action_script_uses_shared_tauri_dispatcher():
+    script = (
+        Path(__file__).resolve().parents[2]
+        / "src"
+        / "personal_db"
+        / "ui"
+        / "static"
+        / "pdb-app-actions.js"
+    ).read_text()
+    assert 'invoke("run_tray_action"' in script
+    # The initial rendered label reflects the real app preference, and a
+    # Settings toggle receives the resulting state from the native action.
+    assert 'invoke("start_at_login_status")' in script
+    assert "result.startAtLogin" in script
+
+
+def test_shell_capabilities_isolate_remote_settings_actions_from_plugins():
+    capabilities_dir = (
+        Path(__file__).resolve().parents[2]
+        / "shell"
+        / "src-tauri"
+        / "capabilities"
+    )
+    default = json.loads((capabilities_dir / "default.json").read_text())
+    remote = json.loads((capabilities_dir / "remote-settings.json").read_text())
+    assert "remote" not in default
+    assert "allow-open-dashboard" in default["permissions"]
+    assert remote["local"] is False
+    assert remote["remote"]["urls"] == ["http://127.0.0.1:8765"]
+    assert remote["permissions"] == ["allow-run-tray-action"]
+
+
+def test_shell_build_generates_permissions_for_settings_commands():
+    build_rs = (
+        Path(__file__).resolve().parents[2] / "shell" / "src-tauri" / "build.rs"
+    ).read_text()
+    assert 'AppManifest::new().commands(&["open_dashboard", "run_tray_action"])' in build_rs
 
 
 def test_setup_launchd_installed_state_shown(tmp_path, monkeypatch):

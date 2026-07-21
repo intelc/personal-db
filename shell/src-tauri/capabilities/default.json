@@ -4,6 +4,7 @@
   "description": "Capabilities for the PersonalDB shell's dashboard window and the local daemon-down fallback page",
   "windows": ["main"],
   "permissions": [
+    "allow-open-dashboard",
     "core:default",
     "core:window:default",
     "core:webview:default",
