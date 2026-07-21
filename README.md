@@ -1,4 +1,13 @@
-# personal_db
+<p align="center">
+  <img src="docs/demos/banner.png" alt="personal_db — your data sources, synced into one local SQLite file: persistent memory for your AI agents, over MCP" width="100%">
+</p>
+
+<p align="center">
+  <a href="https://github.com/intelc/personal-db/releases/latest"><img src="https://img.shields.io/github/v/release/intelc/personal-db?label=release&color=5b9bff" alt="latest release"></a>
+  <a href="https://github.com/intelc/personal-db/releases"><img src="https://img.shields.io/github/downloads/intelc/personal-db/total?color=5b9bff" alt="downloads"></a>
+  <img src="https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-1a1b21" alt="platform: macOS (Apple Silicon)">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-1a1b21" alt="MIT license"></a>
+</p>
 
 The missing open-source database + data-sync piece for self-hosted agentic second-brain systems.
 
