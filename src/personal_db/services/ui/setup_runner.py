@@ -29,6 +29,7 @@ import os
 import re
 import subprocess
 import sys
+import zlib
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from importlib import resources
@@ -91,6 +92,22 @@ class TrackerOverview:
     # greyed-out, no-install-button card on /setup/browse. Installed trackers
     # are always True: they couldn't have been installed here otherwise.
     platform_supported: bool = True
+    # Compact-row additions (settings-page redesign, /setup only -- browse
+    # keeps using the tracker-card badges/description prose). `monogram` and
+    # `tint` are pure, deterministic functions of `name` (see
+    # `compute_monogram`/`compute_tint` below) so the same source always gets
+    # the same tile across processes/restarts -- crucially NOT Python's salted
+    # `hash()`, which would make the tint flicker between server runs.
+    # `kind` collapses the manifest's permission/setup-step shape down to the
+    # single connection-kind label the row badge shows; see `compute_kind`.
+    # `logo` is a `/static/logos/<name>.png` URL when a real brand mark is
+    # bundled for this source (see `logo_url`); rows fall back to the
+    # monogram tile when it's None. Only marks that read well at tile size
+    # are bundled -- a missing logo is a choice, not an oversight.
+    monogram: str = "??"
+    tint: int = 0
+    kind: str | None = None
+    logo: str | None = None
 
 
 @dataclass
@@ -124,6 +141,79 @@ class StepResult:
 
 
 _FDA_SETTINGS_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
+
+_MONOGRAM_TINT_COUNT = 8
+
+
+def compute_monogram(title: str) -> str:
+    """Deterministic 2-letter monogram for a source's compact-row tile.
+
+    Takes the first two alphabetic characters of `title` (spaces and
+    punctuation stripped), e.g. "Calendar" -> "Ca", "Chrome History" -> "Ch"
+    (from "ChromeHistory", not "Ch" as two word-initials). First letter
+    upper-cased, second lower-cased, regardless of the source string's own
+    casing (so e.g. "iMessage" -> "Im", "XHS" -> "Xh") -- the goal is a
+    consistent two-glyph tile, not preserving acronym casing.
+    """
+    letters = [c for c in title if c.isalpha()]
+    if not letters:
+        return "??"
+    if len(letters) == 1:
+        return letters[0].upper()
+    return letters[0].upper() + letters[1].lower()
+
+
+def compute_tint(name: str) -> int:
+    """Deterministic tint index (0..7) for a source's monogram tile,
+    stable across processes and Python versions -- uses zlib.crc32, NOT
+    Python's salted built-in `hash()` (which is randomized per-process via
+    PYTHONHASHSEED and would make the tile's color flicker on every
+    restart)."""
+    return zlib.crc32(name.encode("utf-8")) % _MONOGRAM_TINT_COUNT
+
+
+def compute_kind(manifest: Manifest) -> str | None:
+    """Collapse a manifest's permission type + setup steps down to the single
+    connection-kind label the compact row's badge shows: "Full Disk Access" /
+    "OAuth" / "API key" / "Manual" / None. Order matters -- full_disk_access
+    wins outright, then an oauth step, then an api_key permission or a
+    *secret* env_var step (a plain, non-secret env_var doesn't imply an API
+    key -- see xhs/xhs_saved, whose env_var steps are config, not
+    credentials; granola declares `permission_type: api_key` with no secret
+    env_var at all, which is why the permission check is needed too).
+    "Manual" is reserved for sources with no periodic schedule -- data enters
+    only when the user logs it (habits, contacts). Automatic/derived sources
+    with no connection to manage (finance, project_time, subscriptions)
+    return None: no badge beats a wrong one."""
+    if manifest.permission_type == "full_disk_access":
+        return "Full Disk Access"
+    if any(isinstance(step, OAuthStep) for step in manifest.setup_steps):
+        return "OAuth"
+    if manifest.permission_type == "api_key" or any(
+        isinstance(step, EnvVarStep) and step.secret for step in manifest.setup_steps
+    ):
+        return "API key"
+    if not (manifest.schedule and (manifest.schedule.every or manifest.schedule.cron)):
+        return "Manual"
+    return None
+
+
+# Bundled brand marks for the settings rows, served by the daemon's /static
+# mount (services/daemon/http.py). Resolved relative to this file so the same
+# path works from a repo checkout, a wheel install, and the frozen app payload
+# (all keep personal_db/ui/static/ as real files on disk).
+_LOGOS_DIR = Path(__file__).resolve().parents[2] / "ui" / "static" / "logos"
+
+
+def logo_url(name: str) -> str | None:
+    """`/static/logos/<name>.png` if a bundled brand mark exists for this
+    tracker, else None (row falls back to the monogram tile). Existence is
+    checked on every call rather than cached: the list renders once per
+    settings-page load, and a stale positive after a deleted asset would 404
+    the <img> every load until a restart."""
+    if (_LOGOS_DIR / f"{name}.png").is_file():
+        return f"/static/logos/{name}.png"
+    return None
 
 
 def oauth_token_present(cfg: Config, step: OAuthStep) -> bool:
@@ -191,9 +281,14 @@ def list_overview(cfg: Config) -> list[TrackerOverview]:
                     last_sync_age=last_sync_age,
                     next_sync=next_sync,
                     manual=manual,
+                    monogram=compute_monogram(manifest.display_title()),
+                    tint=compute_tint(name),
+                    kind=compute_kind(manifest),
+                    logo=logo_url(name),
                 )
             )
         except Exception as e:
+            title = humanize_tracker_name(name)
             out.append(
                 TrackerOverview(
                     name=name,
@@ -201,7 +296,9 @@ def list_overview(cfg: Config) -> list[TrackerOverview]:
                     installed=True,
                     icon="⚠",
                     summary="see logs",
-                    title=humanize_tracker_name(name),
+                    title=title,
+                    monogram=compute_monogram(title),
+                    tint=compute_tint(name),
                 )
             )
     for name in list_bundled():

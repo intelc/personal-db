@@ -18,45 +18,63 @@
     stays on this Mac.
   </p>
   {% if installed_trackers %}
-  <div class="filter-tabs" role="tablist" aria-label="Filter sources" data-source-filter-tabs>
-    <button type="button" class="filter-tab is-active" data-filter="all" role="tab" aria-selected="true">All</button>
-    <button type="button" class="filter-tab" data-filter="ready" role="tab" aria-selected="false">Ready</button>
-    <button type="button" class="filter-tab" data-filter="attention" role="tab" aria-selected="false">Needs attention</button>
+  {% set ready_count = installed_trackers | selectattr('status_class', 'equalto', 'ok') | list | length %}
+  {% set attention_count = installed_trackers | selectattr('status_class', 'equalto', 'warn') | list | length %}
+  <div class="source-toolbar">
+    <div class="filter-tabs" role="tablist" aria-label="Filter sources" data-source-filter-tabs>
+      <button type="button" class="filter-tab is-active" data-filter="all" role="tab" aria-selected="true">All</button>
+      <button type="button" class="filter-tab" data-filter="ready" role="tab" aria-selected="false">Ready</button>
+      <button type="button" class="filter-tab" data-filter="attention" role="tab" aria-selected="false">Needs attention</button>
+    </div>
+    <span class="source-summary">{{ installed_trackers | length }} source{{ 's' if installed_trackers | length != 1 else '' }} · {{ ready_count }} ready · {{ attention_count }} need{{ 's' if attention_count == 1 else '' }} attention</span>
+    <input
+      type="search"
+      class="source-search"
+      placeholder="Search sources…"
+      aria-label="Search sources"
+      data-source-search
+    >
   </div>
 
-  <div class="tracker-cards" data-source-manage-list>
+  <div class="source-list" data-source-manage-list>
     {% for t in installed_trackers %}
-    <div class="tracker-card" data-status="{{ 'ready' if t.status_class == 'ok' else 'attention' }}">
-      <div class="tracker-card-main">
-        <p class="tracker-card-title" title="{{ t.name }}">{{ t.title }}</p>
-        {% if t.description %}<p class="tracker-card-desc">{{ t.description }}</p>{% endif %}
-        {% if t.platform or (t.permission and t.permission != 'none') %}
-        <div class="badge-row">
-          {% for p in (t.platform or []) %}
-            <span class="badge">{{ platform_label(p) }}</span>
-          {% endfor %}
-          {% if t.permission and t.permission != 'none' %}
-            <span class="badge{% if t.permission == 'full_disk_access' %} badge-fda{% endif %}">{{ permission_label(t.permission) }}</span>
-          {% endif %}
-        </div>
-        {% endif %}
-      </div>
-      <div class="tracker-card-side">
+    <a
+      href="/setup/{{ t.name }}"
+      class="source-row{% if t.status_class == 'warn' %} source-row-attention{% endif %}"
+      data-status="{{ 'ready' if t.status_class == 'ok' else 'attention' }}"
+      data-search-text="{{ (t.title ~ ' ' ~ (t.description or ''))|lower }}"
+      aria-label="{{ t.title }}"
+    >
+      {% if t.logo %}
+      <span class="source-monogram source-logo-tile" aria-hidden="true"><img class="source-logo" src="{{ t.logo }}" alt="" loading="lazy"></span>
+      {% else %}
+      <span class="source-monogram source-tint-{{ t.tint }}" aria-hidden="true">{{ t.monogram }}</span>
+      {% endif %}
+      <span class="source-row-main">
+        <span class="source-row-name">{{ t.title }}</span>
+        {% if t.description %}<span class="source-row-desc" title="{{ t.description }}">{{ t.description }}</span>{% endif %}
+      </span>
+      <span class="source-row-kind">
+        {% if t.kind %}<span class="badge{% if t.kind == 'Full Disk Access' %} badge-fda{% endif %}">{{ t.kind }}</span>{% endif %}
+      </span>
+      <span class="source-row-status">
         {% if t.status_label %}
           <span class="status-chip {{ t.status_class }}">{{ t.status_label }}</span>
         {% endif %}
-        {% if t.last_sync_age %}
-          <span class="sync-age">
-            {%- if t.manual -%}
-              Last entry {{ t.last_sync_age }}
-            {%- else -%}
-              Synced {{ t.last_sync_age }}{% if t.next_sync %} · {{ t.next_sync }}{% endif %}
-            {%- endif -%}
-          </span>
-        {% endif %}
-        <a href="/setup/{{ t.name }}" class="btn-link">configure →</a>
-      </div>
-    </div>
+      </span>
+      <span class="source-row-timing">
+        {%- if t.last_sync_age -%}
+          {%- if t.manual -%}
+            Last entry {{ t.last_sync_age }}
+          {%- else -%}
+            Synced {{ t.last_sync_age }}{% if t.next_sync %} · {{ t.next_sync }}{% endif %}
+          {%- endif -%}
+        {%- else -%}
+          Not set up
+        {%- endif -%}
+      </span>
+      <span class="source-row-chevron" aria-hidden="true">›</span>
+    </a>
     {% endfor %}
   </div>
   <div class="source-list-empty-filtered" data-source-filter-empty hidden>

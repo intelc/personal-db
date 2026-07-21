@@ -3183,3 +3183,180 @@ html.pdb-discreet .pdb-sensitive {
 .wizard-stepper-label {
   white-space: nowrap;
 }
+
+/* Settings compact source-row list (setup.html) --------------------------
+   Deliberately NEW classes, not a restyle of .tracker-card/.marketplace-card
+   above -- those two stay exactly as they are for /setup/browse. This is
+   the reference-driven redesign of the SOURCES section into a dense,
+   scannable row list (Claude Console connectors / Airbyte connections
+   table / Dust connections admin were the studied references -- see
+   design-refs notes). Additive section (append-only). */
+
+.source-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.source-summary {
+  color: var(--fg-tertiary);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.source-search {
+  margin-left: auto;
+  width: 200px;
+  max-width: 100%;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+}
+.source-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.source-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.source-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 112px 108px 235px 14px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  min-height: 56px;
+  text-decoration: none;
+  color: inherit;
+}
+.source-row:not(:last-child) {
+  border-bottom: 1px solid var(--border);
+}
+.source-row:hover {
+  background: var(--bg-hover);
+}
+.source-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  z-index: 1;
+  position: relative;
+}
+/* Needs-attention rows get a warm left-edge accent -- an inset box-shadow
+   so it doesn't disturb the grid's column alignment (a real border-left
+   would shift the row's content 2px relative to its neighbors). */
+.source-row-attention {
+  box-shadow: inset 2px 0 0 0 var(--warn);
+}
+/* Same specificity fight as .tracker-card[hidden] above: .source-row sets
+   an explicit `display: grid`, which ties with the UA stylesheet's
+   `[hidden] { display: none }` at equal specificity -- restate `none` here
+   so pdb-settings.js's `row.hidden = true` actually hides the row. */
+.source-row[hidden] {
+  display: none;
+}
+
+.source-monogram {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11.5px;
+  font-weight: 600;
+  flex-shrink: 0;
+  user-select: none;
+}
+/* Real brand marks sit on a constant near-white tile in every theme:
+   several bundled logos (GitHub, Oura, Whoop, Withings) are black marks or
+   black tiles that would vanish straight onto the dark theme's surface. */
+.source-logo-tile {
+  background: #fdfdfc;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+.source-logo {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.source-row-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.source-row-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.source-row-desc {
+  color: var(--fg-secondary);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.source-row-kind {
+  min-width: 0;
+}
+.source-row-kind .badge {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.source-row-status {
+  min-width: 0;
+}
+
+.source-row-timing {
+  color: var(--fg-tertiary);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.source-row-chevron {
+  color: var(--fg-tertiary);
+  font-size: 15px;
+  text-align: center;
+}
+
+/* Monogram tints: 8 muted hues, mixed at a low percentage against the
+   theme's own --bg-inset surface (same color-mix() mechanism used
+   elsewhere in this file for status tints, e.g. .setup-step.fail above).
+   Because the base is --bg-inset (which itself is a light-dark() pair,
+   redefined again for morandi), every tint automatically stays "muted" and
+   theme-appropriate across light/dark/morandi without a separate hex table
+   per theme -- no hue here is hardcoded as a final color, only as a mix
+   ingredient. Letter color mixes the same hue further into --fg so the
+   glyph reads as a tinted-but-legible ink rather than a flat icon color. */
+.source-tint-0 { background: color-mix(in srgb, #3383e0 20%, var(--bg-inset)); color: color-mix(in srgb, #3383e0 55%, var(--fg)); }
+.source-tint-1 { background: color-mix(in srgb, #2f9e8f 20%, var(--bg-inset)); color: color-mix(in srgb, #2f9e8f 55%, var(--fg)); }
+.source-tint-2 { background: color-mix(in srgb, #4c9a4c 20%, var(--bg-inset)); color: color-mix(in srgb, #4c9a4c 55%, var(--fg)); }
+.source-tint-3 { background: color-mix(in srgb, #c99a3b 20%, var(--bg-inset)); color: color-mix(in srgb, #c99a3b 55%, var(--fg)); }
+.source-tint-4 { background: color-mix(in srgb, #d9645c 20%, var(--bg-inset)); color: color-mix(in srgb, #d9645c 55%, var(--fg)); }
+.source-tint-5 { background: color-mix(in srgb, #9370c9 20%, var(--bg-inset)); color: color-mix(in srgb, #9370c9 55%, var(--fg)); }
+.source-tint-6 { background: color-mix(in srgb, #6b7f99 20%, var(--bg-inset)); color: color-mix(in srgb, #6b7f99 55%, var(--fg)); }
+.source-tint-7 { background: color-mix(in srgb, #b5793b 20%, var(--bg-inset)); color: color-mix(in srgb, #b5793b 55%, var(--fg)); }

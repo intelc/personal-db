@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from personal_db.core.config import Config
 from personal_db.services.daemon.http import build_app
+from personal_db.services.ui.setup_runner import compute_monogram, compute_tint
 from tests._daemon_auth import auth_headers
 
 
@@ -95,6 +96,42 @@ def test_setup_overview_filter_tabs_present_when_installed(tmp_path):
     assert 'data-filter="ready"' in r.text
     assert 'data-filter="attention"' in r.text
     assert 'data-status=' in r.text
+
+
+def test_setup_overview_renders_compact_source_rows(tmp_path):
+    """Settings-page redesign: installed sources render as one-line rows
+    (monogram tile + name/desc + kind badge + status chip + timing +
+    chevron), not the tall tracker-card blocks with a "configure →" link --
+    the whole row is the link now. habits has permission_type: manual and
+    no oauth/secret env_var steps, so its kind badge should read "Manual"."""
+    cfg = _init(tmp_path)
+    _install(cfg.root, "habits")
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/setup")
+    assert r.status_code == 200
+    assert 'class="source-list"' in r.text
+    assert 'class="source-row' in r.text
+    assert 'href="/setup/habits"' in r.text
+    assert "source-monogram" in r.text
+    assert ">Ha<" in r.text  # compute_monogram("Habits") == "Ha"
+    assert ">Manual<" in r.text  # kind badge
+    assert "›" in r.text  # trailing chevron affordance
+    assert "configure →" not in r.text
+    # Summary count + search input sit in the same toolbar row as the tabs.
+    assert "source-summary" in r.text
+    assert "1 source ·" in r.text
+    assert 'data-source-search' in r.text
+
+
+def test_setup_overview_row_accessible_name_is_source_title(tmp_path):
+    """The row is one big <a>; its accessible name must be just the source
+    title, not the concatenation of description/badge/status/timing text
+    that would otherwise be read out of the link's content."""
+    cfg = _init(tmp_path)
+    _install(cfg.root, "habits")
+    client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    r = client.get("/setup")
+    assert 'aria-label="Habits"' in r.text
 
 
 def test_setup_browse_lists_available_bundled_trackers(tmp_path):
@@ -949,3 +986,38 @@ def test_tracker_action_step_renders_button_and_status(tmp_path):
     assert 'data-action="link_item"' in r.text
     assert 'data-status-action="token_status"' in r.text
     assert "tracker-action-status" in r.text
+
+
+# --- compute_monogram / compute_tint (settings-page source-row tiles) -------
+
+
+def test_compute_monogram_two_letters_from_title():
+    assert compute_monogram("Calendar") == "Ca"
+    # First two letters of the *whole* title with spaces stripped, not
+    # word-initials -- "Chrome History" -> "Ch" (from "ChromeHistory"),
+    # not "CH".
+    assert compute_monogram("Chrome History") == "Ch"
+
+
+def test_compute_monogram_normalizes_case_and_handles_edge_cases():
+    assert compute_monogram("iMessage") == "Im"
+    assert compute_monogram("XHS") == "Xh"
+    assert compute_monogram("X") == "X"
+    assert compute_monogram("123") == "??"
+
+
+def test_compute_tint_deterministic_and_in_range():
+    """Must use zlib.crc32, not Python's salted hash() -- otherwise every
+    process restart (PYTHONHASHSEED changes) would reshuffle every source's
+    tile color."""
+    for name in ["habits", "github_commits", "chrome_history", "oura", "whoop"]:
+        tint = compute_tint(name)
+        assert 0 <= tint <= 7
+        # Deterministic: calling again yields the exact same value.
+        assert compute_tint(name) == tint
+
+    # Cross-process stability: crc32 of a fixed string is a fixed number,
+    # unlike hash() which is randomized per-process via PYTHONHASHSEED.
+    import zlib
+
+    assert compute_tint("habits") == zlib.crc32(b"habits") % 8
