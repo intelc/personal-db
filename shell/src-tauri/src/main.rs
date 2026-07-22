@@ -149,7 +149,13 @@ fn dispatch_tray_action(
         "toggle_start_at_login" | "start_at_login" => {
             result.start_at_login = Some(toggle_start_at_login(app)?)
         }
-        "quit" => app.exit(0),
+        "quit" => {
+            // A CommandChild outlives its Tauri shell when merely dropped.
+            // Stop only our retained child before the normal app exit so it
+            // cannot be adopted by launchd and survive into a later update.
+            daemon::stop_owned_sidecar(app, "app quit");
+            app.exit(0)
+        }
         _ => return Err(format!("unknown PersonalDB app action: {action}")),
     }
     Ok(result)
@@ -208,6 +214,7 @@ fn main() {
         .manage(daemon::SidecarState::default())
         .manage(daemon::HealthState::default())
         .manage(daemon::VersionDriftState::default())
+        .manage(daemon::ProvenanceRecoveryState::default())
         .manage(updater::UpdateCheckState::default())
         .invoke_handler(tauri::generate_handler![
             open_dashboard,
@@ -338,7 +345,7 @@ fn main() {
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app, event| {
+        .run(|app, event| {
             // Menu-bar app: closing the last window must NOT quit the app.
             // Without this, "Open Dashboard" (which closes any existing
             // window before/while creating the new one) could race into a
@@ -348,6 +355,8 @@ fn main() {
             if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
                 if code.is_none() {
                     api.prevent_exit();
+                } else {
+                    daemon::stop_owned_sidecar(app, "application exit");
                 }
             }
         });

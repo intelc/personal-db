@@ -263,6 +263,12 @@ async fn check_and_prompt(app: &AppHandle, kind: CheckKind) -> Result<(), String
         ))
         .blocking_show();
     if restart {
+        // Tauri's updater replaces and relaunches the shell but does not
+        // automatically reap a `tauri-plugin-shell` child. Explicitly stop
+        // the app-owned daemon while its CommandChild handle is still ours;
+        // otherwise macOS adopts it (PPID 1) from the updater's temporary
+        // bundle and its FDA identity no longer matches PersonalDB.app.
+        crate::daemon::stop_owned_sidecar(app, "updater restart");
         app.restart();
     }
     Ok(())

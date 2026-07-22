@@ -56,6 +56,7 @@ from personal_db.core.manifest import (
     load_manifest,
 )
 from personal_db.core.permissions import probe_sqlite_access
+from personal_db.core.runtime_env import is_app_bundle
 from personal_db.core.sync import sync_one
 from personal_db.core.sync_backoff import tracker_state
 from personal_db.services.ui.builtin_viz import compute_next_sync, humanize_age
@@ -375,6 +376,11 @@ def list_step_views(cfg: Config, manifest: Manifest) -> list[StepView]:
                 )
             )
         elif isinstance(step, FdaCheckStep):
+            fda_target = (
+                "PersonalDB"
+                if is_app_bundle()
+                else "the Python interpreter running personal-db"
+            )
             views.append(
                 StepView(
                     index=i,
@@ -382,8 +388,8 @@ def list_step_views(cfg: Config, manifest: Manifest) -> list[StepView]:
                     label="Full Disk Access required",
                     description=(
                         f"personal-db needs read access to {step.probe_path}. "
-                        "Open System Settings, grant FDA to the Python interpreter "
-                        "running personal-db, then submit the form to re-check."
+                        f"Open System Settings, grant FDA to {fda_target}, then "
+                        "submit the form to re-check."
                     ),
                     field_name=None,
                     current_value=None,

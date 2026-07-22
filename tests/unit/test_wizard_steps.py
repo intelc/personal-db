@@ -119,6 +119,21 @@ def test_fda_check_message_includes_python_binary_path(tmp_root, monkeypatch, ca
     assert "Python" in out or "python" in out
 
 
+def test_packaged_fda_check_targets_personaldb_not_embedded_python(tmp_root, monkeypatch, capsys):
+    monkeypatch.setattr(
+        "personal_db.services.wizard.steps.probe_sqlite_access",
+        lambda p: type("R", (), {"granted": False, "reason": "FDA denied"})(),
+    )
+    monkeypatch.setattr("personal_db.services.wizard.steps.is_app_bundle", lambda: True)
+    monkeypatch.setattr("personal_db.services.wizard.steps._prompt", lambda *a, **kw: "")
+    monkeypatch.setattr("personal_db.services.wizard.steps.open_fda_settings_pane", lambda: None)
+    step = FdaCheckStep(type="fda_check", probe_path="/dev/null/fake")
+    handle_fda_check(step, _ctx(tmp_root))
+    out = capsys.readouterr().out
+    assert "Full Disk Access to PersonalDB" in out
+    assert "managed by PersonalDB" in out
+
+
 def test_fda_check_succeeds_on_retry(tmp_root, monkeypatch):
     """First probe denied, user presses Enter, second probe granted → Ok."""
     state = {"calls": 0}

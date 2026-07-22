@@ -12,8 +12,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from personal_db.core.config import Config
+from personal_db.core.manifest import Manifest
 from personal_db.services.daemon.http import build_app
-from personal_db.services.ui.setup_runner import compute_monogram, compute_tint
+from personal_db.services.ui.setup_runner import compute_monogram, compute_tint, list_step_views
 from tests._daemon_auth import auth_headers
 
 
@@ -57,6 +58,35 @@ def _install(root, name):
         check=True,
         capture_output=True,
     )
+
+
+def _fda_manifest() -> Manifest:
+    return Manifest.model_validate(
+        {
+            "name": "imessage",
+            "description": "Messages",
+            "permission_type": "full_disk_access",
+            "time_column": "sent_at",
+            "schema": {"tables": {}},
+            "setup_steps": [
+                {"type": "fda_check", "probe_path": "~/Library/Messages/chat.db"}
+            ],
+        }
+    )
+
+
+def test_fda_setup_copy_targets_packaged_app_and_keeps_cli_python_guidance(tmp_path, monkeypatch):
+    """The web setup route is served by the frozen sidecar in releases, so
+    TCC must be granted to PersonalDB.app, not its embedded Python binary."""
+    manifest = _fda_manifest()
+    monkeypatch.setattr("personal_db.services.ui.setup_runner.is_app_bundle", lambda: True)
+    packaged = list_step_views(Config(root=tmp_path), manifest)[0].description
+    assert "grant FDA to PersonalDB" in packaged
+    assert "Python interpreter" not in packaged
+
+    monkeypatch.setattr("personal_db.services.ui.setup_runner.is_app_bundle", lambda: False)
+    dev = list_step_views(Config(root=tmp_path), manifest)[0].description
+    assert "Python interpreter running personal-db" in dev
 
 
 def test_setup_overview_lists_installed_only(tmp_path):

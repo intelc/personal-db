@@ -9,7 +9,7 @@
 //! or a page's address bar.
 
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -75,6 +75,13 @@ pub struct HealthState(pub Mutex<Option<bool>>);
 /// comparison is keyed on the exact version string, not a boolean latch.
 #[derive(Default)]
 pub struct VersionDriftState(pub Mutex<Option<String>>);
+
+/// Records a non-current frozen sidecar for which this shell has already
+/// attempted recovery. Unlike `VersionDriftState`, the v0.1.14 incident can
+/// report the *same* version as the new shell, so its executable provenance
+/// (and listener PID) is the recovery key.
+#[derive(Default)]
+pub struct ProvenanceRecoveryState(pub Mutex<Option<String>>);
 
 #[derive(Debug, Deserialize)]
 struct OtcResponse {
@@ -525,6 +532,16 @@ pub async fn open_page(app: &AppHandle, next_path: &str) -> Result<(), String> {
     };
     match health {
         Ok(mut daemon_version) => {
+            // A version handshake cannot catch a sidecar orphaned by the
+            // updater when both old and new bundles carry the same version
+            // string (the v0.1.14 incident). Check executable provenance
+            // before navigating to its HTTP UI instead. This is deliberately
+            // narrower than version-drift recovery: only a frozen sidecar
+            // outside this app's bundle is eligible.
+            if recover_foreign_frozen_sidecar(app, &base).await {
+                daemon_version = Some(SHELL_VERSION.to_string());
+            }
+
             // ---- Version handshake gate --------------------------------
             // Incident (v0.1.4): a *different* personal_db daemon -- a
             // stale `com.personal_db.daemon` LaunchAgent from an old dev
@@ -875,6 +892,185 @@ fn command_line_for_pid(pid: u32) -> Option<String> {
     }
 }
 
+/// `ps -o comm=` reports the executable image rather than argv with its
+/// arguments. That distinction matters for updater recovery: a frozen
+/// sidecar's argv includes `-m personal_db`, but only the executable path
+/// tells us whether it belongs to *this* installed app bundle.
+fn process_executable_path(raw: &str) -> Option<PathBuf> {
+    let text = raw.trim().trim_end_matches(" (deleted)").trim();
+    (!text.is_empty()).then(|| PathBuf::from(text))
+}
+
+/// Resolve the process's mapped executable. `lsof`'s `txt` mapping is the
+/// strongest source on macOS when an updater has unlinked its temporary
+/// bundle; `ps comm` remains a useful fallback on systems where lsof cannot
+/// inspect the process.
+fn executable_for_pid(pid: u32) -> Option<PathBuf> {
+    if let Ok(output) = std::process::Command::new("/usr/sbin/lsof")
+        .args(["-a", "-p", &pid.to_string(), "-d", "txt", "-Fn"])
+        .output()
+    {
+        if output.status.success() {
+            if let Some(path) = String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .find_map(|line| line.strip_prefix('n'))
+                .and_then(process_executable_path)
+            {
+                return Some(path);
+            }
+        }
+    }
+
+    let output = std::process::Command::new("/bin/ps")
+        .args(["-o", "comm=", "-p", &pid.to_string()])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    process_executable_path(&String::from_utf8_lossy(&output.stdout))
+}
+
+/// The only frozen daemon binary a packaged shell may own. Tauri places
+/// `externalBin` next to the shell executable in `Contents/MacOS`; deriving
+/// this path from the running app (rather than hard-coding `/Applications`)
+/// also works for a user who drags PersonalDB elsewhere.
+fn bundled_sidecar_candidate_from_exe(executable: &Path) -> Option<PathBuf> {
+    let macos_dir = executable.parent()?;
+    if !is_packaged_macos_dir(&macos_dir) {
+        return None;
+    }
+    Some(macos_dir.join(SIDECAR_NAME))
+}
+
+/// Derive the current bundle's sidecar from the actual Mach-O path. Tauri's
+/// `PathResolver::executable_dir` intentionally returns None on macOS, while
+/// `current_exe` is the authoritative location of the running app after an
+/// updater relaunch.
+fn expected_sidecar_path() -> Option<PathBuf> {
+    let sidecar = bundled_sidecar_candidate_from_exe(&std::env::current_exe().ok()?)?;
+    sidecar.is_file().then_some(sidecar)
+}
+
+/// A release shell/sidecar directory is exactly
+/// `<Name>.app/Contents/MacOS`. `tauri dev` / target-debug paths deliberately
+/// fail this shape check, so a developer's launchd daemon can never be
+/// considered foreign merely because a release app uses the same loopback
+/// port.
+fn is_packaged_macos_dir(macos_dir: &Path) -> bool {
+    let Some(contents_dir) = macos_dir.parent() else {
+        return false;
+    };
+    let Some(bundle_dir) = contents_dir.parent() else {
+        return false;
+    };
+    macos_dir.file_name().and_then(|name| name.to_str()) == Some("MacOS")
+        && contents_dir.file_name().and_then(|name| name.to_str()) == Some("Contents")
+        && bundle_dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.ends_with(".app"))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SidecarProvenance {
+    /// The listener is the frozen payload next to this shell executable.
+    CurrentBundle,
+    /// A frozen PersonalDB sidecar from another bundle. This is the precise
+    /// shape Tauri's updater leaves behind in its temporary `current_app`
+    /// directory when the old shell exits without terminating its child.
+    ForeignFrozenBundle,
+    /// A Python/launchd development daemon or an unrelated process. Never
+    /// signal this based on a packaged-app health check.
+    Other,
+}
+
+/// Pure executable-provenance classifier used before any signal is sent.
+/// Matching the basename alone identifies a frozen PersonalDB payload;
+/// equality with the expected path proves it belongs to this app instance.
+/// Development daemons run a Python executable, so they deliberately fall
+/// into `Other` even if their arguments contain `personal_db`.
+fn classify_sidecar_provenance(executable: &Path, expected: &Path) -> SidecarProvenance {
+    let same_current_bundle = executable == expected
+        || std::fs::canonicalize(executable)
+            .ok()
+            .zip(std::fs::canonicalize(expected).ok())
+            .is_some_and(|(actual, current)| actual == current);
+    let is_frozen_bundle_sidecar = executable.file_name().and_then(|name| name.to_str())
+        == Some(SIDECAR_NAME)
+        && executable
+            .parent()
+            .and_then(Path::file_name)
+            .and_then(|name| name.to_str())
+            == Some("MacOS")
+        && executable
+            .parent()
+            .and_then(Path::parent)
+            .and_then(Path::file_name)
+            .and_then(|name| name.to_str())
+            == Some("Contents")
+        && executable
+            .parent()
+            .and_then(Path::parent)
+            .and_then(Path::parent)
+            .and_then(Path::file_name)
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.ends_with(".app"));
+    if same_current_bundle {
+        SidecarProvenance::CurrentBundle
+    } else if is_frozen_bundle_sidecar {
+        SidecarProvenance::ForeignFrozenBundle
+    } else {
+        SidecarProvenance::Other
+    }
+}
+
+/// Return only frozen `personal-db-daemon` listeners that are outside this
+/// shell's bundle. It is intentionally impossible for this function to
+/// select a launchd-managed Python daemon or an arbitrary listener merely
+/// occupying the daemon port.
+fn foreign_frozen_sidecar_pids(base: &str) -> Vec<u32> {
+    let Some(expected) = expected_sidecar_path() else {
+        // `tauri dev` has no stable packaged executable provenance. Skipping
+        // recovery there protects the developer's launchd daemon.
+        return Vec::new();
+    };
+    listener_pids(daemon_port(base))
+        .into_iter()
+        .filter(|pid| {
+            executable_for_pid(*pid).is_some_and(|executable| {
+                classify_sidecar_provenance(&executable, &expected)
+                    == SidecarProvenance::ForeignFrozenBundle
+            })
+        })
+        .collect()
+}
+
+/// Generic ownership transfer used by normal exit, updater restart, and the
+/// stale-daemon path. Keeping this tiny operation pure makes it impossible
+/// for a cleanup call to kill the same child twice.
+fn take_owned_sidecar<T>(slot: &mut Option<T>) -> Option<T> {
+    slot.take()
+}
+
+/// Stop only the sidecar process this shell spawned. It never searches the
+/// port, so closing PersonalDB cannot affect a launchd-managed dev daemon or
+/// any other process. The updater calls this immediately before relaunch,
+/// which prevents the sidecar from becoming orphaned under launchd (PPID 1).
+pub fn stop_owned_sidecar(app: &AppHandle, reason: &str) {
+    let child = {
+        let state = app.state::<SidecarState>();
+        let mut sidecar = state.0.lock().unwrap();
+        take_owned_sidecar(&mut *sidecar)
+    };
+    if let Some(child) = child {
+        eprintln!("daemon: stopping app-owned sidecar before {reason}");
+        if let Err(e) = child.kill() {
+            eprintln!("daemon: could not stop app-owned sidecar: {e}");
+        }
+    }
+}
+
 /// Verified kill-by-port fallback, used by `restart_stale_daemon` only after
 /// its graceful `/api/v1/admin/shutdown` request (or the lack of a token to
 /// send one with) failed to actually clear the port. Enumerates listening
@@ -960,6 +1156,102 @@ async fn wait_until_unreachable(base: &str, timeout: Duration) {
             return;
         }
         tokio::time::sleep(SHUTDOWN_POLL_INTERVAL).await;
+    }
+}
+
+/// Claim a particular foreign listener set for recovery. Startup navigation
+/// and the immediate health-poll tick run concurrently; one owner is enough,
+/// and repeatedly signalling an undeletable updater-temp process would be
+/// worse than leaving the normal guidance fallback in place.
+fn claim_foreign_sidecar_recovery(app: &AppHandle, pids: &[u32]) -> bool {
+    let key = pids
+        .iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(",");
+    let state = app.state::<ProvenanceRecoveryState>();
+    let mut guard = state.0.lock().unwrap();
+    if guard.as_deref() == Some(key.as_str()) {
+        false
+    } else {
+        *guard = Some(key);
+        true
+    }
+}
+
+/// Signal only the exact non-current frozen sidecar PIDs that were selected
+/// by executable provenance. Revalidating immediately before *each* signal
+/// protects against a PID disappearing/reusing while we wait; in particular,
+/// this never falls back to the broad version-drift port-kill path because
+/// that path is allowed to match development Python daemons.
+async fn terminate_foreign_frozen_sidecars(base: &str, pids: &[u32]) {
+    let mut term_sent = Vec::new();
+    for pid in pids {
+        // Re-resolve immediately before each signal: a PID can disappear
+        // and be reused while a competing startup task is running. A fresh
+        // provenance check is required for every process we touch.
+        if foreign_frozen_sidecar_pids(base).contains(pid) {
+            eprintln!(
+                "daemon provenance recovery: sending SIGTERM to non-current frozen sidecar pid {pid}"
+            );
+            let _ = std::process::Command::new("/bin/kill")
+                .args(["-TERM", &pid.to_string()])
+                .status();
+            term_sent.push(*pid);
+        }
+    }
+    if term_sent.is_empty() {
+        return;
+    }
+    wait_until_unreachable(base, SHUTDOWN_WAIT_TIMEOUT).await;
+
+    if check_health(base).await.is_ok() {
+        for pid in &term_sent {
+            // Re-run the exact check once more before escalation. If this
+            // PID became a dev daemon or another process owns the port now,
+            // it is deliberately excluded.
+            if foreign_frozen_sidecar_pids(base).contains(pid) {
+                eprintln!(
+                    "daemon provenance recovery: pid {pid} survived SIGTERM; sending SIGKILL"
+                );
+                let _ = std::process::Command::new("/bin/kill")
+                    .args(["-KILL", &pid.to_string()])
+                    .status();
+            }
+        }
+        wait_until_unreachable(base, SHUTDOWN_WAIT_TIMEOUT).await;
+    }
+}
+
+/// Recover the v0.1.14 updater failure mode even when both processes report
+/// the same semantic version. The old sidecar is eligible only when its
+/// executable is a frozen `.../Contents/MacOS/personal-db-daemon` outside
+/// the current shell's bundle. That lets packaged releases heal Tauri's
+/// deleted temporary bundle while leaving launchd/Python development daemons
+/// and unrelated port owners untouched.
+async fn recover_foreign_frozen_sidecar(app: &AppHandle, base: &str) -> bool {
+    let pids = foreign_frozen_sidecar_pids(base);
+    if pids.is_empty() || !claim_foreign_sidecar_recovery(app, &pids) {
+        return false;
+    }
+    eprintln!(
+        "daemon provenance recovery: found non-current frozen sidecar listener(s) {:?}; replacing",
+        pids
+    );
+    terminate_foreign_frozen_sidecars(base, &pids).await;
+    if check_health(base).await.is_ok() {
+        eprintln!(
+            "daemon provenance recovery: listener remains after targeted cleanup; refusing to \
+             touch any other port owner"
+        );
+        return false;
+    }
+    if try_start_sidecar(app, base).await {
+        eprintln!("daemon provenance recovery: restarted daemon from current bundle");
+        true
+    } else {
+        eprintln!("daemon provenance recovery: could not start current-bundle sidecar");
+        false
     }
 }
 
@@ -1186,6 +1478,12 @@ pub async fn poll_health_status(app: &AppHandle) {
         // also covers "check once ~5s after startup" without any extra
         // wiring -- startup is the moment this matters most, right after a
         // self-update relaunch.
+        if recover_foreign_frozen_sidecar(app, &base).await {
+            // `try_start_sidecar` verifies the replacement's exact version.
+            // Let the next poll read its fresh health payload instead of
+            // applying the orphan's old tooltip/failure state to it.
+            return;
+        }
         if !payload.app_version.is_empty() {
             check_version_drift(app, &base, &payload.app_version).await;
         }
@@ -1324,5 +1622,94 @@ mod tests {
     fn parse_semver_lenient_orders_as_expected() {
         assert!(parse_semver_lenient("0.1.8").unwrap() < parse_semver_lenient("0.1.9").unwrap());
         assert!(parse_semver_lenient("0.1.9").unwrap() >= parse_semver_lenient("0.1.9").unwrap());
+    }
+
+    #[test]
+    fn provenance_accepts_current_packaged_sidecar() {
+        let current = Path::new("/Applications/PersonalDB.app/Contents/MacOS/personal-db-daemon");
+        assert_eq!(
+            classify_sidecar_provenance(current, current),
+            SidecarProvenance::CurrentBundle
+        );
+    }
+
+    #[test]
+    fn provenance_flags_same_version_updater_temp_sidecar_even_when_deleted() {
+        let current = Path::new("/Applications/PersonalDB.app/Contents/MacOS/personal-db-daemon");
+        let stale = process_executable_path(
+            "/private/var/folders/x/T/tauri_current_app/current_app/PersonalDB.app/Contents/MacOS/personal-db-daemon (deleted)",
+        )
+        .unwrap();
+        assert_eq!(
+            classify_sidecar_provenance(&stale, current),
+            SidecarProvenance::ForeignFrozenBundle
+        );
+    }
+
+    #[test]
+    fn provenance_never_selects_python_launchd_daemon_or_unrelated_owner() {
+        let current = Path::new("/Applications/PersonalDB.app/Contents/MacOS/personal-db-daemon");
+        assert_eq!(
+            classify_sidecar_provenance(Path::new("/Users/dev/repo/.venv/bin/python"), current,),
+            SidecarProvenance::Other
+        );
+        assert_eq!(
+            classify_sidecar_provenance(Path::new("/usr/local/bin/node"), current),
+            SidecarProvenance::Other
+        );
+        assert_eq!(
+            classify_sidecar_provenance(
+                Path::new("/tmp/not-a-bundle/Contents/MacOS/personal-db-daemon"),
+                current,
+            ),
+            SidecarProvenance::Other
+        );
+    }
+
+    #[test]
+    fn process_executable_path_strips_deleted_suffix_and_whitespace() {
+        assert_eq!(
+            process_executable_path(
+                "  /tmp/PersonalDB.app/Contents/MacOS/personal-db-daemon (deleted) \n"
+            ),
+            Some(PathBuf::from(
+                "/tmp/PersonalDB.app/Contents/MacOS/personal-db-daemon"
+            ))
+        );
+    }
+
+    #[test]
+    fn only_packaged_shell_directories_have_sidecar_provenance_recovery() {
+        assert!(is_packaged_macos_dir(Path::new(
+            "/Applications/PersonalDB.app/Contents/MacOS"
+        )));
+        assert!(!is_packaged_macos_dir(Path::new(
+            "/Users/dev/repo/shell/target/debug"
+        )));
+    }
+
+    #[test]
+    fn derives_sidecar_only_from_a_packaged_shell_executable() {
+        assert_eq!(
+            bundled_sidecar_candidate_from_exe(Path::new(
+                "/Applications/PersonalDB.app/Contents/MacOS/personal-db-shell"
+            )),
+            Some(PathBuf::from(
+                "/Applications/PersonalDB.app/Contents/MacOS/personal-db-daemon"
+            ))
+        );
+        assert_eq!(
+            bundled_sidecar_candidate_from_exe(Path::new(
+                "/Users/dev/repo/shell/target/debug/personal-db-shell"
+            )),
+            None
+        );
+    }
+
+    #[test]
+    fn owned_sidecar_cleanup_transfers_child_only_once() {
+        let mut sidecar = Some("owned child");
+        assert_eq!(take_owned_sidecar(&mut sidecar), Some("owned child"));
+        assert_eq!(take_owned_sidecar(&mut sidecar), None);
     }
 }

@@ -38,6 +38,7 @@ from personal_db.core.permissions import (
     probe_sqlite_access,
     responsible_binary_path,
 )
+from personal_db.core.runtime_env import is_app_bundle
 from personal_db.services.wizard.env_file import read_env, upsert_env
 
 
@@ -81,19 +82,29 @@ def handle_fda_check(step: FdaCheckStep, ctx: WizardContext) -> StepResult:
         if r.granted:
             return Ok(f"FDA granted for {probe_path}")
         if attempt == 0:
-            python_bin = responsible_binary_path()
-            print(
-                f"\n  ✗ Cannot access {probe_path}\n"
-                f"    Reason: {r.reason}\n"
-                f"\n  Grant Full Disk Access to the Python interpreter that runs personal-db:\n"
-                f"\n    {python_bin}\n"
-                f"\n  In System Settings → Privacy & Security → Full Disk Access → +,\n"
-                f"  press Cmd+Shift+G and paste the path above.\n"
-                f"\n  This is more durable than granting FDA to your terminal app: it works\n"
-                f"  regardless of which terminal you use, and it's required for the launchd\n"
-                f"  scheduler (which doesn't run through your terminal at all).\n"
-                f"\n  Opening System Settings now…\n"
-            )
+            if is_app_bundle():
+                print(
+                    f"\n  ✗ Cannot access {probe_path}\n"
+                    f"    Reason: {r.reason}\n"
+                    "\n  Grant Full Disk Access to PersonalDB in System Settings → Privacy & Security\n"
+                    "  → Full Disk Access, then retry. The packaged daemon runs inside\n"
+                    "  PersonalDB.app and is managed by PersonalDB.\n"
+                    "\n  Opening System Settings now…\n"
+                )
+            else:
+                python_bin = responsible_binary_path()
+                print(
+                    f"\n  ✗ Cannot access {probe_path}\n"
+                    f"    Reason: {r.reason}\n"
+                    f"\n  Grant Full Disk Access to the Python interpreter that runs personal-db:\n"
+                    f"\n    {python_bin}\n"
+                    f"\n  In System Settings → Privacy & Security → Full Disk Access → +,\n"
+                    f"  press Cmd+Shift+G and paste the path above.\n"
+                    f"\n  This is more durable than granting FDA to your terminal app: it works\n"
+                    f"  regardless of which terminal you use, and it's required for the launchd\n"
+                    f"  scheduler (which doesn't run through your terminal at all).\n"
+                    f"\n  Opening System Settings now…\n"
+                )
             open_fda_settings_pane()
         _prompt(f"Press Enter once granted (attempt {attempt + 1}/3), or just Enter to retry")
     return Failed(
