@@ -35,17 +35,23 @@ FINANCE_SCHEMA = (
 )
 
 
-def test_bundled_finance_app_discovered(tmp_root):
+def _install_bundled_app(cfg: Config, name: str) -> None:
+    if not (cfg.apps_dir / name).exists():
+        install_app_template(cfg, name)
+
+
+def test_bundled_apps_require_explicit_install(tmp_root):
     cfg = Config(root=tmp_root)
     apps = discover_apps(cfg)
-    assert "finance" in apps
-    assert apps["finance"].source == "bundled"
-    assert apps["finance"].manifest.default_page.slug == "overview"
-    assert "places" in apps
-    assert apps["places"].manifest.default_page.slug == "overview"
+    assert apps == {}
+
+    catalog = discover_apps(cfg, include_bundled=True)
+    assert catalog["finance"].source == "bundled"
+    assert catalog["finance"].manifest.default_page.slug == "overview"
+    assert catalog["places"].manifest.default_page.slug == "overview"
 
 
-def test_installed_app_overrides_bundled_app(tmp_root):
+def test_installed_app_is_discovered_without_bundle_fallback(tmp_root):
     cfg = Config(root=tmp_root)
     app_dir = cfg.apps_dir / "finance"
     app_dir.mkdir(parents=True)
@@ -274,14 +280,36 @@ def test_app_route_returns_500_when_render_fails(tmp_root):
     assert "error rendering app page" in r.text
 
 
-def test_bundled_finance_route_renders_without_finance_tables(tmp_root):
+def test_apps_catalog_requires_install_before_routes_are_available(tmp_root):
     cfg = Config(root=tmp_root)
     init_db(cfg.db_path)
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
+    index = client.get("/a")
+    assert index.status_code == 200
+    assert "Available to install" in index.text
+    assert "Finance" in index.text
+    assert 'action="/a/install/finance"' in index.text
+
+    assert client.get("/a/finance").status_code == 404
+
+    installed = client.post("/a/install/finance", follow_redirects=False)
+    assert installed.status_code == 303
+    assert installed.headers["location"] == "/a/finance"
+    assert (cfg.apps_dir / "finance" / "app.yaml").is_file()
+
     r = client.get("/a/finance")
     assert r.status_code == 200
     assert "Finance Overview" in r.text
     assert "No finance data yet" in r.text
+
+    # Retrying the install action must use the existing app as the opt-in
+    # marker; it never replaces user-owned files or app state.
+    note = cfg.apps_dir / "finance" / "local_note.md"
+    note.write_text("keep")
+    retried = client.post("/a/install/finance", follow_redirects=False)
+    assert retried.status_code == 303
+    assert retried.headers["location"] == "/a/finance"
+    assert note.read_text() == "keep"
 
 
 def test_finance_receipts_page_shows_latest_and_queues_rerun(tmp_root):
@@ -353,6 +381,7 @@ def test_finance_receipts_page_shows_latest_and_queues_rerun(tmp_root):
 def test_finance_review_actions_write_app_state(tmp_root):
     cfg = Config(root=tmp_root)
     init_db(cfg.db_path)
+    _install_bundled_app(cfg, "finance")
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     marked = client.post(
@@ -396,6 +425,7 @@ def test_finance_review_actions_write_app_state(tmp_root):
 def test_undeclared_app_action_returns_404(tmp_root):
     cfg = Config(root=tmp_root)
     init_db(cfg.db_path)
+    _install_bundled_app(cfg, "finance")
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
     r = client.post("/api/v1/apps/finance/actions/not_declared", json={})
     assert r.status_code == 404
@@ -404,6 +434,7 @@ def test_undeclared_app_action_returns_404(tmp_root):
 def test_app_action_rejects_cross_origin_browser_writes(tmp_root):
     cfg = Config(root=tmp_root)
     init_db(cfg.db_path)
+    _install_bundled_app(cfg, "finance")
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     rejected = client.post(
@@ -424,6 +455,7 @@ def test_app_action_rejects_cross_origin_browser_writes(tmp_root):
 def test_finance_category_actions_write_canonical_finance_state(tmp_root):
     cfg = Config(root=tmp_root)
     init_db(cfg.db_path)
+    _install_bundled_app(cfg, "finance")
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     set_category = client.post(
@@ -472,6 +504,7 @@ def test_finance_category_actions_write_canonical_finance_state(tmp_root):
 
 
 def _seed_finance_app_db(cfg: Config) -> None:
+    _install_bundled_app(cfg, "finance")
     init_db(cfg.db_path)
     apply_tracker_schema(cfg.db_path, FINANCE_SCHEMA.read_text())
     con = sqlite3.connect(cfg.db_path)
@@ -1389,6 +1422,7 @@ def test_finance_burn_bucket_metadata_migrates_legacy_table(tmp_root):
 
 
 def _seed_places_app_db(cfg: Config) -> None:
+    _install_bundled_app(cfg, "places")
     init_db(cfg.db_path)
     con = sqlite3.connect(cfg.db_path)
     try:
@@ -1446,9 +1480,10 @@ def _seed_places_app_db(cfg: Config) -> None:
         con.close()
 
 
-def test_bundled_places_route_renders_without_location_tables(tmp_root):
+def test_installed_places_route_renders_without_location_tables(tmp_root):
     cfg = Config(root=tmp_root)
     init_db(cfg.db_path)
+    _install_bundled_app(cfg, "places")
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
 
     overview = client.get("/a/places")
@@ -1502,6 +1537,7 @@ def test_places_pages_render_with_raw_points_before_geocoding(tmp_root, frozen_d
     frozen_datetime(2026, 6, 5)
     cfg = Config(root=tmp_root)
     init_db(cfg.db_path)
+    _install_bundled_app(cfg, "places")
     con = sqlite3.connect(cfg.db_path)
     try:
         con.executescript(
@@ -1540,6 +1576,7 @@ def test_places_pages_render_with_installed_location_tracker_schema(tmp_root, fr
     frozen_datetime(2026, 6, 5)
     cfg = Config(root=tmp_root)
     init_db(cfg.db_path)
+    _install_bundled_app(cfg, "places")
     con = sqlite3.connect(cfg.db_path)
     try:
         con.executescript(

@@ -300,7 +300,8 @@ def test_calendar_reality_app_views_render_with_rows(tmp_root, tmp_path, monkeyp
 
     t = _tracker(tmp_root)
     ingest.sync(t)
-    app = discover_apps(t.cfg)["calendar_reality"]
+    # This is a direct template-view test, not a dashboard discovery test.
+    app = discover_apps(t.cfg, include_bundled=True)["calendar_reality"]
     ctx = AppContext(cfg=t.cfg, app_dir=app.root, manifest=app.manifest)
     assert "Blocks" in views.render_overview(ctx)
     assert "Deep work" in views.render_blocks(ctx)

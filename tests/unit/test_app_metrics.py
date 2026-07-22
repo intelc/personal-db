@@ -34,7 +34,9 @@ def _setup(tmp_path: Path) -> Config:
 
 
 def _load_app_metrics_fn(cfg: Config, app_name: str):
-    apps = discover_apps(cfg)
+    # These tests exercise the packaged template directly; production app
+    # discovery intentionally only includes user-installed apps.
+    apps = discover_apps(cfg, include_bundled=True)
     definition = apps[app_name]
     path = definition.root / "views.py"
     modname = f"_test_app_metrics_{app_name}_{uuid.uuid4().hex}"

@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/static/vendor/ag-grid-community/35.3.0/ag-grid.min.css">
   <link rel="stylesheet" href="/static/vendor/ag-grid-community/35.3.0/ag-theme-quartz.min.css">
   <link rel="stylesheet" href="/static/vendor/xterm/6.0.0/xterm.css">
-  <link rel="stylesheet" href="/static/style.css?v=p2-6">
+  <link rel="stylesheet" href="/static/style.css?v=p2-7">
   <script defer src="/static/vendor/ag-grid-community/35.3.0/ag-grid-community.min.js"></script>
   <script defer src="/static/vendor/ag-charts-community/13.3.0/ag-charts-community.min.js"></script>
   <script defer src="/static/vendor/xterm/6.0.0/xterm.js"></script>
@@ -25,6 +25,7 @@
   <script defer src="/static/pdb-connector-setup.js?v=1"></script>
   <script defer src="/static/pdb-settings.js?v=1"></script>
   <script defer src="/static/pdb-app-actions.js?v=1"></script>
+  <script defer src="/static/pdb-update-ready.js?v=1"></script>
   <script defer src="/static/pdb-shell.js?v=1"></script>
   <script defer src="/static/pdb-sync.js?v=5"></script>
   <script defer src="/static/pdb-nav.js?v=4"></script>
@@ -78,6 +79,10 @@
         </nav>
       </div>
       <div class="sidebar-footer" id="sidebar-status">
+        <button type="button" class="sidebar-update-ready" id="pdb-update-ready" hidden aria-hidden="true">
+          <span class="sidebar-update-ready-dot" aria-hidden="true"></span>
+          <span data-update-ready-label>Update ready</span>
+        </button>
         <a href="/health" class="sidebar-status" title="Health" {% if active=='health' %}aria-current="page"{% endif %}>
           <span class="sidebar-status-dot {% if nav_failing %}is-danger{% else %}is-ok{% endif %}"></span>
           <span class="sidebar-status-label">{% if nav_failing %}{% if nav_failing|length == 1 %}1 needs attention{% else %}{{ nav_failing|length }} need attention{% endif %}{% else %}All sources syncing{% endif %}</span>

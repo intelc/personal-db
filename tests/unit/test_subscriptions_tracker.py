@@ -3,6 +3,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from personal_db.core.apps import install_app_template
 from personal_db.core.config import Config
 from personal_db.core.db import apply_tracker_schema, connect, init_db
 from personal_db.core.tracker import Tracker
@@ -170,6 +171,7 @@ def test_subscriptions_app_renders(tmp_root):
     ingest = _load_module("ingest.py", "subscriptions_ingest_app_test")
     cfg = Config(root=tmp_root)
     _seed_db(cfg)
+    install_app_template(cfg, "subscriptions")
     ingest.sync(Tracker("subscriptions", cfg, manifest=None))
 
     client = TestClient(build_app(cfg), headers=auth_headers(cfg))
@@ -183,6 +185,7 @@ def test_subscriptions_app_can_mark_false_positive_in_finance_state(tmp_root):
     ingest = _load_module("ingest.py", "subscriptions_ingest_action_test")
     cfg = Config(root=tmp_root)
     _seed_db(cfg)
+    install_app_template(cfg, "subscriptions")
     apply_tracker_schema(cfg.db_path, (FINANCE_APP_DIR / "schema.sql").read_text())
     ingest.sync(Tracker("subscriptions", cfg, manifest=None))
 

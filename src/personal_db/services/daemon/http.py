@@ -54,6 +54,7 @@ from personal_db.core.apps import (
     AppManifestError,
     apply_app_schema,
     discover_apps,
+    install_app_template,
     load_app_view,
 )
 from personal_db.core.config import Config
@@ -510,15 +511,45 @@ def build_app(cfg: Config, *, port: int = 8765) -> FastAPI:
     async def apps_index(request: Request):
         reg = _registry()
         apps = _app_registry()
+        # The packaged apps are an install catalog, not active app surfaces.
+        # Discover them only for this page, then remove anything the user has
+        # already installed (including a same-named customized app).
+        catalog = discover_apps(cfg, include_bundled=True)
+        available = [
+            definition
+            for name, definition in catalog.items()
+            if definition.source == "bundled" and name not in apps
+        ]
         return templates.TemplateResponse(
             request=request,
             name="apps_index.html",
             context={
                 "active": "apps",
                 "apps": list(apps.values()),
+                "available_apps": available,
                 **_nav_context(reg, active="apps"),
             },
         )
+
+    @app.post("/a/install/{app_name}")
+    async def install_app(app_name: str):
+        """Install one bundled app without ever overwriting an existing app.
+
+        The destination directory is the user's opt-in marker.  A preexisting
+        directory is deliberately left untouched, so upgrades cannot replace
+        an installed/customized app or its local files.
+        """
+        _validate_name(app_name)
+        try:
+            app_dir = install_app_template(cfg, app_name)
+        except FileExistsError:
+            # An installed app is already the desired end state; do not
+            # overwrite it just because the install button was submitted twice.
+            return RedirectResponse(url=f"/a/{app_name}", status_code=303)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail="unknown bundled app") from exc
+        apply_app_schema(cfg, app_dir)
+        return RedirectResponse(url=f"/a/{app_name}", status_code=303)
 
     @app.get("/a/{app_name}", response_class=HTMLResponse)
     async def app_default_page(request: Request, app_name: str):

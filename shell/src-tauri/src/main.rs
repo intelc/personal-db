@@ -163,6 +163,23 @@ async fn run_tray_action(app: AppHandle, action: String) -> Result<TrayActionRes
     dispatch_tray_action(&app, &action, None)
 }
 
+/// Read-only, narrow bridge for the dashboard's update indicator. It exposes
+/// no feed details or updater controls and stays harmless in a normal browser
+/// where the Tauri invoke API does not exist.
+#[tauri::command]
+fn get_update_status(app: AppHandle) -> updater::UpdateStatus {
+    app.state::<updater::UpdateCheckState>().status()
+}
+
+/// A click on the passive sidebar indicator is explicit user consent to start
+/// the familiar Check for Updates -> Install/Later -> Restart native flow.
+/// Keeping this separate from `run_tray_action` gives that indicator the
+/// smallest possible command surface.
+#[tauri::command]
+fn start_update_install(app: AppHandle) {
+    updater::spawn_check(&app);
+}
+
 /// Runs `<cli> mcp install <target>` on a background thread and reports the
 /// result via a native notification.
 fn spawn_mcp_connect(app: &AppHandle, target: &'static str, label: &'static str) {
@@ -191,7 +208,13 @@ fn main() {
         .manage(daemon::SidecarState::default())
         .manage(daemon::HealthState::default())
         .manage(daemon::VersionDriftState::default())
-        .invoke_handler(tauri::generate_handler![open_dashboard, run_tray_action])
+        .manage(updater::UpdateCheckState::default())
+        .invoke_handler(tauri::generate_handler![
+            open_dashboard,
+            run_tray_action,
+            get_update_status,
+            start_update_install
+        ])
         .setup(|app| {
             // No dock icon / app switcher entry -- this is a menu-bar-only
             // app. macOS-only API; other platforms would need their own
@@ -300,10 +323,11 @@ fn main() {
                 }
             });
 
-            // Passive update check ~60s after launch (delayed so it never
-            // competes with startup / the daemon bootstrap): only surfaces
-            // UI when an update actually exists -- see updater.rs.
-            updater::spawn_startup_check(&app.handle().clone());
+            // Passive update checks start ~60s after launch, then repeat
+            // twice daily while the app stays open. They never show a native
+            // prompt: when an update exists, updater.rs records it and the
+            // dashboard draws a persistent sidebar indicator instead.
+            updater::spawn_periodic_checks(&app.handle().clone());
 
             // One-time nudge toward the Set Up items above, if the user
             // hasn't touched either the CLI symlink or any MCP host yet

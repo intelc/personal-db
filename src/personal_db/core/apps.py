@@ -286,17 +286,14 @@ def apply_app_schema(cfg: Config, app_dir: Path) -> None:
         con.executescript(schema_path.read_text())
 
 
-def discover_apps(cfg: Config, *, include_bundled: bool = True) -> dict[str, AppDefinition]:
-    """Discover installed apps, falling back to bundled app templates.
+def discover_apps(cfg: Config, *, include_bundled: bool = False) -> dict[str, AppDefinition]:
+    """Discover apps installed under ``<root>/apps``.
 
-    Installed apps in <root>/apps/<name> override bundled apps with the same
-    name, which lets users customize an app without changing package files.
-
-    `include_bundled=False` restricts discovery to apps actually installed
-    under <root>/apps/ — used by callers (background-job/MCP-tool registries)
-    that must not treat "ships with the package" as "the user opted in",
-    unlike routes/CLI listing which intentionally shows every bundled app
-    without requiring an explicit install step.
+    Bundled apps are templates, exactly like bundled trackers: shipping an
+    app in the package must not make it visible, runnable, or able to apply
+    its schema until the user installs it.  Callers rendering an installation
+    catalog may pass ``include_bundled=True`` explicitly; installed apps then
+    override same-named bundled templates.
     """
     out: dict[str, AppDefinition] = {}
     roots: list[tuple[str, Path]] = []

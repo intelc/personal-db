@@ -31,6 +31,25 @@ def test_app_available_and_install_reinstall(tmp_path):
     assert available.returncode == 0, available.stderr
     assert "finance" in available.stdout
 
+    # Bundled apps are an explicit install catalog, not preinstalled runtime
+    # surfaces. The normal list mirrors the dashboard/sidebar and must stay
+    # empty until the user opts in.
+    listed_before_install = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "personal_db.cli.main",
+            "--root",
+            str(root),
+            "app",
+            "list",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert listed_before_install.returncode == 0, listed_before_install.stderr
+    assert "No apps discovered" in listed_before_install.stdout
+
     installed = subprocess.run(
         [
             sys.executable,

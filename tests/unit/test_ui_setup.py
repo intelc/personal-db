@@ -501,14 +501,44 @@ def test_shell_capabilities_isolate_remote_settings_actions_from_plugins():
     assert "allow-open-dashboard" in default["permissions"]
     assert remote["local"] is False
     assert remote["remote"]["urls"] == ["http://127.0.0.1:8765"]
-    assert remote["permissions"] == ["allow-run-tray-action"]
+    assert remote["permissions"] == [
+        "allow-run-tray-action",
+        "allow-get-update-status",
+        "allow-start-update-install",
+        "core:event:allow-listen",
+    ]
 
 
 def test_shell_build_generates_permissions_for_settings_commands():
     build_rs = (
         Path(__file__).resolve().parents[2] / "shell" / "src-tauri" / "build.rs"
     ).read_text()
-    assert 'AppManifest::new().commands(&["open_dashboard", "run_tray_action"])' in build_rs
+    for command in (
+        '"open_dashboard"',
+        '"run_tray_action"',
+        '"get_update_status"',
+        '"start_update_install"',
+    ):
+        assert command in build_rs
+
+
+def test_update_ready_indicator_is_native_only_and_survives_dashboard_navigation():
+    root = Path(__file__).resolve().parents[2]
+    base = (root / "src" / "personal_db" / "ui" / "templates" / "base.html").read_text()
+    script = (root / "src" / "personal_db" / "ui" / "static" / "pdb-update-ready.js").read_text()
+
+    assert 'id="pdb-update-ready"' in base
+    assert 'hidden aria-hidden="true"' in base
+    assert "pdb-update-ready.js" in base
+    style = (root / "src" / "personal_db" / "ui" / "static" / "style.css").read_text()
+    assert ".sidebar-update-ready[hidden] { display: none; }" in style
+    # Read persistent Rust state at initial load and after in-app navigation;
+    # then let native events update an already-open dashboard immediately.
+    assert 'tauriInvoke("get_update_status")' in script
+    assert 'document.addEventListener("pdb:navigate", refresh)' in script
+    assert 'events.listen("pdb://update-ready"' in script
+    # The UI only asks native code to begin the existing explicit install flow.
+    assert 'tauriInvoke("start_update_install")' in script
 
 
 def test_setup_launchd_installed_state_shown(tmp_path, monkeypatch):

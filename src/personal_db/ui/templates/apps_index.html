@@ -6,16 +6,38 @@
     <h1>Apps</h1>
   </header>
   {% if apps %}
+    <h2 class="app-section-title">Installed</h2>
     <div class="app-list">
       {% for app in apps %}
         <a class="app-list-item" href="/a/{{ app.name }}">
           <strong>{{ app.manifest.title }}</strong>
           <span>{{ app.manifest.description }}</span>
-          <small>{{ app.source }} · {{ app.manifest.pages|length }} pages</small>
+          <small>{{ app.manifest.pages|length }} pages</small>
         </a>
       {% endfor %}
     </div>
   {% else %}
-    <p class="meta">no apps installed</p>
+    <p class="meta">No apps installed yet.</p>
+  {% endif %}
+
+  {% if available_apps %}
+    <section class="app-catalog" aria-labelledby="available-apps-title">
+      <h2 class="app-section-title" id="available-apps-title">Available to install</h2>
+      <p class="meta">Apps only become available in your dashboard after you install them.</p>
+      <div class="app-list">
+        {% for app in available_apps %}
+          <article class="app-list-item app-catalog-item">
+            <div>
+              <strong>{{ app.manifest.title }}</strong>
+              <span>{{ app.manifest.description }}</span>
+              <small>{{ app.manifest.pages|length }} pages</small>
+            </div>
+            <form method="post" action="/a/install/{{ app.name }}">
+              <button type="submit" class="app-install-btn">Install</button>
+            </form>
+          </article>
+        {% endfor %}
+      </div>
+    </section>
   {% endif %}
 {% endblock %}

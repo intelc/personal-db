@@ -1,11 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "remote-settings",
-  "description": "Allows the bundled dashboard at the local daemon origin to trigger its narrow app-action bridge.",
+  "description": "Allows the bundled dashboard at the local daemon origin to run Settings actions and render the native update-ready state.",
   "local": false,
   "windows": ["main"],
   "remote": {
     "urls": ["http://127.0.0.1:8765"]
   },
-  "permissions": ["allow-run-tray-action"]
+  "permissions": [
+    "allow-run-tray-action",
+    "allow-get-update-status",
+    "allow-start-update-install",
+    "core:event:allow-listen"
+  ]
 }
